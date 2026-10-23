@@ -1,109 +1,126 @@
-name: CI
+name: Build Luckgram iOS (unsigned IPA)
 
+# Unsigned release_arm64 build (bundle id com.luckgram.messenger) using the
+# fake-codesigning profiles re-issued by ci/rebrand_profiles.py.
+# Re-sign the IPA (Sideloadly / AltStore / your own certificate) before installing.
 on:
-  push:
-    branches: [ master ]
-
   workflow_dispatch:
+  push:
+    branches: [master]
+    paths-ignore: ['**.md']
+
+concurrency:
+  group: luckgram-ios-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
 
 jobs:
   build:
-    runs-on: macos-13
-
+    runs-on: xcode-27
+    timeout-minutes: 360
+    env:
+      # Source paths end up in the binary; keep them stable across builds.
+      SOURCE_DIR: /Users/Shared/telegram-ios
+      BAZEL_USER_ROOT: /private/var/tmp/_bazel_containerhost
+      CACHE_DIR: /Users/runner/telegram-bazel-cache
     steps:
-      - uses: actions/checkout@v2
+      - name: Checkout (with submodules)
+        uses: actions/checkout@v4
         with:
-          submodules: 'recursive'
-          fetch-depth: '0'
+          submodules: recursive
+          fetch-depth: 0
+          path: src
 
-      - name: Set active Xcode path
+      - name: Select Xcode from versions.json
         run: |
-          XCODE_VERSION=$(cat versions.json | python3 -c 'import json,sys;obj=json.load(sys.stdin);print(obj["xcode"]);')
-          sudo xcode-select -s /Applications/Xcode_$XCODE_VERSION.app/Contents/Developer
+          XCODE_VERSION=$(python3 -c 'import json;print(json.load(open("src/versions.json"))["xcode"])')
+          echo "Xcode $XCODE_VERSION"
+          sudo xcode-select -s "/Applications/Xcode_${XCODE_VERSION}.app/Contents/Developer"
+          xcodebuild -version
+          # Some genrules hardcode /Applications/Xcode.app as sysroot.
+          sudo rm -rf /Applications/Xcode.app
+          sudo ln -s "$(readlink -f /Applications/Xcode_${XCODE_VERSION}.app)" /Applications/Xcode.app
+          df -h /
 
-      - name: Create canonical source directory
+      - name: Verify bundle id in fake profiles
+        working-directory: src
         run: |
-          set -x
+          BUNDLE_ID=$(python3 -c 'import json;print(json.load(open("build-system/appstore-configuration.json"))["bundle_id"])')
+          echo "bundle_id=$BUNDLE_ID"
+          for p in build-system/fake-codesigning/profiles/*.mobileprovision; do
+            openssl smime -inform der -verify -noverify -in "$p" 2>/dev/null | grep -q "C67CF9S4VU.$BUNDLE_ID" || { echo "::error::$p not rebranded"; exit 1; }
+          done
+
+      - name: Canonical source directory
+        run: |
           sudo mkdir -p /Users/Shared
-          cp -R $GITHUB_WORKSPACE /Users/Shared/
-          mv /Users/Shared/$(basename $GITHUB_WORKSPACE) /Users/Shared/telegram-ios
+          sudo chown "$USER" /Users/Shared
+          mv "$GITHUB_WORKSPACE/src" "$SOURCE_DIR"
 
-      - name: Build the App
+      - name: Restore bazel cache
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ env.CACHE_DIR }}
+          key: bazel-${{ github.ref_name }}-${{ github.run_id }}
+          restore-keys: |
+            bazel-${{ github.ref_name }}-
+            bazel-
+
+      - name: Build
+        working-directory: ${{ env.SOURCE_DIR }}
         run: |
           set -x
-
-          # source code paths are included in the final binary, so we need to make them stable across builds
-          SOURCE_DIR=/Users/Shared/telegram-ios
-
-          # use canonical bazel root
-          BAZEL_USER_ROOT="/private/var/tmp/_bazel_containerhost"
-
-          cd $SOURCE_DIR
-
-          BUILD_NUMBER_OFFSET="$(cat build_number_offset)"
-
-          export APP_VERSION=$(cat versions.json | python3 -c 'import json,sys;obj=json.load(sys.stdin);print(obj["app"]);')
-          export COMMIT_COUNT=$(git rev-list --count HEAD)
-          export COMMIT_COUNT="$(($COMMIT_COUNT+$BUILD_NUMBER_OFFSET))"
-          export BUILD_NUMBER="$COMMIT_COUNT"
-          echo "BUILD_NUMBER=$(echo $BUILD_NUMBER)" >> $GITHUB_ENV
-          echo "APP_VERSION=$(echo $APP_VERSION)" >> $GITHUB_ENV
+          APP_VERSION=$(python3 -c 'import json;print(json.load(open("versions.json"))["app"])')
+          BUILD_NUMBER=$(( $(cat build_number_offset) + $(git rev-list --count HEAD) + GITHUB_RUN_NUMBER ))
+          echo "APP_VERSION=$APP_VERSION" >> "$GITHUB_ENV"
+          echo "BUILD_NUMBER=$BUILD_NUMBER" >> "$GITHUB_ENV"
 
           python3 build-system/Make/ImportCertificates.py --path build-system/fake-codesigning/certs
           python3 -u build-system/Make/Make.py \
             --bazelUserRoot="$BAZEL_USER_ROOT" \
+            --cacheDir="$CACHE_DIR" \
+            --overrideXcodeVersion \
             build \
-            --configurationPath="build-system/appstore-configuration.json" \
+            --configurationPath=build-system/appstore-configuration.json \
             --codesigningInformationPath=build-system/fake-codesigning \
             --configuration=release_arm64 \
             --buildNumber="$BUILD_NUMBER"
 
-          # collect ipa
-          OUTPUT_PATH="build/artifacts"
-          rm -rf "$OUTPUT_PATH"
-          mkdir -p "$OUTPUT_PATH"
-          for f in bazel-out/applebin_ios-ios_arm*-opt-ST-*/bin/Telegram/Telegram.ipa; do
-            cp "$f" $OUTPUT_PATH/
-          done
+          mkdir -p "$GITHUB_WORKSPACE/out"
+          IPA=$(ls bazel-bin/Telegram/Telegram.ipa bazel-out/*/bin/Telegram/Telegram.ipa 2>/dev/null | head -1)
+          test -n "$IPA"
+          cp -L "$IPA" "$GITHUB_WORKSPACE/out/Luckgram-${APP_VERSION}-${BUILD_NUMBER}.ipa"
 
-          # collect dsym
-          mkdir -p build/DSYMs
-          for f in bazel-out/applebin_ios-ios_arm*-opt-ST-*/bin/Telegram/*.dSYM; do
-            cp -R "$f" build/DSYMs/
-          done
-          zip -r "./$OUTPUT_PATH/Telegram.DSYMs.zip" build/DSYMs 1>/dev/null
+      - name: Verify IPA bundle id / name
+        run: |
+          IPA=$(ls out/*.ipa)
+          rm -rf /tmp/ipa && mkdir /tmp/ipa && unzip -q "$IPA" -d /tmp/ipa
+          PLIST=$(ls -d /tmp/ipa/Payload/*.app)/Info.plist
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$PLIST"
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleDisplayName' "$PLIST"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$PLIST")" = com.luckgram.messenger
 
-      - name: Create Release
-        id: create_release
-        uses: actions/create-release@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Save bazel cache
+        if: always()
+        uses: actions/cache/save@v4
         with:
-          tag_name: build-${{ env.BUILD_NUMBER }}
-          release_name: Telegram ${{ env.APP_VERSION }} (${{ env.BUILD_NUMBER }})
-          body: |
-            An unsigned build of Telegram for iOS ${{ env.APP_VERSION }} (${{ env.BUILD_NUMBER }})
-          draft: false
-          prerelease: false
+          path: ${{ env.CACHE_DIR }}
+          key: bazel-${{ github.ref_name }}-${{ github.run_id }}
 
-      - name: Upload Release IPA
-        id: upload-release-ipa 
-        uses: actions/upload-release-asset@v1
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
         with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: /Users/Shared/telegram-ios/build/artifacts/Telegram.ipa
-          asset_name: Telegram.ipa
-          asset_content_type: application/zip
+          name: luckgram-ios-${{ github.run_number }}
+          path: out/*.ipa
+          if-no-files-found: error
 
-      - name: Upload Release DSYM
-        id: upload-release-dsym 
-        uses: actions/upload-release-asset@v1
+      - name: GitHub release
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: /Users/Shared/telegram-ios/build/artifacts/Telegram.DSYMs.zip
-          asset_name: Telegram.DSYMs.zip
-          asset_content_type: application/zip
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "ios-${APP_VERSION}-${BUILD_NUMBER}" out/*.ipa \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "Luckgram iOS ${APP_VERSION} (${BUILD_NUMBER})" \
+            --notes "Unsigned build of ${GITHUB_SHA}. Re-sign before installing."
