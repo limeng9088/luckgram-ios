@@ -1,4 +1,5 @@
 name: Build Luckgram iOS (unsigned IPA)
+# rev 2
 
 # Unsigned release_arm64 build (bundle id com.luckgram.messenger) using the
 # fake-codesigning profiles re-issued by ci/rebrand_profiles.py.
