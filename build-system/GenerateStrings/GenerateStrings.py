@@ -338,6 +338,39 @@ static _FormattedString * _Nonnull getFormatted{num_arguments}(_PresentationStri
 
 @end
 
+// Luckgram: show the app's own name instead of "Telegram" in UI strings. Domains
+// (telegram.org), handles (@telegram), links and Telegram's own products and company
+// (Telegram Premium, Stars, Passport, FZ-LLC, ...) keep the original name.
+static NSString * _Nonnull _luckgramRebrandString(NSString * _Nonnull value) {
+    static NSRegularExpression *pattern = nil;
+    static NSRegularExpression *upperPattern = nil;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        NSString *keep = @"(?![\\\\w.-]*\\\\.(?:org|me|com)\\\\b)(?!\\\\s+(?:Premium|Stars|Passport|Business|Gateway|Desktop|Web|Support|FZ)\\\\b)";
+        pattern = [NSRegularExpression regularExpressionWithPattern:[@"(?<![\\\\w./@#-])Telegram(?!\\\\w)" stringByAppendingString:keep] options:0 error:nil];
+        upperPattern = [NSRegularExpression regularExpressionWithPattern:[@"(?<![\\\\w./@#-])TELEGRAM(?!\\\\w)" stringByAppendingString:keep] options:0 error:nil];
+    });
+    NSString *result = value;
+    if (pattern != nil && [result rangeOfString:@"Telegram"].location != NSNotFound) {
+        result = [pattern stringByReplacingMatchesInString:result options:0 range:NSMakeRange(0, result.length) withTemplate:@"Luckgram"];
+    }
+    if (upperPattern != nil && [result rangeOfString:@"TELEGRAM"].location != NSNotFound) {
+        result = [upperPattern stringByReplacingMatchesInString:result options:0 range:NSMakeRange(0, result.length) withTemplate:@"LUCKGRAM"];
+    }
+    return result;
+}
+
+static NSDictionary<NSString *, NSString *> * _Nullable _luckgramRebrandDict(NSDictionary<NSString *, NSString *> * _Nullable dict) {
+    if (dict == nil) {
+        return nil;
+    }
+    NSMutableDictionary<NSString *, NSString *> *result = [[NSMutableDictionary alloc] initWithCapacity:dict.count];
+    [dict enumerateKeysAndObjectsUsingBlock:^(NSString *key, NSString *value, __unused BOOL *stop) {
+        result[key] = [value isKindOfClass:[NSString class]] ? _luckgramRebrandString(value) : value;
+    }];
+    return result;
+}
+
 @implementation _PresentationStringsComponent
 
 - (instancetype _Nonnull)initWithLanguageCode:(NSString * _Nonnull)languageCode
@@ -349,7 +382,7 @@ static _FormattedString * _Nonnull getFormatted{num_arguments}(_PresentationStri
         _languageCode = languageCode;
         _localizedName = localizedName;
         _pluralizationRulesCode = pluralizationRulesCode;
-        _dict = dict;
+        _dict = _luckgramRebrandDict(dict);
     }
     return self;
 }
@@ -470,7 +503,7 @@ static NSString * _Nonnull getSingle(_PresentationStrings * _Nullable strings, N
             if (!stringsPath) {
                 return;
             }
-            fallbackDict = [NSDictionary dictionaryWithContentsOfURL:[NSURL fileURLWithPath:stringsPath]];
+            fallbackDict = _luckgramRebrandDict([NSDictionary dictionaryWithContentsOfURL:[NSURL fileURLWithPath:stringsPath]]);
         });
         result = fallbackDict[key]; 
     }
