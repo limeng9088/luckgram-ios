@@ -35,7 +35,7 @@ class ShareRootController: UIViewController {
             
             let languagesCategory = "ios"
             
-            let appGroupName = "group.\(baseAppBundleId)"
+            let appGroupName = BuildConfig.appGroupIdentifier(baseAppBundleId: baseAppBundleId)
             try! PasscodeEnvironment.shared.configure(PasscodeConfiguration(appGroupIdentifier: appGroupName, processRole: .appExtension))
             let maybeAppGroupUrl = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: appGroupName)
             

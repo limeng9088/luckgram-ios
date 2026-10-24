@@ -225,6 +225,66 @@ API_AVAILABLE(ios(10))
     return bundleSeedID;
 }
 
++ (NSArray<NSString *> * _Nonnull)provisionedAppGroupIdentifiers {
+    NSString *path = [[NSBundle mainBundle] pathForResource:@"embedded" ofType:@"mobileprovision"];
+    NSData *data = path != nil ? [NSData dataWithContentsOfFile:path] : nil;
+    if (data == nil) {
+        return @[];
+    }
+    // The profile is a CMS envelope around a plain XML plist; cut the plist out.
+    NSData *start = [@"<?xml" dataUsingEncoding:NSUTF8StringEncoding];
+    NSData *end = [@"</plist>" dataUsingEncoding:NSUTF8StringEncoding];
+    NSRange startRange = [data rangeOfData:start options:0 range:NSMakeRange(0, data.length)];
+    if (startRange.location == NSNotFound) {
+        return @[];
+    }
+    NSRange endRange = [data rangeOfData:end options:0 range:NSMakeRange(startRange.location, data.length - startRange.location)];
+    if (endRange.location == NSNotFound) {
+        return @[];
+    }
+    NSData *plistData = [data subdataWithRange:NSMakeRange(startRange.location, endRange.location + endRange.length - startRange.location)];
+    NSDictionary *plist = [NSPropertyListSerialization propertyListWithData:plistData options:NSPropertyListImmutable format:nil error:nil];
+    if (![plist isKindOfClass:[NSDictionary class]]) {
+        return @[];
+    }
+    NSDictionary *entitlements = plist[@"Entitlements"];
+    if (![entitlements isKindOfClass:[NSDictionary class]]) {
+        return @[];
+    }
+    NSArray *groups = entitlements[@"com.apple.security.application-groups"];
+    if (![groups isKindOfClass:[NSArray class]]) {
+        return @[];
+    }
+    NSMutableArray<NSString *> *result = [[NSMutableArray alloc] init];
+    for (id group in groups) {
+        if ([group isKindOfClass:[NSString class]] && ![group containsString:@"*"]) {
+            [result addObject:group];
+        }
+    }
+    return result;
+}
+
++ (NSString * _Nonnull)appGroupIdentifierForBaseAppBundleId:(NSString * _Nonnull)baseAppBundleId {
+    NSString *defaultGroup = [@"group." stringByAppendingString:baseAppBundleId];
+    NSFileManager *fileManager = [NSFileManager defaultManager];
+    if ([fileManager containerURLForSecurityApplicationGroupIdentifier:defaultGroup] != nil) {
+        return defaultGroup;
+    }
+    NSArray<NSString *> *candidates = [self provisionedAppGroupIdentifiers];
+    // Prefer a group derived from our bundle id (AltStore appends the team id), then any other.
+    for (NSString *group in candidates) {
+        if ([group hasPrefix:defaultGroup] && [fileManager containerURLForSecurityApplicationGroupIdentifier:group] != nil) {
+            return group;
+        }
+    }
+    for (NSString *group in candidates) {
+        if ([fileManager containerURLForSecurityApplicationGroupIdentifier:group] != nil) {
+            return group;
+        }
+    }
+    return defaultGroup;
+}
+
 + (NSString * _Nullable)keychainAccessGroupForBaseAppBundleId:(NSString * _Nonnull)baseAppBundleId {
     NSString *bundleSeedId = [self bundleSeedId];
     if (bundleSeedId.length == 0 || baseAppBundleId.length == 0) {

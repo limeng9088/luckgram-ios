@@ -23,6 +23,11 @@
 
 + (NSString * _Nullable)keychainAccessGroupForBaseAppBundleId:(NSString * _Nonnull)baseAppBundleId NS_SWIFT_NAME(keychainAccessGroup(baseAppBundleId:));
 
+// The app group the process can actually open. Normally "group.<baseAppBundleId>"; when the IPA was
+// re-signed (Sideloadly, AltStore, a personal certificate) the tool may rename the group, so fall back
+// to the groups listed in the embedded provisioning profile.
++ (NSString * _Nonnull)appGroupIdentifierForBaseAppBundleId:(NSString * _Nonnull)baseAppBundleId NS_SWIFT_NAME(appGroupIdentifier(baseAppBundleId:));
+
 + (DeviceSpecificEncryptionParameters * _Nonnull)deviceSpecificEncryptionParameters:(NSString * _Nonnull)rootPath baseAppBundleId:(NSString * _Nonnull)baseAppBundleId;
 - (NSData * _Nullable)bundleDataWithAppToken:(NSData * _Nullable)appToken tokenType:(NSString * _Nullable)tokenType tokenEnvironment:(NSString * _Nullable)tokenEnvironment signatureDict:(NSDictionary * _Nullable)signatureDict;
 

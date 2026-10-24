@@ -145,7 +145,7 @@ class DefaultIntentHandler: INExtension, INSendMessageIntentHandling, INSearchFo
         let apiHash: String = buildConfig.apiHash
         let languagesCategory = "ios"
         
-        let appGroupName = "group.\(baseAppBundleId)"
+        let appGroupName = BuildConfig.appGroupIdentifier(baseAppBundleId: baseAppBundleId)
         try! PasscodeEnvironment.shared.configure(PasscodeConfiguration(appGroupIdentifier: appGroupName, processRole: .appExtension))
         let maybeAppGroupUrl = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: appGroupName)
         
@@ -986,7 +986,7 @@ private final class WidgetIntentHandler {
         
         let baseAppBundleId = String(appBundleIdentifier[..<lastDotRange.lowerBound])
         
-        let appGroupName = "group.\(baseAppBundleId)"
+        let appGroupName = BuildConfig.appGroupIdentifier(baseAppBundleId: baseAppBundleId)
         let maybeAppGroupUrl = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: appGroupName)
         
         guard let appGroupUrl = maybeAppGroupUrl else {

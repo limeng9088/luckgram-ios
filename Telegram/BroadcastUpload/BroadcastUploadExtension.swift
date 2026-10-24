@@ -322,7 +322,7 @@ private final class EmbeddedBroadcastUploadImpl: BroadcastUploadImpl {
 
         let baseAppBundleId = String(appBundleIdentifier[..<lastDotRange.lowerBound])
 
-        let appGroupName = "group.\(baseAppBundleId)"
+        let appGroupName = BuildConfig.appGroupIdentifier(baseAppBundleId: baseAppBundleId)
         let maybeAppGroupUrl = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: appGroupName)
 
         guard let appGroupUrl = maybeAppGroupUrl else {
