@@ -1,5 +1,4 @@
 name: Build Luckgram iOS (unsigned IPA)
-# rev 2
 
 # Unsigned release_arm64 build (bundle id com.luckgram.messenger) using the
 # fake-codesigning profiles re-issued by ci/rebrand_profiles.py.
@@ -53,6 +52,26 @@ jobs:
           for p in build-system/fake-codesigning/profiles/*.mobileprovision; do
             openssl smime -inform der -verify -noverify -in "$p" 2>/dev/null | grep -q "C67CF9S4VU.$BUNDLE_ID" || { echo "::error::$p not rebranded"; exit 1; }
           done
+
+      # 从 Actions secrets 注入 Telegram api_id / api_hash；未配置则直接失败，避免回落到官方凭证
+      - name: Inject Telegram API credentials
+        working-directory: src
+        env:
+          TG_API_ID: ${{ secrets.TG_API_ID }}
+          TG_API_HASH: ${{ secrets.TG_API_HASH }}
+        run: |
+          python3 - <<'PY'
+          import json, os, re, sys
+          api_id, api_hash = os.environ.get("TG_API_ID", ""), os.environ.get("TG_API_HASH", "")
+          if not re.fullmatch(r"[0-9]+", api_id) or not re.fullmatch(r"[0-9a-f]{32}", api_hash):
+              sys.exit("::error::TG_API_ID / TG_API_HASH secrets missing or malformed")
+          p = "build-system/appstore-configuration.json"
+          d = json.load(open(p))
+          d["api_id"], d["api_hash"] = api_id, api_hash
+          open(p, "w").write(json.dumps(d, indent="\t") + "\n")
+          print("api credentials injected")
+          PY
+          ! grep -q '7245de8e747a0d6fbe11f7cc14fcc0bb' build-system/appstore-configuration.json
 
       - name: Canonical source directory
         run: |
