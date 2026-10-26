@@ -187,8 +187,8 @@ public class ChatListControllerImpl: TelegramBaseController, ChatListController 
             return 0
         }
         return Int32(tabContainerData.0.count(where: { entry in
-            if case .filter = entry {
-                return true
+            if case let .filter(id, _, _) = entry {
+                return !isKeywordFolderFilterId(id) // Luckgram: keyword folders are local, not limited
             } else {
                 return false
             }
@@ -4220,7 +4220,14 @@ public class ChatListControllerImpl: TelegramBaseController, ChatListController 
             if !hasAllChats {
                 availableFilters.insert(.all, at: 0)
             }
-            strongSelf.chatListDisplayNode.mainContainerNode.updateAvailableFilters(availableFilters, limit: filtersLimit)
+            // Luckgram: the swipe limit counts pages, and local keyword folders are never locked.
+            let keywordFolderCount = availableFilters.count(where: { filter in
+                if case let .filter(filter) = filter {
+                    return isKeywordFolderFilterId(filter.id)
+                }
+                return false
+            })
+            strongSelf.chatListDisplayNode.mainContainerNode.updateAvailableFilters(availableFilters, limit: filtersLimit.flatMap { $0 + Int32(keywordFolderCount) })
             
             if isPremium == nil && items.isEmpty {
                 strongSelf.mainReady.set(strongSelf.chatListDisplayNode.mainContainerNode.currentItemNode.ready)
