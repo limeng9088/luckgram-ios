@@ -247,28 +247,36 @@ public func keywordFolderFirstMatch(text: String, keywords: [String]) -> String?
 
 // MARK: - Folder content
 
-/// Chats matched by a live message for the lifetime of the process (a hit stays even when newer
-/// messages push it out of the chat's last-message slot). Keyed by account and folder.
-private let keywordFolderLiveHits = Atomic<[EnginePeer.Id: [Int32: Set<EnginePeer.Id>]]>(value: [:])
-
-private func scanKeywordFolderMatches(context: AccountContext, folders: [KeywordFolder]) -> Signal<[Int32: Set<EnginePeer.Id>], NoError> {
-    return context.account.postbox.transaction { transaction -> [Int32: Set<EnginePeer.Id>] in
+/// Hits among the latest cached messages of the given chats (`nil` = every chat in the chat list).
+/// Returns the hits per folder and the chats that were looked at.
+private func scanKeywordFolderMatches(context: AccountContext, folders: [KeywordFolder], peerIds: [EnginePeer.Id]?) -> Signal<(hits: [Int32: Set<EnginePeer.Id>], scanned: Set<EnginePeer.Id>), NoError> {
+    return context.account.postbox.transaction { transaction -> (hits: [Int32: Set<EnginePeer.Id>], scanned: Set<EnginePeer.Id>) in
         var result: [Int32: Set<EnginePeer.Id>] = [:]
         var peers: [EnginePeer] = []
-        for groupId in [EngineChatList.Group.root, EngineChatList.Group.archive] {
-            for peer in transaction.getChatListPeers(groupId: groupId._asGroup(), filterPredicate: nil, additionalFilter: nil) {
-                if peers.count >= keywordFoldersMaxScannedChats {
-                    break
+        if let peerIds {
+            for peerId in peerIds {
+                if let peer = transaction.getPeer(peerId) {
+                    peers.append(EnginePeer(peer))
                 }
-                peers.append(EnginePeer(peer))
+            }
+        } else {
+            for groupId in [EngineChatList.Group.root, EngineChatList.Group.archive] {
+                for peer in transaction.getChatListPeers(groupId: groupId._asGroup(), filterPredicate: nil, additionalFilter: nil) {
+                    if peers.count >= keywordFoldersMaxScannedChats {
+                        break
+                    }
+                    peers.append(EnginePeer(peer))
+                }
             }
         }
+        var scanned = Set<EnginePeer.Id>()
         for peer in peers {
+            let peerId = peer.id
+            scanned.insert(peerId)
             let candidates = folders.filter { $0.includes(peer: peer) }
             if candidates.isEmpty {
                 continue
             }
-            let peerId = peer.id
             for namespace in [Namespaces.Message.Cloud, Namespaces.Message.Local] {
                 transaction.scanTopMessages(peerId: peerId, namespace: namespace, limit: keywordFoldersRecentMessageLimit, { message in
                     let text = message.text
@@ -287,7 +295,7 @@ private func scanKeywordFolderMatches(context: AccountContext, folders: [Keyword
                 })
             }
         }
-        return result
+        return (result, scanned)
     }
 }
 
@@ -315,38 +323,45 @@ private func keywordFolderChatListFilter(folder: KeywordFolder, peerIds: Set<Eng
 }
 
 /// Keyword folders of the account as chat list filters whose included chats are the current matches.
+///
+/// All chats are scanned once per folder change; after that, every change of the top of the chat
+/// list (new, edited or deleted messages) re-scans those chats, so a chat joins or leaves a folder
+/// without waiting for the next full scan.
 public func keywordFolderFilters(context: AccountContext) -> Signal<[(KeywordFolder, ChatListFilter)], NoError> {
-    let accountPeerId = context.account.peerId
     return combineLatest(keywordFolders(context: context), KeywordFoldersSettings.enabledSignal)
     |> mapToSignal { folders, enabled -> Signal<[(KeywordFolder, ChatListFilter)], NoError> in
         if folders.isEmpty || !enabled {
             return .single([])
         }
-        return combineLatest(
-            scanKeywordFolderMatches(context: context, folders: folders),
+        let recent: Signal<(hits: [Int32: Set<EnginePeer.Id>], scanned: Set<EnginePeer.Id>)?, NoError> = .single(nil)
+        |> then(
             context.engine.messages.chatList(group: .root, count: 100)
-        )
-        |> map { scanned, chatList -> [(KeywordFolder, ChatListFilter)] in
-            let live = keywordFolderLiveHits.modify { current in
-                var current = current
-                var accountHits = current[accountPeerId] ?? [:]
-                for item in chatList.items {
-                    guard case let .chatList(peerId) = item.id, let peer = item.renderedPeer.peer else {
-                        continue
+            |> map { chatList -> [EnginePeer.Id] in
+                return chatList.items.compactMap { item -> EnginePeer.Id? in
+                    if case let .chatList(peerId) = item.id {
+                        return peerId
                     }
-                    for message in item.messages {
-                        for folder in folders where folder.includes(peer: peer) {
-                            if keywordFolderFirstMatch(text: message.text, keywords: folder.keywords) != nil {
-                                accountHits[folder.id, default: Set()].insert(peerId)
-                            }
-                        }
-                    }
+                    return nil
                 }
-                current[accountPeerId] = accountHits
-                return current
-            }[accountPeerId] ?? [:]
+            }
+            |> mapToSignal { peerIds -> Signal<(hits: [Int32: Set<EnginePeer.Id>], scanned: Set<EnginePeer.Id>)?, NoError> in
+                // Debounce bursts of chat list updates; a newer update cancels a pending scan.
+                return (Signal<Void, NoError>.single(Void()) |> delay(0.3, queue: Queue.concurrentDefaultQueue()))
+                |> mapToSignal { _ in
+                    return scanKeywordFolderMatches(context: context, folders: folders, peerIds: peerIds)
+                    |> map(Optional.init)
+                }
+            }
+        )
+        return combineLatest(scanKeywordFolderMatches(context: context, folders: folders, peerIds: nil), recent)
+        |> map { full, recent -> [(KeywordFolder, ChatListFilter)] in
             return folders.map { folder in
-                let peerIds = (scanned[folder.id] ?? Set()).union(live[folder.id] ?? Set())
+                var peerIds = full.hits[folder.id] ?? Set()
+                if let recent {
+                    // The newer scan of the top chats wins for those chats (adds and removals).
+                    peerIds.subtract(recent.scanned)
+                    peerIds.formUnion(recent.hits[folder.id] ?? Set())
+                }
                 return (folder, keywordFolderChatListFilter(folder: folder, peerIds: peerIds))
             }
         }
