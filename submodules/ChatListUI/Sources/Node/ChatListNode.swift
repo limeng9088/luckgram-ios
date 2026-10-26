@@ -2661,8 +2661,8 @@ public final class ChatListNode: ListViewImpl {
             }
             
             let filterData = filter.flatMap { filter -> ChatListItemFilterData? in
-                if case let .filter(_, _, _, data) = filter {
-                    return ChatListItemFilterData(excludesArchived: data.excludeArchived)
+                if case let .filter(id, _, _, data) = filter {
+                    return ChatListItemFilterData(excludesArchived: data.excludeArchived, keywords: cachedKeywordFolder(accountPeerId: accountPeerId, filterId: id)?.keywords)
                 } else {
                     return nil
                 }
@@ -3290,7 +3290,8 @@ public final class ChatListNode: ListViewImpl {
     
     private func resetFilter() {
         if let chatListFilter = self.chatListFilter, chatListFilter.id != Int32.max {
-            self.updatedFilterDisposable.set((self.context.engine.peers.updatedChatListFilters()
+            // Luckgram: a keyword folder is not a cloud folder; look it up in the merged list.
+            self.updatedFilterDisposable.set((updatedChatListFiltersWithKeywordFolders(context: self.context)
             |> map { filters -> ChatListFilter? in
                 for filter in filters {
                     if filter.id == chatListFilter.id {

@@ -27,6 +27,7 @@ submodules/ChatListUI/Sources/ChatListFilterPresetController.swift
 submodules/ChatListUI/Sources/ChatListSearchContainerNode.swift
 submodules/ChatListUI/Sources/ChatListSearchListPaneNode.swift
 submodules/ChatListUI/Sources/ChatListSearchMediaNode.swift
+submodules/ChatListUI/Sources/KeywordFolders/KeywordFolders.swift
 submodules/ChatListUI/Sources/Node/ChatListItem.swift
 submodules/ChatListUI/Sources/Node/ChatListNode.swift
 submodules/ChatListUI/Sources/Node/ChatListNodeLocation.swift
