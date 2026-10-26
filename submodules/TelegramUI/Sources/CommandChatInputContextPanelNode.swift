@@ -16,11 +16,13 @@ import ChatListUI
 import ComponentFlow
 import ComponentDisplayAdapters
 import GlassBackgroundComponent
+import ChatTextInputPanelNode
 
 private enum CommandChatInputContextPanelEntryStableId: Hashable {
     case editShortcuts
     case command(PeerCommand)
     case shortcut(Int32)
+    case luckgramTemplate(String)
 }
 
 private struct CommandChatInputContextPanelEntry: Comparable, Identifiable {
@@ -71,6 +73,8 @@ private struct CommandChatInputContextPanelEntry: Comparable, Identifiable {
                 } else {
                     return .shortcut(0)
                 }
+            case let .luckgramTemplate(text):
+                return .luckgramTemplate(text)
             }
         }
     }
@@ -255,6 +259,10 @@ private struct CommandChatInputContextPanelEntry: Comparable, Identifiable {
                     hiddenOffset: false,
                     interaction: chatListNodeInteraction
                 )
+            case let .luckgramTemplate(text):
+                return VerticalListContextResultsChatInputPanelButtonItem(theme: presentationData.theme, style: .round, title: text.replacingOccurrences(of: "\n", with: " "), pressed: {
+                    commandSelected(.luckgramTemplate(text), false)
+                })
             }
         }
     }
@@ -390,6 +398,23 @@ final class CommandChatInputContextPanelNode: ChatInputContextPanelNode {
                 if let shortcutId = shortcut.id {
                     interfaceInteraction.sendShortcut(shortcutId)
                 }
+            case let .luckgramTemplate(text):
+                // Fill the template in place of "/query"; nothing is sent.
+                interfaceInteraction.updateTextInputStateAndMode { textInputState, inputMode in
+                    var commandQueryRange: NSRange?
+                    inner: for (range, type, _) in textInputStateContextQueryRangeAndType(textInputState) {
+                        if type == [.command] {
+                            commandQueryRange = range
+                            break inner
+                        }
+                    }
+                    if let range = commandQueryRange, range.location > 0 {
+                        // include the leading "/"
+                        let fullRange = NSRange(location: range.location - 1, length: range.length + 1)
+                        return (textInputState.replacingFlatRange(fullRange, with: text), inputMode)
+                    }
+                    return (textInputState, inputMode)
+                }
             }
         }, openEditShortcuts: { [weak self] in
             guard let self, let interfaceInteraction = self.interfaceInteraction else {
@@ -475,6 +500,8 @@ final class CommandChatInputContextPanelNode: ChatInputContextPanelNode {
                         itemHeight = MentionChatInputPanelItemNode.itemHeight
                     case .shortcut:
                         itemHeight = 58.0
+                    case .luckgramTemplate:
+                        itemHeight = VerticalListContextResultsChatInputPanelButtonItemNode.itemHeight(style: .round)
                     }
                 }
                 if indexLimit >= 4 && i == indexLimit {

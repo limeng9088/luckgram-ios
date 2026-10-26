@@ -998,6 +998,8 @@ public enum ChatControllerPresentationMode: Equatable {
 public enum ChatInputTextCommand: Equatable {
     case command(PeerCommand)
     case shortcut(ShortcutMessageList.Item)
+    /// Luckgram: local quick reply template (feature 02).
+    case luckgramTemplate(String)
 }
 
 public struct ChatInputQueryCommandsResult: Equatable {

@@ -107,6 +107,7 @@ private enum ApplicationSpecificItemCacheCollectionIdValues: Int8 {
     case webAppPermissionsState = 14
     case richTextArticleDrafts = 15
     case luckgramTranslateOut = 40
+    case luckgramQuickReplies = 41
 }
 
 public struct ApplicationSpecificItemCacheCollectionId {
@@ -125,6 +126,8 @@ public struct ApplicationSpecificItemCacheCollectionId {
     public static let richTextArticleDrafts = applicationSpecificItemCacheCollectionId(ApplicationSpecificItemCacheCollectionIdValues.richTextArticleDrafts.rawValue)
     /// Luckgram: per-chat target language of "translate before sending".
     public static let luckgramTranslateOut = applicationSpecificItemCacheCollectionId(ApplicationSpecificItemCacheCollectionIdValues.luckgramTranslateOut.rawValue)
+    /// Luckgram: quick reply templates.
+    public static let luckgramQuickReplies = applicationSpecificItemCacheCollectionId(ApplicationSpecificItemCacheCollectionIdValues.luckgramQuickReplies.rawValue)
 }
 
 private enum ApplicationSpecificOrderedItemListCollectionIdValues: Int32 {
