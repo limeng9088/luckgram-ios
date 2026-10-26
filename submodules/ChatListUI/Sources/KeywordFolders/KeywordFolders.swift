@@ -441,6 +441,11 @@ public enum KeywordFolderStrings {
     public static func delete(_ s0: PresentationStrings) -> String { return s(s0, "删除关键词文件夹", "Delete Keyword Folder") }
     public static func deleteAlertTitle(_ s0: PresentationStrings) -> String { return s(s0, "删除文件夹", "Delete Folder") }
     public static func deleteAlertText(_ s0: PresentationStrings) -> String { return s(s0, "确定删除这个关键词文件夹吗？其中的聊天不会受影响。", "Delete this keyword folder? The chats in it will not be affected.") }
+    // Validation feedback, same wording as Android (KeywordFolderStrings.java).
+    public static func errorName(_ s0: PresentationStrings) -> String { return s(s0, "请输入文件夹名称", "Enter a folder name") }
+    public static func errorKeywords(_ s0: PresentationStrings) -> String { return s(s0, "请至少填写一个关键词", "Enter at least one keyword") }
+    public static func errorScope(_ s0: PresentationStrings) -> String { return s(s0, "请至少选择一个范围", "Choose at least one chat type") }
+    public static func keywordsLimit(_ s0: PresentationStrings) -> String { return s(s0, "最多 10 个关键词", "Up to 10 keywords") }
     public static func limitReached(_ s0: PresentationStrings) -> String { return s(s0, "最多可以创建 10 个关键词文件夹", "You can create up to 10 keyword folders") }
     public static func filterInfo(_ s0: PresentationStrings, _ folder: KeywordFolder) -> String {
         return s(s0, "关键词：", "Keywords: ") + folder.keywords.joined(separator: s(s0, "、", ", "))
