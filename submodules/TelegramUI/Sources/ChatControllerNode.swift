@@ -77,6 +77,7 @@ import RichTextEditorUIKit
 import RichTextEditorMediaView
 import InstantPageUI
 import ChatRichTextEditorComposer
+import ChatListUI
 
 final class VideoNavigationControllerDropContentItem: NavigationControllerDropContentItem {
     let itemNode: OverlayMediaItemNode
@@ -306,6 +307,18 @@ class ChatControllerNode: ASDisplayNode, ASScrollViewDelegate {
     private var inputMediaNodeStateContext = ChatEntityKeyboardInputNode.StateContext()
         
     let navigateButtons: ChatHistoryNavigationButtons
+    /// Luckgram: "Next 'keyword'" pill when the chat was opened from a keyword folder.
+    var luckgramKeywordJumpNode: KeywordJumpButtonNode? {
+        didSet {
+            if let oldValue, oldValue !== self.luckgramKeywordJumpNode {
+                oldValue.removeFromSupernode()
+            }
+            if let node = self.luckgramKeywordJumpNode, node.supernode == nil {
+                node.alpha = 0.0
+                self.contentContainerNode.contentNode.addSubnode(node)
+            }
+        }
+    }
     
     private var ignoreUpdateHeight = false
     private var overrideUpdateTextInputHeightTransition: ContainedViewLayoutTransition?
@@ -2859,6 +2872,18 @@ class ChatControllerNode: ASDisplayNode, ASScrollViewDelegate {
         
         transition.updateFrame(node: self.navigateButtons, frame: apparentNavigateButtonsFrame)
         self.navigateButtons.update(rect: apparentNavigateButtonsFrame, within: layout.size, transition: transition)
+        
+        if let jumpNode = self.luckgramKeywordJumpNode {
+            if jumpNode.isShown {
+                let jumpSize = jumpNode.updateLayout(maxWidth: max(120.0, layout.size.width - layout.safeInsets.left - layout.safeInsets.right - 140.0))
+                let jumpFrame = CGRect(origin: CGPoint(x: floor((layout.size.width - jumpSize.width) / 2.0), y: navigateButtonsFrame.maxY - jumpSize.height), size: jumpSize)
+                transition.updateFrame(node: jumpNode, frame: jumpFrame)
+                transition.updateAlpha(node: jumpNode, alpha: 1.0)
+            } else {
+                transition.updateAlpha(node: jumpNode, alpha: 0.0)
+            }
+            jumpNode.isUserInteractionEnabled = jumpNode.isShown
+        }
         
         if let secondaryInputPanelNode = self.secondaryInputPanelNode, let apparentSecondaryInputPanelFrame = apparentSecondaryInputPanelFrame, !secondaryInputPanelNode.frame.equalTo(apparentSecondaryInputPanelFrame) {
             if immediatelyLayoutSecondaryInputPanelAndAnimateAppearance {

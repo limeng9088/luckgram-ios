@@ -12,6 +12,7 @@ public enum ChatTextInputAccessoryItem: Equatable {
         case scheduledMessages
         case gift
         case suggestPost
+        case translate
     }
     
     public enum InputMode: Hashable {
@@ -29,6 +30,8 @@ public enum ChatTextInputAccessoryItem: Equatable {
     case scheduledMessages
     case gift
     case suggestPost
+    /// Luckgram: "translate before sending" button (feature 01).
+    case translate
     
     public var key: Key {
         switch self {
@@ -48,6 +51,8 @@ public enum ChatTextInputAccessoryItem: Equatable {
             return .gift
         case .suggestPost:
             return .suggestPost
+        case .translate:
+            return .translate
         }
     }
 }

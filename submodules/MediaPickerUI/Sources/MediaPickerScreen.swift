@@ -292,6 +292,10 @@ public final class MediaPickerScreenImpl: ViewController, MediaPickerScreen, Att
     
     public var customSelection: ((MediaPickerScreenImpl, Any) -> Void)? = nil
     
+    /// Luckgram: "Send as Round Video" for a single selected video. Set by the chat only when the
+    /// feature is enabled and round videos can be sent; `title` is the localized menu title.
+    public var luckgramSendAsRoundVideo: (title: String, action: (PHAsset) -> Void)?
+    
     public var createFromScratch: () -> Void = {}
     public var presentFilePicker: () -> Void = {}
     public var openAvatarEditor: () -> Void = {}
@@ -3256,6 +3260,15 @@ public final class MediaPickerScreenImpl: ViewController, MediaPickerScreen, Att
                         return ContextController.Items(content: .list([]))
                     }
                     var items: [ContextMenuItem] = []
+                    if let roundVideo = self.luckgramSendAsRoundVideo, self.luckgramRoundVideoCandidate() != nil {
+                        items.append(.action(ContextMenuActionItem(text: roundVideo.title, icon: { theme in
+                            return generateTintedImage(image: UIImage(bundleImageName: "Chat/Input/Text/IconVideo"), color: theme.contextMenu.primaryColor)
+                        }, action: { [weak self] _, f in
+                            f(.default)
+                            
+                            self?.luckgramOpenRoundVideo()
+                        })))
+                    }
                     if !hasSpoilers && price == nil {
                         items.append(.action(ContextMenuActionItem(text: selectionCount > 1 ? strings.Attachment_SendAsFiles : strings.Attachment_SendAsFile, icon: { theme in
                             return generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/File"), color: theme.contextMenu.primaryColor)
@@ -3405,6 +3418,31 @@ public final class MediaPickerScreenImpl: ViewController, MediaPickerScreen, Att
     
     public func dismissAnimated() {
         self.requestDismiss(completion: {})
+    }
+    
+    /// Luckgram: the single selected video that can be sent as a round video, if any.
+    fileprivate func luckgramRoundVideoCandidate() -> PHAsset? {
+        guard self.luckgramSendAsRoundVideo != nil, let selectionContext = self.interaction?.selectionState, selectionContext.count() == 1 else {
+            return nil
+        }
+        guard let item = selectionContext.selectedItems().first as? TGMediaAsset, item.isVideo, let asset = item.backingAsset else {
+            return nil
+        }
+        if let editingContext = self.interaction?.editingState, editingContext.price(for: item) != nil {
+            return nil
+        }
+        return asset
+    }
+    
+    /// Luckgram: closes the attachment menu and hands the selected video to the round video editor.
+    fileprivate func luckgramOpenRoundVideo() {
+        guard let asset = self.luckgramRoundVideoCandidate(), let handler = self.luckgramSendAsRoundVideo else {
+            return
+        }
+        self.requestDismiss(completion: {})
+        Queue.mainQueue().after(0.3) {
+            handler.action(asset)
+        }
     }
     
     public var mediaPickerContext: AttachmentMediaPickerContext? {
@@ -3576,6 +3614,15 @@ final class MediaPickerContext: AttachmentMediaPickerContext {
     
     func mainButtonAction() {
         self.controller?.mainButtonPressed()
+    }
+    
+    var luckgramSendAsRoundVideo: (title: String, action: () -> Void)? {
+        guard let controller = self.controller, let roundVideo = controller.luckgramSendAsRoundVideo, controller.luckgramRoundVideoCandidate() != nil else {
+            return nil
+        }
+        return (roundVideo.title, { [weak controller] in
+            controller?.luckgramOpenRoundVideo()
+        })
     }
     
     func secondaryButtonAction() {

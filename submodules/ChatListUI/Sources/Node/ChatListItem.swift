@@ -738,9 +738,12 @@ private func communitySourcePeer(peerData: ChatListItemContent.PeerData, message
 
 public struct ChatListItemFilterData: Equatable {
     public var excludesArchived: Bool
+    /// Luckgram: keywords of the keyword folder being shown; hits in the preview are highlighted.
+    public var keywords: [String]?
     
-    public init(excludesArchived: Bool) {
+    public init(excludesArchived: Bool, keywords: [String]? = nil) {
         self.excludesArchived = excludesArchived
+        self.keywords = keywords
     }
 }
 
@@ -3004,6 +3007,18 @@ public class ChatListItemNode: ItemListRevealOptionsItemNode {
                             }
                             
                             composedString = composedReplyString
+                        }
+                        
+                        if let keywords = item.filterData?.keywords, !keywords.isEmpty {
+                            // Luckgram keyword folders: blue text on a light blue pill (TextNode draws
+                            // "TelegramBackground" in the range's text color at low alpha).
+                            let highlightColor = item.presentationData.theme.list.itemAccentColor
+                            for (range, _) in keywordFolderRanges(in: composedString.string, keywords: keywords) {
+                                if range.location + range.length <= composedString.length {
+                                    composedString.addAttribute(.foregroundColor, value: highlightColor, range: range)
+                                    composedString.addAttribute(NSAttributedString.Key(rawValue: "TelegramBackground"), value: true as NSNumber, range: range)
+                                }
+                            }
                         }
                         
                         attributedText = composedString
