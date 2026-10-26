@@ -13,6 +13,7 @@ import DeviceAccess
 import TelegramStringFormatting
 import PeerNameColorItem
 import WalletContext
+import LuckgramUI
 
 enum SettingsSection: Int, CaseIterable {
     case edit
@@ -247,6 +248,16 @@ func settingsItems(data: PeerInfoScreenData?, context: AccountContext, presentat
         interaction.openSettings(.chatFolders)
     }))
     
+    // Luckgram: "Luckgram Features" goes right above Telegram Premium, or above Notifications when Premium is hidden.
+    LuckgramStrings.appLanguageCode = presentationData.strings.primaryComponent.languageCode
+    let luckgramFeaturesItem = PeerInfoScreenDisclosureItem(id: 99, text: LuckgramStrings.featuresTitle, icon: LuckgramIcons.settings, action: {
+        interaction.openSettings(.luckgram)
+    })
+    let luckgramShowsPremium = !PremiumConfiguration.with(appConfiguration: context.currentAppConfiguration.with { $0 }).isPremiumDisabled || context.isPremium
+    if !luckgramShowsPremium {
+        items[.advanced]!.append(luckgramFeaturesItem)
+    }
+    
     let notificationsWarning: Bool
     if let settings = data.globalSettings {
         notificationsWarning = shouldDisplayNotificationsPermissionWarning(status: settings.notificationAuthorizationStatus, suppressed:  settings.notificationWarningSuppressed)
@@ -278,6 +289,7 @@ func settingsItems(data: PeerInfoScreenData?, context: AccountContext, presentat
     let premiumConfiguration = PremiumConfiguration.with(appConfiguration: context.currentAppConfiguration.with { $0 })
     let isPremiumDisabled = premiumConfiguration.isPremiumDisabled
     if !isPremiumDisabled || context.isPremium {
+        items[.payment]!.append(luckgramFeaturesItem)
         items[.payment]!.append(PeerInfoScreenDisclosureItem(id: 100, label: .text(""), text: presentationData.strings.Settings_Premium, icon: PresentationResourcesSettings.premium, action: {
             interaction.openSettings(.premium)
         }))

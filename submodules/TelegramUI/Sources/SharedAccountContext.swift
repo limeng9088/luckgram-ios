@@ -127,6 +127,7 @@ import TextProcessingScreen
 import CreateBotScreen
 import EmojiStatusSelectionComponent
 import EntityKeyboard
+import LuckgramUI
 
 private final class AccountUserInterfaceInUseContext {
     let subscribers = Bag<(Bool) -> Void>()
@@ -588,6 +589,7 @@ public final class SharedAccountContextImpl: SharedAccountContext {
         let startTime = CFAbsoluteTimeGetCurrent()
         
         let differenceDisposable = MetaDisposable()
+        var luckgramPreviousRecordIds: Set<AccountRecordId>?
         let _ = (accountManager.accountRecords()
         |> map { view -> (AccountRecordId?, [AccountRecordId: AccountAttributes], (AccountRecordId, Bool)?) in
             print("SharedAccountContextImpl: records appeared in \(CFAbsoluteTimeGetCurrent() - startTime)")
@@ -653,6 +655,15 @@ public final class SharedAccountContextImpl: SharedAccountContext {
             return true
         })
         |> deliverOnMainQueue).start(next: { primaryId, records, authRecord in
+            // Luckgram: drop per-account Luckgram data of removed accounts; wipe everything when none is left.
+            let luckgramRecordIds = Set(records.keys)
+            if let previous = luckgramPreviousRecordIds {
+                for removed in previous.subtracting(luckgramRecordIds) {
+                    LuckgramSettings.shared.accountRemoved(accountId: removed.int64, noAccountsLeft: luckgramRecordIds.isEmpty)
+                }
+            }
+            luckgramPreviousRecordIds = luckgramRecordIds
+            
             var addedSignals: [Signal<AddedAccountResult, NoError>] = []
             var addedAuthSignal: Signal<UnauthorizedAccount?, NoError> = .single(nil)
             for (id, attributes) in records {
