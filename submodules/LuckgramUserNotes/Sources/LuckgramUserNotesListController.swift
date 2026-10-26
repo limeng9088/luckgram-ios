@@ -125,14 +125,7 @@ private enum UserNotesListEntry: ItemListNodeEntry {
 
 /// The line of the note that matches the query, otherwise the first line.
 private func noteSnippet(_ text: String, query: String) -> String {
-    if !query.isEmpty {
-        for line in text.components(separatedBy: .newlines) {
-            if line.range(of: query, options: [.caseInsensitive, .diacriticInsensitive]) != nil {
-                return line.trimmingCharacters(in: .whitespaces)
-            }
-        }
-    }
-    return LuckgramUserNotesStore.firstLine(text)
+    return LuckgramUserNotesText.snippet(note: text, query: query)
 }
 
 /// "All notes": every private note of the current account, searchable by note text and name.
@@ -186,12 +179,8 @@ public func luckgramUserNotesListController(context: AccountContext) -> ViewCont
         var index: Int32 = 0
         for (note, peer) in notes {
             let title = peer.displayTitle(strings: presentationData.strings, displayOrder: presentationData.nameDisplayOrder)
-            if !trimmedQuery.isEmpty {
-                let matchesNote = note.text.range(of: trimmedQuery, options: [.caseInsensitive, .diacriticInsensitive]) != nil
-                let matchesName = title.range(of: trimmedQuery, options: [.caseInsensitive, .diacriticInsensitive]) != nil
-                if !matchesNote && !matchesName {
-                    continue
-                }
+            if !LuckgramUserNotesText.matches(query: trimmedQuery, note: note.text, name: title) {
+                continue
             }
             entries.append(.note(index, peer, noteSnippet(note.text, query: trimmedQuery)))
             index += 1

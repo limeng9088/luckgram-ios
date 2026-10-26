@@ -16,7 +16,7 @@ import AccountContext
 public final class LuckgramUserNotesStore {
     /// Feature switch key, registered in the Luckgram settings registry (spec 00). Device-wide, default on.
     public static let featureKey = "user_notes"
-    public static let maxLength = 2000
+    public static let maxLength = LuckgramUserNotesText.maxLength
 
     /// Reads the same storage as `LuckgramSettings.shared.isEnabled("user_notes")` (spec 00):
     /// the `luckgram_settings` UserDefaults suite, default on.
@@ -83,10 +83,7 @@ public final class LuckgramUserNotesStore {
     }
 
     public func setNote(peerId: EnginePeer.Id, text: String?) {
-        var value = (text ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-        if value.count > LuckgramUserNotesStore.maxLength {
-            value = String(value.prefix(LuckgramUserNotesStore.maxLength))
-        }
+        let value = LuckgramUserNotesText.normalize(text)
         let key = peerId.toInt64()
         if value.isEmpty {
             self.entries.removeValue(forKey: key)
@@ -138,13 +135,7 @@ public final class LuckgramUserNotesStore {
     }
 
     public static func firstLine(_ text: String) -> String {
-        for line in text.components(separatedBy: .newlines) {
-            let trimmed = line.trimmingCharacters(in: .whitespaces)
-            if !trimmed.isEmpty {
-                return trimmed
-            }
-        }
-        return ""
+        return LuckgramUserNotesText.firstLine(text)
     }
 }
 
