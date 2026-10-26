@@ -1577,6 +1577,19 @@ final class ChatListControllerNode: ASDisplayNode, ASGestureRecognizerDelegate {
                 
                 let isEditing = self.isReorderingFilters || (self.mainContainerNode.currentItemNode.currentState.editing && !self.didBeginSelectingChatsWhileEditing)
                 
+                // Luckgram: "+" after the last folder opens "New Folder" / "Keyword Folder".
+                var addFolderTabs: [HorizontalTabsComponent.Tab] = []
+                if !isEditing && KeywordFoldersSettings.isEnabled, case .chatList(.root) = self.location {
+                    addFolderTabs.append(HorizontalTabsComponent.Tab(
+                        id: AnyHashable("luckgram.addFolder"),
+                        content: .title(HorizontalTabsComponent.Tab.Title(text: "+", entities: [], enableAnimations: false)),
+                        badge: nil,
+                        action: { [weak self] in
+                            self?.controller?.presentAddFolderMenu()
+                        }
+                    ))
+                }
+                
                 tabs = AnyComponent(HorizontalTabsComponent(
                     context: self.context,
                     theme: self.presentationData.theme,
@@ -1677,7 +1690,7 @@ final class ChatListControllerNode: ASDisplayNode, ASGestureRecognizerDelegate {
                                 }
                             }
                         )
-                    },
+                    } + addFolderTabs,
                     selectedTab: selectedTab,
                     isEditing: isEditing,
                     liftWhileSwitching: layout.deviceMetrics.type != .tablet
