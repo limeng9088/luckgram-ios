@@ -18,11 +18,14 @@ public final class LuckgramUserNotesStore {
     public static let featureKey = "user_notes"
     public static let maxLength = 2000
 
+    /// Reads the same storage as `LuckgramSettings.shared.isEnabled("user_notes")` (spec 00):
+    /// the `luckgram_settings` UserDefaults suite, default on.
     public static var isEnabled: Bool {
-        if let value = UserDefaults.standard.object(forKey: "luckgram.\(featureKey)") as? Bool {
-            return value
+        let defaults = UserDefaults(suiteName: "luckgram_settings") ?? .standard
+        if defaults.object(forKey: featureKey) == nil {
+            return true
         }
-        return true
+        return defaults.bool(forKey: featureKey)
     }
 
     public struct Note: Equatable {
