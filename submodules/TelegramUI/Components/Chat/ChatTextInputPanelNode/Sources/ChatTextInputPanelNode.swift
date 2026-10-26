@@ -502,6 +502,7 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
                     if itemAndButton == nil {
                         let button = AccessoryItemIconButton(item: item, theme: currentState.theme, strings: currentState.strings)
                         button.addTarget(self, action: #selector(self.accessoryItemButtonPressed(_:)), for: .touchUpInside)
+                        self.setupTranslateOutLongPress(button: button, item: item)
                         itemAndButton = (item, button)
                     }
                     updatedButtons.append(itemAndButton!)
@@ -1094,6 +1095,7 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
     
     deinit {
         self.statusDisposable.dispose()
+        self.translateOutDisposable?.dispose()
         self.tooltipController?.dismiss()
         self.currentEmojiSuggestion?.disposable.dispose()
     }
@@ -2415,6 +2417,7 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
                 if itemAndButton == nil {
                     let button = AccessoryItemIconButton(item: item, theme: interfaceState.theme, strings: interfaceState.strings)
                     button.addTarget(self, action: #selector(self.accessoryItemButtonPressed(_:)), for: .touchUpInside)
+                    self.setupTranslateOutLongPress(button: button, item: item)
                     itemAndButton = (item, button)
                 }
                 updatedButtons.append(itemAndButton!)
@@ -5984,6 +5987,124 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
         self.interfaceInteraction?.stopIncomingStreamingMessage()
     }
     
+    // MARK: - Luckgram: translate before sending (feature 01)
+
+    private var translateOutDisposable: Disposable?
+    private var translateOutIsBusy = false
+
+    private func setupTranslateOutLongPress(button: AccessoryItemIconButton, item: ChatTextInputAccessoryItem) {
+        guard case .translate = item else {
+            return
+        }
+        let recognizer = UILongPressGestureRecognizer(target: self, action: #selector(self.translateOutLongPressed(_:)))
+        recognizer.minimumPressDuration = 0.4
+        button.addGestureRecognizer(recognizer)
+    }
+
+    @objc private func translateOutLongPressed(_ recognizer: UILongPressGestureRecognizer) {
+        guard recognizer.state == .began else {
+            return
+        }
+        self.showTranslateOutLanguages()
+    }
+
+    private func translateOutPeer() -> (peerId: EnginePeer.Id, threadId: Int64?)? {
+        guard let interfaceState = self.presentationInterfaceState, let peerId = interfaceState.chatLocation.peerId else {
+            return nil
+        }
+        return (peerId, interfaceState.chatLocation.threadId)
+    }
+
+    private func translateOutPressed(language: String?) {
+        guard !self.translateOutIsBusy, let context = self.context, let interfaceState = self.presentationInterfaceState, let peer = self.translateOutPeer() else {
+            return
+        }
+        let peerId = peer.peerId
+        let threadId = peer.threadId
+        let sourceState = interfaceState.interfaceState.composeInputState
+        let sourceText = sourceState.inputText
+        if sourceText.string.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return
+        }
+        let strings = LuckgramTranslateOut.Strings(interfaceState.strings)
+
+        let languageSignal: Signal<String, NoError>
+        if let language {
+            languageSignal = .single(language)
+        } else {
+            languageSignal = LuckgramTranslateOut.resolveLanguage(context: context, peerId: peerId, threadId: threadId)
+        }
+
+        self.translateOutIsBusy = true
+        self.translateOutDisposable?.dispose()
+        self.translateOutDisposable = (languageSignal
+        |> mapToSignal { toLang -> Signal<(String, NSAttributedString?), NoError> in
+            return LuckgramTranslateOut.translate(context: context, text: sourceText, toLang: toLang)
+            |> map { result in
+                return (toLang, result)
+            }
+        }
+        |> deliverOnMainQueue).startStrict(next: { [weak self] toLang, result in
+            guard let self else {
+                return
+            }
+            self.translateOutIsBusy = false
+            let presentationData = context.sharedContext.currentPresentationData.with { $0 }
+            guard let result else {
+                self.interfaceInteraction?.presentController(UndoOverlayController(presentationData: presentationData, content: .info(title: nil, text: strings.failed, timeout: nil, customUndoText: nil), elevatedLayout: false, action: { _ in return false }), nil)
+                return
+            }
+            // Don't overwrite what the user typed meanwhile.
+            guard let currentState = self.presentationInterfaceState?.interfaceState.composeInputState, currentState == sourceState else {
+                return
+            }
+            let translatedState = ChatTextInputState(inputText: result)
+            self.interfaceInteraction?.updateTextInputStateAndMode { _, inputMode in
+                return (translatedState, inputMode)
+            }
+            let undoController = UndoOverlayController(presentationData: presentationData, content: .info(title: nil, text: strings.translatedTo(strings.languageName(toLang)), timeout: 5.0, customUndoText: strings.undo), elevatedLayout: false, action: { [weak self] action in
+                guard let self, case .undo = action else {
+                    return false
+                }
+                // Restore the original only if the translation is still untouched.
+                if let currentState = self.presentationInterfaceState?.interfaceState.composeInputState, currentState.inputText.string == translatedState.inputText.string {
+                    self.interfaceInteraction?.updateTextInputStateAndMode { _, inputMode in
+                        return (sourceState, inputMode)
+                    }
+                }
+                return true
+            })
+            self.interfaceInteraction?.presentController(undoController, nil)
+        })
+    }
+
+    private func showTranslateOutLanguages() {
+        guard let context = self.context, let interfaceState = self.presentationInterfaceState, let peer = self.translateOutPeer() else {
+            return
+        }
+        let peerId = peer.peerId
+        let strings = LuckgramTranslateOut.Strings(interfaceState.strings)
+        let isDark = interfaceState.theme.overallDarkAppearance
+        let _ = (combineLatest(
+            LuckgramTranslateOut.savedLanguage(context: context, peerId: peerId),
+            LuckgramTranslateOut.recentLanguages(context: context)
+        )
+        |> take(1)
+        |> deliverOnMainQueue).startStandalone(next: { [weak self] saved, recent in
+            guard let self else {
+                return
+            }
+            let picker = LuckgramTranslateOutLanguagePicker(strings: strings, selected: saved, recent: recent, isDark: isDark, completion: { [weak self] code in
+                guard let self else {
+                    return
+                }
+                LuckgramTranslateOut.saveLanguage(context: context, peerId: peerId, code: code)
+                self.translateOutPressed(language: code)
+            })
+            context.sharedContext.mainWindow?.presentNative(picker.wrappedInNavigation())
+        })
+    }
+
     @objc func accessoryItemButtonPressed(_ button: UIView) {
         for (item, currentButton) in self.accessoryItemButtons {
             if currentButton === button {
@@ -6023,6 +6144,8 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
                     self.interfaceInteraction?.openPremiumGift()
                 case .suggestPost:
                     self.interfaceInteraction?.openSuggestPost(nil, .default)
+                case .translate:
+                    self.translateOutPressed(language: nil)
                 }
                 break
             }
