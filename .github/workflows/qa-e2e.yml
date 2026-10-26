@@ -25,6 +25,8 @@ on:
         description: 'luckgram-qa 的分支 / commit'
         required: false
         default: 'master'
+  push:  # TEMP: 验证用，开 PR 前删除
+    branches: [ci/qa-test-backend]
   schedule:
     # master 每晚回归：北京时间 03:00（错开 Android）
     - cron: '0 19 * * *'
@@ -109,11 +111,9 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: ${{ env.CACHE_DIR }}
-          key: bazel-sim-${{ github.ref_name }}-${{ github.run_id }}
+          key: bazel-sim-master-${{ github.run_id }}
           restore-keys: |
-            bazel-sim-${{ github.ref_name }}-
             bazel-sim-master-
-            bazel-sim-
 
       - name: Build debug_sim_arm64
         if: env.BUILD == 'true'
@@ -136,12 +136,13 @@ jobs:
           test -n "$IPA"
           cp -L "$IPA" "$GITHUB_WORKSPACE/app/Luckgram-sim-$(git rev-parse --short HEAD).ipa"
 
-      - name: Save bazel cache (simulator)
-        if: always() && env.BUILD == 'true'
+      # 仓库 Actions 缓存已接近 10 GB 上限：模拟器缓存只由 master 保存一份，分支只读，避免挤掉编译缓存
+      - name: Save bazel cache (simulator, master only)
+        if: always() && env.BUILD == 'true' && github.ref == 'refs/heads/master'
         uses: actions/cache/save@v4
         with:
           path: ${{ env.CACHE_DIR }}
-          key: bazel-sim-${{ github.ref_name }}-${{ github.run_id }}
+          key: bazel-sim-master-${{ github.run_id }}
 
       - name: Upload simulator app
         if: env.BUILD == 'true'
