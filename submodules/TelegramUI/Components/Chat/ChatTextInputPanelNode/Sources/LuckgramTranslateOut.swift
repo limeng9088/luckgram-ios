@@ -13,11 +13,11 @@ import TextFormat
 import AccountContext
 import TelegramPresentationData
 import TelegramUIPreferences
+import LuckgramUI
 
 public enum LuckgramTranslateOut {
-    /// Switch key, registered in the Luckgram feature registry ("消息与语言" group). Default: on.
+    /// Switch key, registered in `LuckgramFeatures` ("消息与语言" group, default on).
     public static let featureKey = "translate_out"
-    public static let featureDefault = true
 
     /// Fallback when neither the chat nor the peer's last message gives us a language.
     public static let fallbackLanguage = "en"
@@ -37,23 +37,17 @@ public enum LuckgramTranslateOut {
 
     // MARK: - Switch
 
-    /// Device level switch shared by all accounts. Same storage as feature 00's `LuckgramSettings`
-    /// (`UserDefaults(suiteName: "luckgram_settings")`, key = feature key; unset = registry default), so the
-    /// "Settings → Luckgram features" switch applies here. Android: `SharedPreferences("luckgram_settings")`.
+    /// Local switch on "Settings -> Luckgram features" and not switched off remotely (`LuckgramSettings`,
+    /// feature 00). The default (on) comes from the registry.
     public static var isEnabled: Bool {
-        if let value = UserDefaults(suiteName: "luckgram_settings")?.object(forKey: featureKey) as? Bool {
-            return value
-        }
-        return featureDefault
+        return LuckgramSettings.shared.isEnabled(featureKey)
     }
 
     // MARK: - Strings
 
+    /// Same rule as every other Luckgram string (`LuckgramStrings`, feature 00).
     static func isChinese(_ strings: PresentationStrings?) -> Bool {
-        if let code = strings?.baseLanguageCode.lowercased(), code.hasPrefix("zh") {
-            return true
-        }
-        return Locale.preferredLanguages.first?.lowercased().hasPrefix("zh") ?? false
+        return LuckgramStrings.isChinese
     }
 
     struct Strings {
