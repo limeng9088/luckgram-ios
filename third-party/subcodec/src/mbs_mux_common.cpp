@@ -5,7 +5,30 @@
 #include <cmath>
 #include <algorithm>
 #include <vector>
+#if defined(__ARM_NEON) || defined(__ARM_NEON__)
 #include <arm_neon.h>
+#else
+/* Luckgram QA: Intel Mac 模拟器（debug_sim_x86_64）没有 NEON，用逐字节实现代替下面用到的几个 intrinsic。
+ * 只影响 x86_64 模拟器构建，真机和 arm64 模拟器仍走 <arm_neon.h>。 */
+#include <cstdint>
+struct uint8x16_t { uint8_t v[16]; };
+struct int8x16_t { int8_t v[16]; };
+static inline int8x16_t vdupq_n_s8(int8_t x) { int8x16_t r; for (int k = 0; k < 16; k++) r.v[k] = x; return r; }
+static inline uint8x16_t vdupq_n_u8(uint8_t x) { uint8x16_t r; for (int k = 0; k < 16; k++) r.v[k] = x; return r; }
+static inline uint8x16_t vld1q_u8(const uint8_t* p) { uint8x16_t r; memcpy(r.v, p, 16); return r; }
+static inline void vst1q_u8(uint8_t* p, uint8x16_t a) { memcpy(p, a.v, 16); }
+static inline uint8x16_t vshlq_u8(uint8x16_t a, int8x16_t s) {
+    uint8x16_t r;
+    for (int k = 0; k < 16; k++) {
+        int sh = s.v[k];
+        r.v[k] = sh >= 0 ? (sh >= 8 ? 0 : static_cast<uint8_t>(a.v[k] << sh)) : (-sh >= 8 ? 0 : static_cast<uint8_t>(a.v[k] >> -sh));
+    }
+    return r;
+}
+static inline uint8x16_t vorrq_u8(uint8x16_t a, uint8x16_t b) { uint8x16_t r; for (int k = 0; k < 16; k++) r.v[k] = a.v[k] | b.v[k]; return r; }
+static inline uint8x16_t vceqq_u8(uint8x16_t a, uint8x16_t b) { uint8x16_t r; for (int k = 0; k < 16; k++) r.v[k] = a.v[k] == b.v[k] ? 0xFF : 0; return r; }
+static inline uint8_t vmaxvq_u8(uint8x16_t a) { uint8_t m = 0; for (int k = 0; k < 16; k++) m = a.v[k] > m ? a.v[k] : m; return m; }
+#endif
 
 namespace subcodec::mux {
 

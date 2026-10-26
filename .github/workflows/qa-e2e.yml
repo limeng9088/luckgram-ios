@@ -120,7 +120,8 @@ jobs:
             --configurationPath=build-system/appstore-configuration.json \
             --codesigningInformationPath=build-system/fake-codesigning \
             --configuration=debug_sim_x86_64 \
-            --buildNumber=10000
+            --buildNumber=10000 \
+            --continueOnError
 
           mkdir -p "$GITHUB_WORKSPACE/app"
           IPA=$(ls bazel-bin/Telegram/Telegram.ipa bazel-out/*/bin/Telegram/Telegram.ipa 2>/dev/null | head -1)
