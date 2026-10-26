@@ -27,6 +27,7 @@ final class LuckgramCallRecordingUploader {
     private let resource = LocalFileMediaResource(fileId: Int64.random(in: Int64.min ... Int64.max))
     
     private var targetPeerId: EnginePeer.Id?
+    private var targetName: String = LuckgramCallRecordingStrings.savedMessages
     private var deliveredDisposable: Disposable?
     private var sentMessageId: EngineMessage.Id?
     private var aiDone = false
@@ -49,18 +50,28 @@ final class LuckgramCallRecordingUploader {
     private func start() {
         let account = self.context.account
         let wantedTarget = LuckgramCallRecordingSettings.targetPeerId(account: account)
-        let targetSignal: Signal<EnginePeer.Id, NoError>
+        let targetSignal: Signal<(EnginePeer.Id, String?), NoError>
         if let wantedTarget {
             // Fall back to Saved Messages if the chosen chat is gone.
+            let presentationData = self.context.sharedContext.currentPresentationData.with { $0 }
             targetSignal = self.context.engine.data.get(TelegramEngine.EngineData.Item.Peer.Peer(id: wantedTarget))
-            |> map { peer -> EnginePeer.Id in
-                return peer != nil ? wantedTarget : account.peerId
+            |> map { peer -> (EnginePeer.Id, String?) in
+                if let peer {
+                    return (wantedTarget, peer.displayTitle(strings: presentationData.strings, displayOrder: presentationData.nameDisplayOrder))
+                }
+                return (account.peerId, nil)
             }
         } else {
-            targetSignal = .single(account.peerId)
+            targetSignal = .single((account.peerId, nil))
         }
-        let _ = (targetSignal |> deliverOnMainQueue).start(next: { [weak self] targetPeerId in
-            self?.send(to: targetPeerId)
+        let _ = (targetSignal |> deliverOnMainQueue).start(next: { [weak self] targetPeerId, name in
+            guard let self else {
+                return
+            }
+            if let name, !name.isEmpty {
+                self.targetName = name
+            }
+            self.send(to: targetPeerId)
         })
         self.startAi()
     }
@@ -112,6 +123,7 @@ final class LuckgramCallRecordingUploader {
                 self.sentMessageId = id
                 self.deliveredDisposable?.dispose()
                 self.deliveredDisposable = nil
+                luckgramCallRecordingToast(context: self.context, text: LuckgramCallRecordingStrings.savedToast(self.targetName))
                 // The local upload copy is no longer needed (spec 04 §5).
                 let resourceId = EngineMediaResource.Id(self.resource.id)
                 let engine = self.context.engine
