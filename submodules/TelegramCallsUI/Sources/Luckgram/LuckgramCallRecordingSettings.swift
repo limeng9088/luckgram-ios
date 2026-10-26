@@ -4,8 +4,11 @@ import AccountContext
 
 /// Luckgram: call recording settings.
 ///
-/// Switches are per device and shared by all accounts (spec 00 §5), in UserDefaults under the
-/// same keys as Android / the Luckgram feature registry (`call_recording`, …).
+/// Switches are per device and shared by all accounts (spec 00 §5). They live in exactly the
+/// store 00's `LuckgramSettings` uses — `UserDefaults(suiteName: "luckgram_settings")`, bare key,
+/// same keys as Android (`call_recording`, …) — so the switch on the Luckgram features page and
+/// this feature read the same value (limeng9088/luckgram-specs#43). `LuckgramUI` is not on master
+/// yet; once 00 is merged these accessors switch to `LuckgramSettings.shared`.
 ///
 /// The save-to chat is per account (a peer id only means something inside one account), stored
 /// in a small file in the account's own directory, which Telegram removes with the account on
@@ -18,19 +21,19 @@ public enum LuckgramCallRecordingSettings {
     /// Post a transcript + summary reply via the AI gateway. Default on.
     public static let aiTranscriptKey = "call_recording_ai_transcript"
     
-    private static let defaultsPrefix = "luckgram_settings."
-    private static var defaults: UserDefaults { UserDefaults.standard }
+    /// Must match `LuckgramSettings.suiteName` in submodules/LuckgramUI (feature 00).
+    private static let suiteName = "luckgram_settings"
+    private static let defaults: UserDefaults = UserDefaults(suiteName: suiteName) ?? .standard
     
     private static func bool(_ key: String, _ def: Bool) -> Bool {
-        let fullKey = defaultsPrefix + key
-        if defaults.object(forKey: fullKey) == nil {
+        if defaults.object(forKey: key) == nil {
             return def
         }
-        return defaults.bool(forKey: fullKey)
+        return defaults.bool(forKey: key)
     }
     
     private static func setBool(_ key: String, _ value: Bool) {
-        defaults.set(value, forKey: defaultsPrefix + key)
+        defaults.set(value, forKey: key)
     }
     
     public static var isEnabled: Bool {
