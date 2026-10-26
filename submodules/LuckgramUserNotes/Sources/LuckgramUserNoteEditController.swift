@@ -10,14 +10,17 @@ import TelegramPresentationData
 import ItemListUI
 import PresentationDataUtils
 import AccountContext
+import UndoUI
 
 private final class UserNoteEditArguments {
     let updateText: (String) -> Void
+    let textTooLong: () -> Void
     let delete: () -> Void
     let openAllNotes: () -> Void
 
-    init(updateText: @escaping (String) -> Void, delete: @escaping () -> Void, openAllNotes: @escaping () -> Void) {
+    init(updateText: @escaping (String) -> Void, textTooLong: @escaping () -> Void, delete: @escaping () -> Void, openAllNotes: @escaping () -> Void) {
         self.updateText = updateText
+        self.textTooLong = textTooLong
         self.delete = delete
         self.openAllNotes = openAllNotes
     }
@@ -94,6 +97,13 @@ private enum UserNoteEditEntry: ItemListNodeEntry {
         case let .text(text, placeholder):
             return ItemListMultilineInputItem(presentationData: presentationData, systemStyle: .glass, text: text, placeholder: placeholder, maxLength: ItemListMultilineInputItemTextLimit(value: LuckgramUserNotesStore.maxLength, display: true), sectionId: self.section, style: .blocks, minimalHeight: 120.0, textUpdated: { updatedText in
                 arguments.updateText(updatedText)
+            }, shouldUpdateText: { newText in
+                // Same as Android: refuse input past the limit and say why.
+                if newText.count > LuckgramUserNotesStore.maxLength {
+                    arguments.textTooLong()
+                    return false
+                }
+                return true
             })
         case let .info(text):
             return ItemListTextItem(presentationData: presentationData, text: .plain(text), sectionId: self.section)
@@ -121,10 +131,21 @@ public func luckgramUserNoteEditController(context: AccountContext, peerId: Engi
     var dismissImpl: (() -> Void)?
     var presentImpl: ((ViewController) -> Void)?
     var pushImpl: ((ViewController) -> Void)?
+    var savedImpl: (() -> Void)?
 
+    var lastTooLongToast: Double = 0.0
     let arguments = UserNoteEditArguments(updateText: { text in
         let _ = textValue.swap(text)
         textPromise.set(text)
+    }, textTooLong: {
+        let now = CFAbsoluteTimeGetCurrent()
+        if now - lastTooLongToast < 2.0 {
+            return
+        }
+        lastTooLongToast = now
+        let presentationData = context.sharedContext.currentPresentationData.with { $0 }
+        let strings = LuckgramUserNotesStrings(strings: presentationData.strings)
+        presentImpl?(UndoOverlayController(presentationData: presentationData, content: .info(title: nil, text: strings.tooLong, timeout: nil, customUndoText: nil), elevatedLayout: false, action: { _ in return false }))
     }, delete: {
         let presentationData = context.sharedContext.currentPresentationData.with { $0 }
         let strings = LuckgramUserNotesStrings(strings: presentationData.strings)
@@ -133,6 +154,7 @@ public func luckgramUserNoteEditController(context: AccountContext, peerId: Engi
             TextAlertAction(type: .destructiveAction, title: strings.delete, action: {
                 store.setNote(peerId: peerId, text: nil)
                 completion?()
+                savedImpl?()
                 dismissImpl?()
             })
         ]))
@@ -147,6 +169,7 @@ public func luckgramUserNoteEditController(context: AccountContext, peerId: Engi
         let rightNavigationButton = ItemListNavigationButton(content: .text(strings.done), style: .bold, enabled: true, action: {
             store.setNote(peerId: peerId, text: textValue.with { $0 })
             completion?()
+            savedImpl?()
             dismissImpl?()
         })
 
@@ -173,6 +196,27 @@ public func luckgramUserNoteEditController(context: AccountContext, peerId: Engi
     }
     pushImpl = { [weak controller] c in
         controller?.push(c)
+    }
+    // Same as Android: leaving with unsaved changes asks first.
+    var didConfirmDiscard = false
+    savedImpl = {
+        didConfirmDiscard = true
+    }
+    controller.attemptNavigation = { [weak controller] action in
+        let current = textValue.with { $0 }.trimmingCharacters(in: .whitespacesAndNewlines)
+        if didConfirmDiscard || current == initialText.trimmingCharacters(in: .whitespacesAndNewlines) {
+            return true
+        }
+        let presentationData = context.sharedContext.currentPresentationData.with { $0 }
+        let strings = LuckgramUserNotesStrings(strings: presentationData.strings)
+        controller?.present(textAlertController(context: context, title: nil, text: strings.discardTitle, actions: [
+            TextAlertAction(type: .genericAction, title: strings.cancel, action: {}),
+            TextAlertAction(type: .destructiveAction, title: strings.discard, action: {
+                didConfirmDiscard = true
+                action()
+            })
+        ]), in: .window(.root))
+        return false
     }
     return controller
 }

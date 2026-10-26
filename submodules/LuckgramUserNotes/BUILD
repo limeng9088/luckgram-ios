@@ -20,6 +20,7 @@ swift_library(
         "//submodules/ComponentFlow:ComponentFlow",
         "//submodules/LocalizedPeerData:LocalizedPeerData",
         "//submodules/AppBundle:AppBundle",
+        "//submodules/UndoUI:UndoUI",
     ],
     visibility = [
         "//visibility:public",
