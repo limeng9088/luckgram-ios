@@ -99,7 +99,7 @@ private enum UserNoteEditEntry: ItemListNodeEntry {
                 arguments.updateText(updatedText)
             }, shouldUpdateText: { newText in
                 // Same as Android: refuse input past the limit and say why.
-                if newText.count > LuckgramUserNotesStore.maxLength {
+                if !LuckgramUserNotesText.isWithinLimit(newText) {
                     arguments.textTooLong()
                     return false
                 }
