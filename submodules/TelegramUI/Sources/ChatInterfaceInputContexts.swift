@@ -270,6 +270,17 @@ func inputTextPanelStateForChatPresentationInterfaceState(_ chatPresentationInte
                     accessoryItems.append(.botInput(isEnabled: true, inputMode: .bot))
                 }
                 
+                // Luckgram: "translate before sending" sits right next to the send button while there is text.
+                if canSendTextMessages, !chatPresentationInterfaceState.interfaceState.composeInputState.content.isEmptyWhitespaceTrimmed, LuckgramTranslateOut.isEnabled, chatPresentationInterfaceState.chatLocation.peerId != nil, !(chatPresentationInterfaceState.renderedPeer?.peer is TelegramSecretChat) {
+                    var isCustomContents = false
+                    if case .customChatContents = chatPresentationInterfaceState.subject {
+                        isCustomContents = true
+                    }
+                    if !isCustomContents {
+                        accessoryItems.append(.translate)
+                    }
+                }
+                
                 return ChatTextInputPanelState(accessoryItems: accessoryItems, contextPlaceholder: contextPlaceholder, mediaRecordingState: chatPresentationInterfaceState.inputTextPanelState.mediaRecordingState)
             }
     }

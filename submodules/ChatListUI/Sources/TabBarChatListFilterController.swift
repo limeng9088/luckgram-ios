@@ -17,7 +17,8 @@ public func chatListFilterItems(context: AccountContext) -> Signal<(Int, [(ChatL
     //
     // The association is sampled once per filter change rather than observed: a secret chat created
     // afterwards is not reflected in the badge until the filters change again or the app restarts.
-    return context.engine.peers.updatedChatListFilters()
+    // Luckgram: includes local keyword folders (never synced) at their saved tab positions.
+    return updatedChatListFiltersWithKeywordFolders(context: context)
     |> distinctUntilChanged
     |> mapToSignal { filters -> Signal<([ChatListFilter], [EnginePeer.Id: [EnginePeer.Id]], [EnginePeer.Id: EnginePeer.Id]), NoError> in
         var folderPeerIds = Set<EnginePeer.Id>()

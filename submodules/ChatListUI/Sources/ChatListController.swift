@@ -956,7 +956,105 @@ public class ChatListControllerImpl: TelegramBaseController, ChatListController 
         self.requestLayout(transition: .immediate)
     }
     
+    // MARK: Luckgram keyword folders
+    
+    private func keywordFolderTabContextGesture(id: Int32, sourceNode: ContextExtractedContentContainingNode?, sourceView: ContextExtractedContentContainingView?, gesture: ContextGesture?, keepInPlace: Bool) {
+        let strings = self.presentationData.strings
+        var items: [ContextMenuItem] = []
+        items.append(.action(ContextMenuActionItem(text: KeywordFolderStrings.editFolder(strings), icon: { theme in
+            return generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Edit"), color: theme.contextMenu.primaryColor)
+        }, action: { [weak self] c, _ in
+            c?.dismiss(completion: {
+                guard let self else {
+                    return
+                }
+                self.push(keywordFolderEditController(context: self.context, folderId: id - keywordFolderFilterIdBase))
+            })
+        })))
+        items.append(.action(ContextMenuActionItem(text: KeywordFolderStrings.delete(strings), textColor: .destructive, icon: { theme in
+            return generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Delete"), color: theme.contextMenu.destructiveColor)
+        }, action: { [weak self] c, _ in
+            c?.dismiss(completion: {
+                guard let self else {
+                    return
+                }
+                self.askForFilterRemoval(id: id)
+            })
+        })))
+        if let sourceNode {
+            let controller = makeContextController(presentationData: self.presentationData, source: .extracted(ChatListHeaderBarContextExtractedContentSource(controller: self, sourceNode: sourceNode, sourceView: sourceView, keepInPlace: keepInPlace)), items: .single(ContextController.Items(content: .list(items))), recognizer: nil, gesture: gesture)
+            self.context.sharedContext.mainWindow?.presentInGlobalOverlay(controller)
+        } else if let sourceView {
+            let controller = makeContextController(presentationData: self.presentationData, source: .reference(ChatListHeaderBarContextReferenceContentSource(controller: self, sourceView: sourceView)), items: .single(ContextController.Items(content: .list(items))), recognizer: nil, gesture: gesture)
+            self.context.sharedContext.mainWindow?.presentInGlobalOverlay(controller)
+        }
+    }
+    
+    /// "+" at the end of the folder tabs: a new cloud folder or a new keyword folder.
+    func presentAddFolderMenu() {
+        let strings = self.presentationData.strings
+        let actionSheet = ActionSheetController(presentationData: self.presentationData)
+        actionSheet.setItemGroups([
+            ActionSheetItemGroup(items: [
+                ActionSheetButtonItem(title: KeywordFolderStrings.newCloudFolder(strings), color: .accent, action: { [weak self, weak actionSheet] in
+                    actionSheet?.dismissAnimated()
+                    self?.openNewCloudFolderFromTabs()
+                }),
+                ActionSheetButtonItem(title: KeywordFolderStrings.menuItem(strings), color: .accent, action: { [weak self, weak actionSheet] in
+                    actionSheet?.dismissAnimated()
+                    guard let self else {
+                        return
+                    }
+                    openNewKeywordFolder(context: self.context, push: { [weak self] c in
+                        self?.push(c)
+                    }, present: { [weak self] c in
+                        self?.present(c, in: .window(.root))
+                    })
+                })
+            ]),
+            ActionSheetItemGroup(items: [
+                ActionSheetButtonItem(title: strings.Common_Cancel, color: .accent, font: .bold, action: { [weak actionSheet] in
+                    actionSheet?.dismissAnimated()
+                })
+            ])
+        ])
+        self.present(actionSheet, in: .window(.root))
+    }
+    
+    private func openNewCloudFolderFromTabs() {
+        let _ = (combineLatest(queue: .mainQueue(),
+            self.context.engine.peers.currentChatListFilters(),
+            self.context.engine.data.get(
+                TelegramEngine.EngineData.Item.Configuration.UserLimits(isPremium: false),
+                TelegramEngine.EngineData.Item.Configuration.UserLimits(isPremium: true)
+            )
+        )
+        |> take(1)).startStandalone(next: { [weak self] filters, limits in
+            guard let self else {
+                return
+            }
+            let count = filters.filter { filter in
+                if case .filter = filter {
+                    return true
+                }
+                return false
+            }.count
+            let (regularLimits, premiumLimits) = limits
+            if count >= Int(premiumLimits.maxFoldersCount) || (count >= Int(regularLimits.maxFoldersCount) && !self.isPremium) {
+                self.push(PremiumLimitScreen(context: self.context, subject: .folders, count: Int32(count), action: {
+                    return true
+                }))
+            } else {
+                self.push(chatListFilterPresetController(context: self.context, currentPreset: nil, updated: { _ in }))
+            }
+        })
+    }
+    
     func tabContextGesture(id: Int32?, sourceNode: ContextExtractedContentContainingNode?, sourceView: ContextExtractedContentContainingView?, gesture: ContextGesture?, keepInPlace: Bool, isDisabled: Bool) {
+        if let id, isKeywordFolderFilterId(id) {
+            self.keywordFolderTabContextGesture(id: id, sourceNode: sourceNode, sourceView: sourceView, gesture: gesture, keepInPlace: keepInPlace)
+            return
+        }
         let context = self.context
         let filterPeersAreMuted: Signal<(areMuted: Bool, peerIds: [EnginePeer.Id])?, NoError> = self.context.engine.peers.currentChatListFilters()
         |> take(1)
@@ -3704,6 +3802,8 @@ public class ChatListControllerImpl: TelegramBaseController, ChatListController 
             }
         }
         if let reorderedFilterIds = reorderedFilterIdsValue {
+            // Luckgram: keyword folders are not in the cloud state; keep their position locally.
+            let _ = saveKeywordFolderPositions(context: self.context, orderedIds: reorderedFilterIds).startStandalone()
             let _ = (self.context.engine.peers.updateChatListFiltersInteractively { stateFilters in
                 var updatedFilters: [ChatListFilter] = []
                 for id in reorderedFilterIds {
@@ -4554,6 +4654,19 @@ public class ChatListControllerImpl: TelegramBaseController, ChatListController 
     }
     
     func askForFilterRemoval(id: Int32) {
+        if isKeywordFolderFilterId(id) {
+            presentKeywordFolderDeletion(context: self.context, folderId: id - keywordFolderFilterIdBase, present: { [weak self] c in
+                self?.present(c, in: .window(.root))
+            }, completion: { [weak self] in
+                guard let self else {
+                    return
+                }
+                if self.chatListDisplayNode.mainContainerNode.currentItemNode.chatListFilter?.id == id {
+                    self.chatListDisplayNode.mainContainerNode.switchToFilter(id: .all)
+                }
+            })
+            return
+        }
         let apply: () -> Void = { [weak self] in
             guard let strongSelf = self else {
                 return

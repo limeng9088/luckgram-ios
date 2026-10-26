@@ -295,6 +295,9 @@ public protocol AttachmentMediaPickerContext {
 
     var hasTimers: Bool { get }
 
+    /// Luckgram: extra "Send as Round Video" action offered in the send options, if available.
+    var luckgramSendAsRoundVideo: (title: String, action: () -> Void)? { get }
+
     var loadingProgress: Signal<CGFloat?, NoError> { get }
     var mainButtonState: Signal<AttachmentMainButtonState?, NoError> { get }
     var secondaryButtonState: Signal<AttachmentMainButtonState?, NoError> { get }
@@ -309,6 +312,10 @@ public protocol AttachmentMediaPickerContext {
 }
 
 public extension AttachmentMediaPickerContext {
+    var luckgramSendAsRoundVideo: (title: String, action: () -> Void)? {
+        return nil
+    }
+
     var selectionCount: Signal<Int, NoError> {
         return .single(0)
     }
