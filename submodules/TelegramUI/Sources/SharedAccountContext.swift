@@ -392,6 +392,10 @@ public final class SharedAccountContextImpl: SharedAccountContext {
         self._presentationData.set(presentationData)
         // Luckgram: one language rule for every Luckgram string (LuckgramStrings.isChinese).
         LuckgramStrings.appLanguageCode = initialPresentationDataAndSettings.presentationData.strings.primaryComponent.languageCode
+        // Luckgram: the call recording settings page lives in TelegramCallsUI, which LuckgramUI can't import.
+        let _ = LuckgramFeatures.find("call_recording")?.subpage { context in
+            return luckgramCallRecordingSettingsController(context: context)
+        }
         self._automaticMediaDownloadSettings.set(.single(initialPresentationDataAndSettings.automaticMediaDownloadSettings)
         |> then(accountManager.sharedData(keys: [SharedDataKeys.autodownloadSettings, ApplicationSpecificSharedDataKeys.automaticMediaDownloadSettings])
             |> map { sharedData in
