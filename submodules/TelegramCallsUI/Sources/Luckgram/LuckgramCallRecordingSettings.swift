@@ -90,13 +90,17 @@ public protocol LuckgramCallRecordingAI: AnyObject {
     var hasConsent: Bool { get }
     /// Shows the shared consent dialog if needed; `completion(true)` when agreed. Main thread.
     func requestConsent(context: AccountContext, completion: @escaping (Bool) -> Void)
-    /// POST /v1/transcribe. Completion on the main thread with the text or an error message.
+    /// POST /v1/transcribe. The size limit is the client's business: it splits the audio by
+    /// `ai.transcribe_max_mb` from /v1/config (limeng9088/luckgram-specs#53). Completion on the
+    /// main thread with (text, error message); both set = partial transcript (a later segment
+    /// failed, e.g. daily quota) whose finished part must be kept.
     func transcribe(audio: Data, mimeType: String, completion: @escaping (String?, String?) -> Void)
+    /// `ai.max_input_chars` from /v1/config: the longest text `summarize` accepts.
+    var maxSummaryInputChars: Int { get }
     /// POST /v1/chat with task=summary. Completion on the main thread with 3–6 bullet points.
     func summarize(transcript: String, completion: @escaping (String?, String?) -> Void)
 }
 
 public enum LuckgramCallRecordingAIRegistry {
-    public static let maxTranscribeBytes = 25 * 1024 * 1024
     public static var instance: LuckgramCallRecordingAI?
 }

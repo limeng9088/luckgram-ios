@@ -62,7 +62,9 @@ enum LuckgramCallRecordingStrings {
     static var transcriptHeader: String { s("文字稿", "Transcript") }
     static var transcriptContinued: String { s("文字稿（续）", "Transcript (continued)") }
     static var transcriptEmpty: String { s("（没有识别到说话内容）", "(No speech detected)") }
-    static var tooLongForTranscript: String { s("录音超过 25 MB，未生成文字稿。", "The recording is larger than 25 MB, so no transcript was made.") }
+    static func transcriptPartial(_ reason: String) -> String {
+        return isChinese() ? "（后面的部分未转写：" + reason + "）" : "(The rest wasn't transcribed: " + reason + ")"
+    }
     static func transcriptFailed(_ reason: String) -> String {
         return isChinese() ? "文字稿生成失败：" + reason : "Couldn't make a transcript: " + reason
     }

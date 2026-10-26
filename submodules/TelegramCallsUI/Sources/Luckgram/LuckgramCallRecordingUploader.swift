@@ -151,35 +151,55 @@ final class LuckgramCallRecordingUploader {
             self.aiDone = true
             return
         }
-        if self.data.count > LuckgramCallRecordingAIRegistry.maxTranscribeBytes {
-            self.finishAi(LuckgramCallRecordingStrings.tooLongForTranscript)
-            return
-        }
         ai.transcribe(audio: self.data, mimeType: "audio/ogg", completion: { [weak self] text, error in
             guard let self else {
                 return
             }
-            guard let text, error == nil else {
-                self.finishAi(LuckgramCallRecordingStrings.transcriptFailed(error ?? "?"))
-                return
-            }
-            let transcript = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            let transcript = text?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
             if transcript.isEmpty {
-                self.finishAi(LuckgramCallRecordingStrings.transcriptHeader + "\n" + LuckgramCallRecordingStrings.transcriptEmpty)
+                if let error {
+                    self.finishAi(LuckgramCallRecordingStrings.transcriptFailed(error))
+                } else {
+                    self.finishAi(LuckgramCallRecordingStrings.transcriptHeader + "\n" + LuckgramCallRecordingStrings.transcriptEmpty)
+                }
                 return
             }
-            ai.summarize(transcript: transcript, completion: { [weak self] summary, summaryError in
+            // A partial transcript (later segments failed, e.g. daily quota) is kept with a note.
+            let note = error.flatMap { LuckgramCallRecordingStrings.transcriptPartial($0) }
+            let summaryInput = LuckgramCallRecordingUploader.limit(transcript, maxChars: ai.maxSummaryInputChars)
+            ai.summarize(transcript: summaryInput, completion: { [weak self] summary, _ in
                 guard let self else {
                     return
                 }
                 var reply = ""
-                if summaryError == nil, let summary = summary?.trimmingCharacters(in: .whitespacesAndNewlines), !summary.isEmpty {
+                if let summary = summary?.trimmingCharacters(in: .whitespacesAndNewlines), !summary.isEmpty {
                     reply += LuckgramCallRecordingStrings.summaryHeader + "\n" + summary + "\n\n"
                 }
                 reply += LuckgramCallRecordingStrings.transcriptHeader + "\n" + transcript
+                if let note {
+                    reply += "\n\n" + note
+                }
                 self.finishAi(reply)
             })
         })
+    }
+    
+    /// Same as Android's CallRecText.limit: cut to `maxChars`, at a line end or space in the last
+    /// fifth when possible. `maxChars <= 0` = no limit.
+    static func limit(_ text: String, maxChars: Int) -> String {
+        if maxChars <= 0 || text.count <= maxChars {
+            return text
+        }
+        let end = text.index(text.startIndex, offsetBy: maxChars)
+        let floor = text.index(text.startIndex, offsetBy: maxChars - maxChars / 5)
+        let window = text[text.startIndex ..< end]
+        var cut = end
+        if let nl = window.lastIndex(of: "\n"), nl >= floor {
+            cut = nl
+        } else if let sp = window.lastIndex(of: " "), sp >= floor {
+            cut = sp
+        }
+        return String(text[text.startIndex ..< cut]).trimmingCharacters(in: .whitespacesAndNewlines)
     }
     
     private func finishAi(_ reply: String) {
