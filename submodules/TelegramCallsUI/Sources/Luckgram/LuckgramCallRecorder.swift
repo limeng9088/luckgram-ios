@@ -26,7 +26,7 @@ public final class LuckgramCallRecorder {
         let startedAt: Double
         let startDate: Date
         let mixer = LuckgramCallRecordingMixer()
-        let dataItem = TGDataItem(data: Data())
+        let dataItem = TGDataItem()
         let writer = TGOggOpusWriter()
         let isMicMuted = Atomic<Bool>(value: false)
         // Queue-confined.
