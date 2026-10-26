@@ -19,11 +19,11 @@ public enum LuckgramQuickReplies {
     public static let maxCount = 100
     public static let maxLength = 1000
 
-    private static let settingsKey = "luckgram_settings.quick_replies"
-
-    /// Device level switch shared by all accounts (written by the Luckgram settings page, feature 00).
+    /// Device level switch shared by all accounts. Same storage as feature 00's `LuckgramSettings`
+    /// (`UserDefaults(suiteName: "luckgram_settings")`, key = feature key; unset = registry default).
+    /// Android: `SharedPreferences("luckgram_settings")`.
     public static var isEnabled: Bool {
-        if let value = UserDefaults.standard.object(forKey: settingsKey) as? Bool {
+        if let value = UserDefaults(suiteName: "luckgram_settings")?.object(forKey: featureKey) as? Bool {
             return value
         }
         return featureDefault
