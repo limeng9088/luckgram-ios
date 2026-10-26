@@ -391,7 +391,7 @@ public final class SharedAccountContextImpl: SharedAccountContext {
         )
         self._presentationData.set(presentationData)
         // Luckgram: one language rule for every Luckgram string (LuckgramStrings.isChinese).
-        LuckgramStrings.appLanguageCode = presentationData.strings.primaryComponent.languageCode
+        LuckgramStrings.appLanguageCode = initialPresentationDataAndSettings.presentationData.strings.primaryComponent.languageCode
         self._automaticMediaDownloadSettings.set(.single(initialPresentationDataAndSettings.automaticMediaDownloadSettings)
         |> then(accountManager.sharedData(keys: [SharedDataKeys.autodownloadSettings, ApplicationSpecificSharedDataKeys.automaticMediaDownloadSettings])
             |> map { sharedData in
