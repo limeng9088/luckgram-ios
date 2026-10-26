@@ -173,11 +173,9 @@ final class LuckgramQuickRepliesManageController: UITableViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
         self.title = self.strings.title
-        self.navigationItem.rightBarButtonItem = UIBarButtonItem(barButtonSystemItem: .add, target: self, action: #selector(self.addPressed))
-        self.navigationItem.rightBarButtonItem?.accessibilityLabel = self.strings.add
         self.tableView.register(UITableViewCell.self, forCellReuseIdentifier: self.cellIdentifier)
         self.tableView.allowsSelectionDuringEditing = true
-        self.setEditing(true, animated: false)
+        self.updateBarButtons()
 
         self.disposable = (LuckgramQuickReplies.items(context: self.context)
         |> take(1)
@@ -207,6 +205,19 @@ final class LuckgramQuickRepliesManageController: UITableViewController {
 
     private func save() {
         LuckgramQuickReplies.setItems(context: self.context, items: self.items)
+    }
+
+    /// "+" to add, "编辑 / 完成" to toggle reordering (swipe left to delete when not editing).
+    private func updateBarButtons() {
+        let add = UIBarButtonItem(barButtonSystemItem: .add, target: self, action: #selector(self.addPressed))
+        add.accessibilityLabel = self.strings.add
+        let toggle = UIBarButtonItem(title: self.isEditing ? self.strings.done : self.strings.editList, style: self.isEditing ? .done : .plain, target: self, action: #selector(self.toggleEditing))
+        self.navigationItem.rightBarButtonItems = [add, toggle]
+    }
+
+    @objc private func toggleEditing() {
+        self.setEditing(!self.isEditing, animated: true)
+        self.updateBarButtons()
     }
 
     @objc private func addPressed() {

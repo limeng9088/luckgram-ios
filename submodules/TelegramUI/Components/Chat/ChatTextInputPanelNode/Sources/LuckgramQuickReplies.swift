@@ -59,6 +59,7 @@ public enum LuckgramQuickReplies {
         var save: String { return self.chinese ? "保存" : "Save" }
         var cancel: String { return self.chinese ? "取消" : "Cancel" }
         var done: String { return self.chinese ? "完成" : "Done" }
+        var editList: String { return self.chinese ? "编辑" : "Edit" }
         var delete: String { return self.chinese ? "删除" : "Delete" }
         var deleteConfirm: String { return self.chinese ? "删除这条快捷回复？" : "Delete this quick reply?" }
         var limitReached: String {
@@ -66,8 +67,8 @@ public enum LuckgramQuickReplies {
         }
         var manageInfo: String {
             return self.chinese
-                ? "模板只保存在本机当前账号，不会上传。拖动右侧手柄排序，点按编辑，左滑删除。每条最多 \(LuckgramQuickReplies.maxLength) 字，最多 \(LuckgramQuickReplies.maxCount) 条。"
-                : "Templates are stored on this device for the current account only and never uploaded. Drag the handle to reorder, tap to edit, swipe to delete. Up to \(LuckgramQuickReplies.maxLength) characters each, \(LuckgramQuickReplies.maxCount) in total."
+                ? "模板只保存在本机当前账号，不会上传。点按编辑，左滑删除，点「编辑」后拖动排序。每条最多 \(LuckgramQuickReplies.maxLength) 字，最多 \(LuckgramQuickReplies.maxCount) 条。"
+                : "Templates are stored only on this device, for the current account, and are never uploaded. Tap to edit, swipe left to delete, tap Edit to reorder. Up to \(LuckgramQuickReplies.maxLength) characters each, \(LuckgramQuickReplies.maxCount) in total."
         }
         var ok: String { return self.chinese ? "好" : "OK" }
     }
