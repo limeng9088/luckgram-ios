@@ -105,7 +105,9 @@ public enum LuckgramTranslateOut {
 
     private static func chatKey(peerId: EnginePeer.Id) -> EngineDataBuffer {
         let key = EngineDataBuffer(length: 8)
-        key.setInt64(0, value: peerId.id._internalGetInt64Value())
+        // Full peer id (namespace + id), so a user and a group/channel with the same numeric id don't share a language.
+        // Same semantics as Android's dialogId key.
+        key.setInt64(0, value: peerId.toInt64())
         return key
     }
 
