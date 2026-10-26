@@ -559,6 +559,7 @@ swift_library(
         "//submodules/TelegramUI/Components/TranslateHeaderPanelComponent",
         "//submodules/TelegramUI/Components/AdPanelHeaderPanelComponent",
         "//submodules/TelegramUI/Components/MessageFeeHeaderPanelComponent",
+        "//submodules/LuckgramUserNotes",
         "//submodules/TelegramUI/Components/LegacyChatHeaderPanelComponent",
         "//submodules/TelegramUI/Components/GroupCallHeaderPanelComponent",
         "//submodules/TelegramUI/Components/Chat/ChatSearchNavigationContentNode",
