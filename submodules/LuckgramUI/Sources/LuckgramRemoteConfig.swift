@@ -8,6 +8,9 @@ import Foundation
 ///
 /// `features` is the per-device result computed by the server (enabled, rollout_percent and
 /// min_app_version already applied) and wins over `values`.
+///
+/// This is the data model only (task 00). Fetching, `If-None-Match` with `version`, 304 handling
+/// (`LuckgramSettings.touchRemoteConfig()`) and TTL refresh belong to the S4 client.
 public struct LuckgramRemoteConfig {
     public let version: String?
     public let ttlSeconds: Double
@@ -62,6 +65,19 @@ public struct LuckgramRemoteConfig {
 
     public func bool(_ key: String, default defaultValue: Bool) -> Bool {
         return LuckgramRemoteConfig.bool(self.values[key]) ?? defaultValue
+    }
+
+    /// Same data, received again at `now` (HTTP 304 Not Modified).
+    public func withFetchedAt(_ now: Double) -> LuckgramRemoteConfig {
+        return LuckgramRemoteConfig(version: self.version, ttlSeconds: self.ttlSeconds, fetchedAt: now, values: self.values, features: self.features)
+    }
+
+    private init(version: String?, ttlSeconds: Double, fetchedAt: Double, values: [String: Any], features: [String: Any]) {
+        self.version = version
+        self.ttlSeconds = ttlSeconds
+        self.fetchedAt = fetchedAt
+        self.values = values
+        self.features = features
     }
 
     public func isExpired(now: Double) -> Bool {

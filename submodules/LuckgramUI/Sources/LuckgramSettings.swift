@@ -169,6 +169,17 @@ public final class LuckgramSettings {
         return value
     }
 
+    /// HTTP 304 for /v1/config: keep the cached values, restart its TTL.
+    public func touchRemoteConfig() {
+        let touched = self.remoteConfig.withFetchedAt(Date().timeIntervalSince1970)
+        self.remoteConfigLock.lock()
+        self.remoteConfigValue = touched
+        self.remoteConfigLock.unlock()
+        if let data = touched.serialized() {
+            self.defaults.set(data, forKey: LuckgramSettings.remoteConfigKey)
+        }
+    }
+
     /// `version` of the cached /v1/config, for `If-None-Match`; nil if none.
     public var remoteConfigVersion: String? {
         return self.remoteConfig.version
