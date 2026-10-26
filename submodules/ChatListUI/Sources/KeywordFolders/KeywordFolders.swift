@@ -30,27 +30,45 @@ public func isKeywordFolderFilterId(_ id: Int32?) -> Bool {
 
 // MARK: - Feature switch
 
-/// Feature switch `keyword_folders`, default on. Will move to LuckgramSettings once foundation (00) lands.
+/// Feature switch `keyword_folders`, default on.
+///
+/// Stored where foundation (00)'s `LuckgramSettings` keeps every switch: the
+/// `UserDefaults(suiteName: "luckgram_settings")` suite, key `keyword_folders` (same key as Android's
+/// `SharedPreferences("luckgram_settings")`). So the switch on "Settings → Luckgram Features" drives this
+/// feature as soon as 00 is merged. ChatListUI does not depend on LuckgramUI yet (00 is not on master);
+/// once it is, these accessors become `LuckgramSettings.shared.isEnabled(key)` / `isEnabledSignal(key)`.
+/// Changes made through LuckgramSettings are picked up via `UserDefaults.didChangeNotification`.
 public enum KeywordFoldersSettings {
     public static let key = "keyword_folders"
-    private static let defaultsKey = "luckgram.keyword_folders"
+    static let suiteName = "luckgram_settings"
+    static let defaultValue = true
+
+    private static let defaults: UserDefaults = UserDefaults(suiteName: suiteName) ?? .standard
 
     public static var isEnabled: Bool {
-        if let value = UserDefaults.standard.object(forKey: defaultsKey) as? Bool {
-            return value
+        if defaults.object(forKey: key) == nil {
+            return defaultValue
         }
-        return true
+        return defaults.bool(forKey: key)
     }
 
     public static func setEnabled(_ value: Bool) {
-        UserDefaults.standard.set(value, forKey: defaultsKey)
-        enabledPromise.set(value)
+        defaults.set(value, forKey: key)
     }
 
-    static let enabledPromise = ValuePromise<Bool>(KeywordFoldersSettings.isEnabled, ignoreRepeated: true)
-
+    /// Current value, then every change (whoever wrote it). Delivered on the main queue.
     public static var enabledSignal: Signal<Bool, NoError> {
-        return enabledPromise.get()
+        return Signal<Bool, NoError> { subscriber in
+            subscriber.putNext(KeywordFoldersSettings.isEnabled)
+            let observer = NotificationCenter.default.addObserver(forName: UserDefaults.didChangeNotification, object: nil, queue: nil, using: { _ in
+                subscriber.putNext(KeywordFoldersSettings.isEnabled)
+            })
+            return ActionDisposable {
+                NotificationCenter.default.removeObserver(observer)
+            }
+        }
+        |> distinctUntilChanged
+        |> deliverOnMainQueue
     }
 }
 
