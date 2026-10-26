@@ -446,6 +446,9 @@ public final class PresentationCallImpl: PresentationCall {
             self.proximityManagerIndex = DeviceProximityManager.shared().add { _ in
             }
         }
+        
+        // Luckgram: call recording follows this call (auto-record, save when it ends).
+        LuckgramCallRecorder.shared.attach(call: self)
     }
     
     deinit {

@@ -47,6 +47,7 @@
 #include "api/task_queue/pending_task_safety_flag.h"
 #include "api/units/time_delta.h"
 #include <atomic>
+#include <os/lock.h>
 
 #import <TdBinding/TdBinding.h>
 
@@ -143,6 +144,38 @@ public:
 };
 
 }
+
+// Luckgram (call recording): see OngoingCallAudioRecordingTap in the public header.
+typedef void (^LuckgramAudioTapSink)(bool isPlayout, NSData * _Nonnull pcm, int32_t sampleRate, int32_t channels);
+static std::atomic<bool> luckgramAudioTapActive(false);
+static os_unfair_lock luckgramAudioTapLock = OS_UNFAIR_LOCK_INIT;
+static LuckgramAudioTapSink luckgramAudioTapSink = nil;
+
+static void luckgramAudioTap(bool isPlayout, const void *samples, size_t sampleCount, uint32_t sampleRate, size_t channels) {
+    if (!luckgramAudioTapActive.load(std::memory_order_relaxed) || samples == nullptr || sampleCount == 0) {
+        return;
+    }
+    os_unfair_lock_lock(&luckgramAudioTapLock);
+    LuckgramAudioTapSink sink = luckgramAudioTapSink;
+    os_unfair_lock_unlock(&luckgramAudioTapLock);
+    if (sink) {
+        @autoreleasepool {
+            sink(isPlayout, [NSData dataWithBytes:samples length:sampleCount * sizeof(int16_t)], (int32_t)sampleRate, (int32_t)channels);
+        }
+    }
+}
+
+@implementation OngoingCallAudioRecordingTap
+
++ (void)setSink:(void (^ _Nullable)(bool isPlayout, NSData * _Nonnull pcm, int32_t sampleRate, int32_t channels))sink {
+    LuckgramAudioTapSink copied = [sink copy];
+    os_unfair_lock_lock(&luckgramAudioTapLock);
+    luckgramAudioTapSink = copied;
+    os_unfair_lock_unlock(&luckgramAudioTapLock);
+    luckgramAudioTapActive.store(copied != nil, std::memory_order_relaxed);
+}
+
+@end
 
 class WrappedAudioDeviceModuleIOS : public tgcalls::DefaultWrappedAudioDeviceModule, public webrtc::AudioTransport {
 public:
@@ -512,6 +545,7 @@ public:
             }
         }
         _mutex.Unlock();
+        luckgramAudioTap(false, audioSamples, nSamples * nChannels, samplesPerSec, nChannels);
         return 0;
     }
     
@@ -547,6 +581,7 @@ public:
             }
         }
         _mutex.Unlock();
+        luckgramAudioTap(false, audioSamples, nSamples * nChannels, samplesPerSec, nChannels);
         return 0;
     }
 
@@ -626,6 +661,8 @@ public:
         }
         
         _mutex.Unlock();
+        
+        luckgramAudioTap(true, audioSamples, nSamplesOut * nChannels, samplesPerSec, nChannels);
         
         return result;
     }

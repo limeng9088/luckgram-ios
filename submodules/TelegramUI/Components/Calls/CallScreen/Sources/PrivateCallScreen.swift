@@ -207,6 +207,25 @@ public final class PrivateCallScreen: OverlayMaskContainerView, AVPictureInPictu
     private var statusView: StatusView
     private var weakSignalView: WeakSignalView?
     
+    /// Luckgram: an optional control shown centred under the call status (the call recording
+    /// button). Owned by the controller; sized with `sizeThatFits`, hidden while `isHidden`.
+    public var luckgramAccessoryView: UIView? {
+        didSet {
+            if oldValue !== self.luckgramAccessoryView {
+                oldValue?.removeFromSuperview()
+                if let luckgramAccessoryView = self.luckgramAccessoryView {
+                    self.addSubview(luckgramAccessoryView)
+                }
+                self.update(transition: .immediate)
+            }
+        }
+    }
+    
+    /// Luckgram: relayout after the accessory view changed its size or visibility.
+    public func luckgramAccessoryViewUpdated() {
+        self.update(transition: .immediate)
+    }
+    
     private var emojiView: KeyEmojiView?
     private var emojiTooltipView: EmojiTooltipView?
     private var emojiExpandedInfoView: EmojiExpandedInfoView?
@@ -1455,6 +1474,15 @@ public final class PrivateCallScreen: OverlayMaskContainerView, AVPictureInPictu
             genericAlphaTransition.setAlpha(view: self.statusView, alpha: (currentAreControlsHidden || self.isAnimatedOutToGroupCall || (havePrimaryVideo && self.isEmojiKeyExpanded)) ? 0.0 : 1.0)
         }
         
+        var luckgramAccessoryMaxY: CGFloat = statusFrame.maxY
+        if let luckgramAccessoryView = self.luckgramAccessoryView, !luckgramAccessoryView.isHidden {
+            let accessorySize = luckgramAccessoryView.sizeThatFits(CGSize(width: params.size.width - 32.0, height: 40.0))
+            let accessoryFrame = CGRect(origin: CGPoint(x: floor(contentCenterX - accessorySize.width * 0.5), y: statusFrame.maxY + 10.0), size: accessorySize)
+            transition.setFrame(view: luckgramAccessoryView, frame: accessoryFrame)
+            genericAlphaTransition.setAlpha(view: luckgramAccessoryView, alpha: (currentAreControlsHidden || self.isAnimatedOutToGroupCall || (havePrimaryVideo && self.isEmojiKeyExpanded)) ? 0.0 : 1.0)
+            luckgramAccessoryMaxY = accessoryFrame.maxY
+        }
+        
         if case .active = params.state.lifecycleState {
             if let emojiView = self.emojiView, !self.isEmojiKeyExpanded, let emojiViewSize = emojiViewSizeValue {
                 let emojiViewY: CGFloat
@@ -1521,7 +1549,7 @@ public final class PrivateCallScreen: OverlayMaskContainerView, AVPictureInPictu
             if currentAreControlsHidden {
                 weakSignalY = params.insets.top + 2.0
             } else {
-                weakSignalY = statusFrame.maxY + (havePrimaryVideo ? 12.0 : 12.0)
+                weakSignalY = luckgramAccessoryMaxY + (havePrimaryVideo ? 12.0 : 12.0)
             }
             let weakSignalFrame = CGRect(origin: CGPoint(x: floor(contentCenterX - weakSignalSize.width * 0.5), y: weakSignalY), size: weakSignalSize)
             if weakSignalView.bounds.isEmpty {
