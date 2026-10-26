@@ -47,7 +47,7 @@ jobs:
       SOURCE_DIR: /Users/Shared/telegram-ios
       BAZEL_USER_ROOT: /private/var/tmp/_bazel_containerhost
       CACHE_DIR: /Users/runner/telegram-bazel-cache-sim
-      BUILD: ${{ (github.event_name != 'workflow_dispatch' || inputs.build_run_id == '') && 'true' || 'false' }}
+      BUILD: ${{ github.event_name != 'push' && (github.event_name != 'workflow_dispatch' || inputs.build_run_id == '') && 'true' || 'false' }}  # TEMP push=false
       FLOWS: ${{ github.event_name == 'schedule' && 'maestro/ios/smoke maestro/ios/regression' || inputs.flows || 'maestro/ios/smoke' }}
       ACCOUNT: ${{ github.event_name == 'schedule' && 'RI' || inputs.account || 'I1' }}
       OUT: ${{ github.workspace }}/qa-out
@@ -159,7 +159,7 @@ jobs:
           pattern: luckgram-ios-sim-*
           merge-multiple: true
           path: app
-          run-id: ${{ inputs.build_run_id }}
+          run-id: ${{ inputs.build_run_id || '40305933220' }}  # TEMP
           github-token: ${{ github.token }}
 
       - name: Check app
