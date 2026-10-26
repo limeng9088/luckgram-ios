@@ -340,7 +340,11 @@ private func luckgramAISelfTest(context: AccountContext, present: @escaping (Vie
         }
     }
     |> take(1)
-    let transcribe = ai.transcribe(context: context, present: present, audio: LuckgramAI.testToneWav(), mimeType: "audio/wav")
+    let transcribe = ai.transcribe(context: context, present: present, audio: LuckgramAI.testToneWav(seconds: 1), mimeType: "audio/wav")
+    // 150 s WAV ≈ 4.8 MB: over ai.transcribe_max_mb = 4, must be split into 2 segments.
+    let longWav = LuckgramAI.testToneWav(seconds: 150)
+    let transcribeLong = ai.transcribe(context: context, present: present, audio: longWav, mimeType: "audio/wav", language: "zh")
+    let image = ai.image(context: context, present: present, prompt: "a small blue paper plane, flat icon")
     let me = ai.me(context: context, present: present)
 
     let _ = (chat
@@ -348,8 +352,16 @@ private func luckgramAISelfTest(context: AccountContext, present: @escaping (Vie
         lines.append("1. register + stream chat ✓ token=\(ai.hasDeviceToken ? "yes" : "no"), \(deltas) deltas: \(text)")
         return transcribe
     }
-    |> mapToSignal { transcription -> Signal<[String: Any], LuckgramAIError> in
+    |> mapToSignal { transcription -> Signal<LuckgramAI.Transcription, LuckgramAIError> in
         lines.append("2. transcribe ✓ text=\"\(transcription.text)\" language=\(transcription.language ?? "-")")
+        return transcribeLong
+    }
+    |> mapToSignal { transcription -> Signal<LuckgramAI.Image, LuckgramAIError> in
+        lines.append("2b. transcribe \(longWav.count / 1024) KB \(transcription.segments > 1 ? "✓" : "✗") \(transcription.segments) segments: \"\(transcription.text)\"")
+        return image
+    }
+    |> mapToSignal { image -> Signal<[String: Any], LuckgramAIError> in
+        lines.append("2c. image ✓ \(image.mimeType), \(image.data?.count ?? 0) bytes, expires \(image.expiresAt ?? "-")")
         return me
     }
     |> deliverOnMainQueue).start(next: { quota in

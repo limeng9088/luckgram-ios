@@ -5,6 +5,7 @@ import Display
 import AccountContext
 import PresentationDataUtils
 import UndoUI
+import CryptoKit
 
 public struct LuckgramAIError: Error, Equatable, CustomStringConvertible {
     // Codes sent by the API server (docs/api-server.md, specs/server/S2, S3)
@@ -83,16 +84,21 @@ public final class LuckgramAI {
     }
 
     public struct Image {
-        /// Temporary link returned by the server (nil if the server returned bytes).
+        /// Temporary link returned by the server.
         public var url: String?
+        /// Image bytes (downloaded from `url` with the device token).
         public var data: Data?
         public var mimeType: String
+        /// When the temporary link expires (ISO 8601, from the server).
+        public var expiresAt: String?
     }
 
     public struct Transcription: Equatable {
         public var text: String
         public var language: String?
         public var durationSeconds: Double
+        /// Number of uploaded segments (1 unless the file was over `ai.transcribe_max_mb`).
+        public var segments: Int = 1
     }
 
     private static let consentKey = "ai_consent"
@@ -232,46 +238,118 @@ public final class LuckgramAI {
         }
         return self.withConsent(context: context, present: present, self.authorized(method: "POST", path: "/v1/ai/image", contentType: "application/json", body: payload, accept: "application/json")
         |> mapToSignal { event -> Signal<Image, LuckgramAIError> in
+            // docs/api-server.md §3.1: {"url","mime","expires_at"}
             guard case let .body(data) = event, let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else {
                 return .complete()
             }
-            let image = (object["image"] as? [String: Any]) ?? object
-            let url = image["url"] as? String
-            let bytes = (image["b64"] as? String).flatMap { Data(base64Encoded: $0, options: .ignoreUnknownCharacters) }
-            if url == nil && bytes == nil {
+            let info = (object["image"] as? [String: Any]) ?? object
+            var image = Image(url: info["url"] as? String, data: (info["b64"] as? String).flatMap { Data(base64Encoded: $0, options: .ignoreUnknownCharacters) }, mimeType: (info["mime"] as? String) ?? "image/png", expiresAt: info["expires_at"] as? String)
+            if image.data != nil {
+                return .single(image)
+            }
+            guard let url = image.url else {
                 return .fail(LuckgramAIError(code: LuckgramAIError.upstreamUnavailable))
             }
-            return .single(Image(url: url, data: bytes, mimeType: (image["mime"] as? String) ?? "image/png"))
+            return self.download(url)
+            |> map { bytes -> Image in
+                image.data = bytes
+                return image
+            }
         })
     }
 
+    /// Downloads a temporary file from the API server. The device token is sent only to the API
+    /// server's own host (§3.1), never to a third-party host.
+    private func download(_ url: String) -> Signal<Data, LuckgramAIError> {
+        let signal: Signal<HTTPEvent, LuckgramAIError>
+        if self.isAPIHost(url) {
+            signal = self.authorized(method: "GET", path: url, contentType: nil, body: nil, accept: "*/*")
+        } else if let target = URL(string: url) {
+            signal = self.send(URLRequest(url: target))
+        } else {
+            return .fail(LuckgramAIError(code: LuckgramAIError.upstreamUnavailable))
+        }
+        return signal
+        |> mapToSignal { event -> Signal<Data, LuckgramAIError> in
+            if case let .body(data) = event, !data.isEmpty {
+                return .single(data)
+            }
+            return .fail(LuckgramAIError(code: LuckgramAIError.upstreamUnavailable))
+        }
+    }
+
+    private func isAPIHost(_ url: String) -> Bool {
+        guard let host = URL(string: url)?.host?.lowercased() else {
+            return false
+        }
+        if self.isUsingMock {
+            return host == LuckgramAIMock.host
+        }
+        return host == URL(string: LuckgramAI.apiBaseURL)?.host?.lowercased()
+    }
+
+    /// Transcribes an audio file; the request body is the audio itself (§3.1 item 5). Files larger
+    /// than `ai.transcribe_max_mb` are split by `LuckgramAudioSplitter`, uploaded one after another
+    /// and their texts joined in order. Formats that can't be split (MP4/M4A, WebM, FLAC) fail with
+    /// `input_too_large` when over the limit.
+    ///
     /// - Parameters:
-    ///   - mimeType: e.g. `audio/ogg`, `audio/mp4`, `audio/wav`
+    ///   - mimeType: e.g. `audio/ogg`, `audio/mpeg`, `audio/mp4`, `audio/wav`
     ///   - language: optional ISO-639-1 hint
     public func transcribe(context: AccountContext?, present: ((ViewController) -> Void)?, audio: Data, mimeType: String, language: String? = nil) -> Signal<Transcription, LuckgramAIError> {
-        let maxBytes = LuckgramSettings.shared.remoteInt("ai.transcribe_max_mb", default: 25) * 1024 * 1024
-        if audio.isEmpty {
+        if audio.isEmpty || !mimeType.hasPrefix("audio/") {
             return .fail(LuckgramAIError(code: LuckgramAIError.invalidRequest))
         }
-        if audio.count > maxBytes {
+        let maxBytes = LuckgramSettings.shared.remoteInt("ai.transcribe_max_mb", default: 4) * 1024 * 1024
+        guard let segments = LuckgramAudioSplitter.split(audio, mimeType: mimeType, maxBytes: maxBytes), !segments.isEmpty else {
             return .fail(LuckgramAIError(code: LuckgramAIError.inputTooLarge))
         }
-        let boundary = "luckgram\(UInt64.random(in: 0 ..< UInt64.max))"
-        var body = Data()
-        body.append("--\(boundary)\r\nContent-Disposition: form-data; name=\"file\"; filename=\"audio.\(LuckgramAI.fileExtension(mimeType))\"\r\nContent-Type: \(mimeType)\r\n\r\n".data(using: .utf8)!)
-        body.append(audio)
-        body.append("\r\n".data(using: .utf8)!)
-        if let language, !language.isEmpty {
-            body.append("--\(boundary)\r\nContent-Disposition: form-data; name=\"language\"\r\n\r\n\(language)\r\n".data(using: .utf8)!)
+        var path = "/v1/ai/transcribe"
+        if let language, language.range(of: "^[a-z]{2,3}$", options: .regularExpression) != nil {
+            path += "?language=\(language)"
         }
-        body.append("--\(boundary)--\r\n".data(using: .utf8)!)
-        return self.withConsent(context: context, present: present, self.authorized(method: "POST", path: "/v1/ai/transcribe", contentType: "multipart/form-data; boundary=\(boundary)", body: body, accept: "application/json")
-        |> mapToSignal { event -> Signal<Transcription, LuckgramAIError> in
-            guard case let .body(data) = event, let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else {
-                return .complete()
+        let requestPath = path
+
+        func upload(_ index: Int, _ acc: Transcription) -> Signal<Transcription, LuckgramAIError> {
+            if index >= segments.count {
+                return .single(acc)
             }
-            return .single(Transcription(text: (object["text"] as? String) ?? "", language: object["language"] as? String, durationSeconds: (object["duration"] as? NSNumber)?.doubleValue ?? 0.0))
-        })
+            return self.authorized(method: "POST", path: requestPath, contentType: mimeType, body: segments[index], accept: "application/json")
+            |> mapToSignal { event -> Signal<Transcription, LuckgramAIError> in
+                guard case let .body(data) = event, let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else {
+                    return .complete()
+                }
+                var next = acc
+                next.text = LuckgramAI.appendTranscript(next.text, (object["text"] as? String) ?? "")
+                if next.language == nil {
+                    next.language = object["language"] as? String
+                }
+                next.durationSeconds += (object["duration"] as? NSNumber)?.doubleValue ?? 0.0
+                return upload(index + 1, next)
+            }
+        }
+        return self.withConsent(context: context, present: present, upload(0, Transcription(text: "", language: nil, durationSeconds: 0.0, segments: segments.count)))
+    }
+
+    /// Joins segment texts; no space next to CJK characters.
+    static func appendTranscript(_ text: String, _ piece: String) -> String {
+        let piece = piece.trimmingCharacters(in: .whitespacesAndNewlines)
+        if piece.isEmpty {
+            return text
+        }
+        if text.isEmpty {
+            return piece
+        }
+        func isCJK(_ c: Character?) -> Bool {
+            guard let scalar = c?.unicodeScalars.first?.value else {
+                return false
+            }
+            return (0x3000 ... 0x9FFF).contains(scalar) || (0xAC00 ... 0xD7AF).contains(scalar) || (0xFF00 ... 0xFFEF).contains(scalar)
+        }
+        if isCJK(text.last) || isCJK(piece.first) {
+            return text + piece
+        }
+        return text + " " + piece
     }
 
     /// `GET /v1/me`: quota usage and limits, as the raw JSON object.
@@ -325,9 +403,13 @@ public final class LuckgramAI {
         return URLSession(configuration: configuration, delegate: delegate, delegateQueue: nil)
     }
 
+    /// `path` is relative to the API server, or an absolute https URL (temporary files).
     private func url(_ path: String) -> URL? {
+        if path.hasPrefix("https://") {
+            return URL(string: path)
+        }
         if self.isUsingMock {
-            return URL(string: "https://luckgram-mock.invalid\(path)")
+            return URL(string: "https://\(LuckgramAIMock.host)\(path)")
         }
         return URL(string: LuckgramAI.apiBaseURL + path)
     }
@@ -423,10 +505,16 @@ public final class LuckgramAI {
     }
 
     private func send(_ request: URLRequest) -> Signal<HTTPEvent, LuckgramAIError> {
+        var signed = request
+        if let body = signed.httpBody {
+            // CloudFront OAC -> Lambda Function URL requires the payload hash (docs/api-server.md §3.1 item 1).
+            signed.setValue(LuckgramAI.sha256Hex(body), forHTTPHeaderField: "x-amz-content-sha256")
+        }
+        let finalRequest = signed
         return Signal { subscriber in
             let handler = LuckgramHTTPTaskHandler(subscriber: subscriber)
             let session = self.session(delegate: handler)
-            let task = session.dataTask(with: request)
+            let task = session.dataTask(with: finalRequest)
             task.resume()
             session.finishTasksAndInvalidate()
             return ActionDisposable {
@@ -455,25 +543,14 @@ public final class LuckgramAI {
         return LuckgramAIError(code: code, httpStatus: status)
     }
 
-    static func fileExtension(_ mimeType: String) -> String {
-        switch mimeType {
-        case "audio/mpeg", "audio/mp3":
-            return "mp3"
-        case "audio/mp4", "audio/m4a", "audio/aac", "audio/x-m4a":
-            return "m4a"
-        case "audio/wav", "audio/x-wav":
-            return "wav"
-        case "audio/webm":
-            return "webm"
-        default:
-            return "ogg"
-        }
+    static func sha256Hex(_ data: Data) -> String {
+        return SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
     }
 
-    /// Mono 16-bit PCM WAV with a 1 s 440 Hz tone; used by the debug self-test.
-    public static func testToneWav() -> Data {
+    /// Mono 16-bit 16 kHz PCM WAV with a 440 Hz tone; used by the debug self-test.
+    public static func testToneWav(seconds: Int = 1) -> Data {
         let rate = 16000
-        let samples = rate
+        let samples = rate * seconds
         var data = Data()
         func le<T: FixedWidthInteger>(_ value: T) {
             var v = value.littleEndian
