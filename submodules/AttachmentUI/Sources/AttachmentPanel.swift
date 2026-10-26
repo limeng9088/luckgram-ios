@@ -1418,11 +1418,13 @@ final class AttachmentPanel: ASDisplayNode, ASScrollViewDelegate, ASGestureRecog
                 var canMakePaidContent = false
                 var currentPrice: Int64?
                 var hasTimers = false
+                var luckgramExtraAction: (title: String, action: () -> Void)?
                 if let controller = strongSelf.controller, let mediaPickerContext = controller.mediaPickerContext {
                     captionIsAboveMedia = mediaPickerContext.captionIsAboveMedia
                     canMakePaidContent = mediaPickerContext.canMakePaidContent
                     currentPrice = mediaPickerContext.price
                     hasTimers = mediaPickerContext.hasTimers
+                    luckgramExtraAction = mediaPickerContext.luckgramSendAsRoundVideo
                 }
 
                 let _ = (combineLatest(
@@ -1457,7 +1459,8 @@ final class AttachmentPanel: ASDisplayNode, ASScrollViewDelegate, ASGestureRecog
                             currentPrice: currentPrice,
                             hasTimers: hasTimers,
                             sendPaidMessageStars: strongSelf.presentationInterfaceState.sendPaidMessageStars,
-                            isMonoforum: strongSelf.presentationInterfaceState.renderedPeer?.peer?.isMonoForum ?? false
+                            isMonoforum: strongSelf.presentationInterfaceState.renderedPeer?.peer?.isMonoForum ?? false,
+                            luckgramExtraAction: luckgramExtraAction
                         )),
                         hasEntityKeyboard: hasEntityKeyboard,
                         gesture: gesture,
