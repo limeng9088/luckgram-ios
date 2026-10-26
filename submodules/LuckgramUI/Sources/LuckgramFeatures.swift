@@ -28,6 +28,11 @@ public enum LuckgramFeatures {
         // ---- 媒体、通话与存储 / Media, Calls & Storage
 
         // ---- 资料与整理 / Profiles & Organization
+        // The "All notes" subpage lives in LuckgramUserNotes (which depends on this module);
+        // TelegramUI attaches it at startup (SharedAccountContext).
+        add(.toggle("user_notes", group: .profileOrganize, default: true,
+            title: ("私人备注", "Private notes"),
+            description: ("给联系人、群组和频道写只有自己能看到的备注", "Notes about contacts, groups and channels that only you can see")))
 
         // ---- AI
 

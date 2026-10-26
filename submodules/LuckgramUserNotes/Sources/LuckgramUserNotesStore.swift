@@ -5,6 +5,7 @@ import Foundation
 import SwiftSignalKit
 import TelegramCore
 import AccountContext
+import LuckgramUI
 
 /// Local, per-account storage of private notes about users, groups and channels.
 ///
@@ -14,18 +15,21 @@ import AccountContext
 ///   (`managedCleanupAccounts` deletes every `account-*` directory that has no live record);
 /// - nothing is uploaded, and uninstalling the app removes the container.
 public final class LuckgramUserNotesStore {
-    /// Feature switch key, registered in the Luckgram settings registry (spec 00). Device-wide, default on.
+    /// Feature switch key, registered in `LuckgramFeatures` (default on).
     public static let featureKey = "user_notes"
     public static let maxLength = LuckgramUserNotesText.maxLength
 
-    /// Reads the same storage as `LuckgramSettings.shared.isEnabled("user_notes")` (spec 00):
-    /// the `luckgram_settings` UserDefaults suite, default on.
+    /// Always through `LuckgramSettings`, so the local switch, the registry default and the
+    /// remote config (S4) all apply.
     public static var isEnabled: Bool {
-        let defaults = UserDefaults(suiteName: "luckgram_settings") ?? .standard
-        if defaults.object(forKey: featureKey) == nil {
-            return true
-        }
-        return defaults.bool(forKey: featureKey)
+        return LuckgramSettings.shared.isEnabled(featureKey)
+    }
+
+    /// Fires (main queue) when the `user_notes` switch may have changed, locally or remotely.
+    public static var enabledChanges: Signal<Void, NoError> {
+        return LuckgramSettings.shared.changes
+        |> filter { key in key == nil || key == featureKey }
+        |> map { _ in Void() }
     }
 
     public struct Note: Equatable {
@@ -62,9 +66,17 @@ public final class LuckgramUserNotesStore {
     private var entries: [Int64: StoredEntry] = [:]
     private let updatesPipe = ValuePipe<Void>()
 
-    /// Fires (on the main thread) whenever a note or a bar state changes.
+    /// Fires whenever a note or a bar state changes, or the `user_notes` switch may have changed
+    /// (locally or through remote config).
     public var updates: Signal<Void, NoError> {
-        return self.updatesPipe.signal()
+        let notes = self.updatesPipe.signal()
+        let enabled = LuckgramUserNotesStore.enabledChanges
+        return Signal { subscriber in
+            let disposables = DisposableSet()
+            disposables.add(notes.start(next: { _ in subscriber.putNext(Void()) }))
+            disposables.add(enabled.start(next: { _ in subscriber.putNext(Void()) }))
+            return disposables
+        }
     }
 
     private init(basePath: String) {
