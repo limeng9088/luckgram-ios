@@ -277,6 +277,18 @@ public extension TelegramEngine {
             _internal_clearStorage(account: self.account, peerIds: peerIds, includeMessages: includeMessages.map { $0._asMessage() }, excludeMessages: excludeMessages.map { $0._asMessage() })
         }
 
+        /// Luckgram 08 (cache): sets (`value != nil`) or removes the keep-media override of one chat.
+        public func updatePeerStorageTimeoutException(peerId: EnginePeer.Id, value: Int32?) -> Signal<Void, NoError> {
+            return updateAccountSpecificCacheStorageSettingsInteractively(postbox: self.account.postbox, { settings in
+                var settings = settings
+                settings.peerStorageTimeoutExceptions.removeAll(where: { $0.key == peerId })
+                if let value {
+                    settings.peerStorageTimeoutExceptions.append(AccountSpecificCacheStorageSettings.Value(key: peerId, value: value))
+                }
+                return settings
+            })
+        }
+        
         public func clearStorage(messages: [EngineMessage]) -> Signal<Never, NoError> {
             _internal_clearStorage(account: self.account, messages: messages.map { $0._asMessage() })
         }

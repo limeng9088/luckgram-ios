@@ -881,6 +881,9 @@ extension PeerInfoScreenNode {
                             }
                         })))
                     }
+                    if let luckgramStorageItem = strongSelf.luckgramChatStorageMenuItem(peer: chatPeer) {
+                        items.append(luckgramStorageItem)
+                    }
                     
                     if strongSelf.peerId.namespace == Namespaces.Peer.CloudUser && user.botInfo == nil && !user.flags.contains(.isSupport) {
                         if data.isContact {
@@ -1097,6 +1100,9 @@ extension PeerInfoScreenNode {
                             }
                         })))
                     }
+                    if let luckgramStorageItem = strongSelf.luckgramChatStorageMenuItem(peer: EnginePeer(channel)) {
+                        items.append(luckgramStorageItem)
+                    }
                     
                     switch channel.info {
                     case .broadcast:
@@ -1263,6 +1269,9 @@ extension PeerInfoScreenNode {
                                 self?.openClearHistory(contextController: c, clearPeerHistory: clearPeerHistory, chatPeer: EnginePeer(group))
                             }
                         })))
+                    }
+                    if let luckgramStorageItem = strongSelf.luckgramChatStorageMenuItem(peer: EnginePeer(group)) {
+                        items.append(luckgramStorageItem)
                     }
                     
                     if case .Member = group.membership, !headerButtons.contains(.leave) {

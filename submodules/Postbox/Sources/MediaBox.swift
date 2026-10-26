@@ -217,8 +217,9 @@ public final class MediaBox {
         }
     }
     
-    public func setMaxStoreTimes(general: Int32, shortLived: Int32, gigabytesLimit: Int32) {
-        self.timeBasedCleanup.setMaxStoreTimes(general: general, shortLived: shortLived, gigabytesLimit: gigabytesLimit)
+    /// `protectedPeerIds` (Luckgram 08): media referenced by these peers is never removed by the size limit.
+    public func setMaxStoreTimes(general: Int32, shortLived: Int32, gigabytesLimit: Int32, protectedPeerIds: Set<PeerId> = Set()) {
+        self.timeBasedCleanup.setMaxStoreTimes(general: general, shortLived: shortLived, gigabytesLimit: gigabytesLimit, protectedPeerIds: protectedPeerIds)
     }
     
     public static func idForFileName(name: String) -> String {

@@ -787,6 +787,19 @@ final class StorageUsageScreenComponent: Component {
         private let keepSizeView = ComponentView<Empty>()
         private let keepSizeDescriptionView = ComponentView<Empty>()
         
+        // Luckgram 08 (cache): per-chat keep-media override (chat storage page)
+        private let luckgramPeerKeepTitleView = ComponentView<Empty>()
+        private let luckgramPeerKeepItem = ComponentView<Empty>()
+        private let luckgramPeerKeepDescriptionView = ComponentView<Empty>()
+        private let luckgramPeerKeepContainerView: UIView = {
+            let view = UIView()
+            view.clipsToBounds = true
+            view.layer.cornerRadius = 26.0
+            return view
+        }()
+        fileprivate var luckgramPeerException: Int32?
+        private var luckgramPeerExceptionDisposable: Disposable?
+        
         private let panelContainer = ComponentView<StorageUsagePanelContainerEnvironment>()
         
         private var selectionPanel: ComponentView<Empty>?
@@ -867,6 +880,8 @@ final class StorageUsageScreenComponent: Component {
         }
         
         deinit {
+            self.luckgramPeerExceptionDisposable?.dispose()
+            self.cacheSettingsDisposable?.dispose()
             self.statsDisposable?.dispose()
             self.messagesDisposable?.dispose()
             self.keepScreenActiveDisposable?.dispose()
@@ -1113,6 +1128,27 @@ final class StorageUsageScreenComponent: Component {
                         self.state?.updated(transition: .immediate)
                     }
                 })
+                
+                if let peer = component.peer {
+                    let peerId = peer.id
+                    self.luckgramPeerExceptionDisposable = (context.engine.data.subscribe(
+                        TelegramEngine.EngineData.Item.Configuration.ApplicationSpecificPreference(key: PreferencesKeys.accountSpecificCacheStorageSettings)
+                    )
+                    |> map { preferencesEntry -> Int32? in
+                        let settings = preferencesEntry?.get(AccountSpecificCacheStorageSettings.self) ?? AccountSpecificCacheStorageSettings.defaultSettings
+                        return settings.peerStorageTimeoutExceptions.first(where: { $0.key == peerId })?.value
+                    }
+                    |> distinctUntilChanged
+                    |> deliverOnMainQueue).start(next: { [weak self] value in
+                        guard let self else {
+                            return
+                        }
+                        self.luckgramPeerException = value
+                        if self.aggregatedData != nil {
+                            self.state?.updated(transition: .immediate)
+                        }
+                    })
+                }
                 
                 self.reloadStats(firstTime: true, completion: {})
             }
@@ -1875,12 +1911,7 @@ final class StorageUsageScreenComponent: Component {
                     }
                     
                     let value = self.cacheSettings?.categoryStorageTimeout[mappedCategory] ?? Int32.max
-                    let optionText: String
-                    if value == Int32.max {
-                        optionText = environment.strings.ClearCache_Never
-                    } else {
-                        optionText = timeIntervalString(strings: environment.strings, value: value)
-                    }
+                    let optionText = LuckgramCacheStrings.keepMedia(environment.strings, value: value)
                     
                     var subtitle: String?
                     if mappedCategory != .stories {
@@ -1979,17 +2010,12 @@ final class StorageUsageScreenComponent: Component {
                     component: AnyComponent(StorageKeepSizeComponent(
                         theme: environment.theme,
                         strings: environment.strings,
-                        value: cacheSettings?.defaultCacheStorageLimitGigabytes ?? 16,
-                        updateValue: { [weak self] value in
-                            guard let self, let component = self.component else {
+                        value: cacheSettings?.defaultCacheStorageLimitGigabytes ?? Int32.max,
+                        action: { [weak self] sourceView in
+                            guard let self else {
                                 return
                             }
-                            let value = max(5, value)
-                            let _ = updateCacheStorageSettingsInteractively(accountManager: component.context.sharedContext.accountManager, { current in
-                                var current = current
-                                current.defaultCacheStorageLimitGigabytes = value
-                                return current
-                            }).start()
+                            self.openCacheLimitMenu(sourceView: sourceView)
                         }
                     )),
                     environment: {},
@@ -2009,7 +2035,7 @@ final class StorageUsageScreenComponent: Component {
                     transition: transition,
                     component: AnyComponent(MultilineTextComponent(
                         text: .markdown(
-                            text: environment.strings.StorageManagement_AutoremoveSpaceDescription, attributes: MarkdownAttributes(
+                            text: LuckgramCacheStrings.cacheLimitInfo(environment.strings), attributes: MarkdownAttributes(
                                 body: body,
                                 bold: bold,
                                 link: body,
@@ -2029,6 +2055,113 @@ final class StorageUsageScreenComponent: Component {
                     transition.setFrame(view: keepSizeDescriptionComponentView, frame: keepSizeDescriptionFrame)
                 }
                 contentHeight += keepSizeDescriptionSize.height
+                contentHeight += 40.0
+            }
+            
+            if let peer = component.peer {
+                // Luckgram 08 (cache): keep-media period of this chat, overriding its category.
+                let strings = environment.strings
+                let peerCategory: CacheStorageSettings.PeerStorageCategory
+                switch peer {
+                case .user, .secretChat:
+                    peerCategory = .privateChats
+                case .legacyGroup:
+                    peerCategory = .groups
+                case let .channel(channel):
+                    if case .group = channel.info {
+                        peerCategory = .groups
+                    } else {
+                        peerCategory = .channels
+                    }
+                default:
+                    peerCategory = .groups
+                }
+                let isSavedMessages = peer.id == component.context.account.peerId
+                let categoryValue = self.cacheSettings?.categoryStorageTimeout[peerCategory] ?? CacheStorageSettings.defaultSettings.categoryStorageTimeout[peerCategory] ?? Int32.max
+                let valueText: String
+                if isSavedMessages {
+                    valueText = LuckgramCacheStrings.keepMedia(strings, value: Int32.max)
+                } else if let exception = self.luckgramPeerException {
+                    valueText = LuckgramCacheStrings.keepMedia(strings, value: exception)
+                } else {
+                    valueText = LuckgramCacheStrings.followCategory(strings, categoryValue: LuckgramCacheStrings.keepMedia(strings, value: categoryValue))
+                }
+                var peerTotalSize: Int64 = 0
+                if let aggregatedData = self.aggregatedData {
+                    for (_, value) in aggregatedData.contextStats.categories {
+                        peerTotalSize += value.size
+                    }
+                }
+                let peerSizeText = dataSizeString(Int(peerTotalSize), formatting: DataSizeStringFormatting(strings: strings, decimalSeparator: "."))
+                
+                let peerKeepTitleSize = self.luckgramPeerKeepTitleView.update(
+                    transition: transition,
+                    component: AnyComponent(MultilineTextComponent(
+                        text: .plain(NSAttributedString(string: LuckgramCacheStrings.chatKeepMediaHeader(strings).uppercased(), font: Font.regular(13.0), textColor: environment.theme.list.freeTextColor)),
+                        maximumNumberOfLines: 0
+                    )),
+                    environment: {},
+                    containerSize: CGSize(width: availableSize.width - sideInset - rightSideInset - 15.0 * 2.0, height: 10000.0)
+                )
+                if let view = self.luckgramPeerKeepTitleView.view {
+                    if view.superview == nil {
+                        self.scrollContainerView.addSubview(view)
+                    }
+                    transition.setFrame(view: view, frame: CGRect(origin: CGPoint(x: sideInset + 15.0, y: contentHeight), size: peerKeepTitleSize))
+                }
+                contentHeight += peerKeepTitleSize.height
+                contentHeight += 8.0
+                
+                let peerKeepItemSize = self.luckgramPeerKeepItem.update(
+                    transition: transition,
+                    component: AnyComponent(StoragePeerTypeItemComponent(
+                        theme: environment.theme,
+                        icon: PresentationResourcesSettings.clock ?? UIImage(),
+                        title: LuckgramCacheStrings.chatKeepMediaTitle(strings),
+                        subtitle: nil,
+                        value: valueText,
+                        hasNext: false,
+                        action: { [weak self] sourceView in
+                            guard let self, !isSavedMessages else {
+                                return
+                            }
+                            self.openPeerKeepMediaMenu(peer: peer, category: peerCategory, sourceView: sourceView)
+                        }
+                    )),
+                    environment: {},
+                    containerSize: CGSize(width: availableSize.width - sideInset - rightSideInset, height: 10000.0)
+                )
+                if self.luckgramPeerKeepContainerView.superview == nil {
+                    self.scrollContainerView.addSubview(self.luckgramPeerKeepContainerView)
+                }
+                self.luckgramPeerKeepContainerView.backgroundColor = environment.theme.list.itemBlocksBackgroundColor
+                transition.setFrame(view: self.luckgramPeerKeepContainerView, frame: CGRect(origin: CGPoint(x: sideInset, y: contentHeight), size: peerKeepItemSize))
+                if let view = self.luckgramPeerKeepItem.view {
+                    if view.superview == nil {
+                        self.luckgramPeerKeepContainerView.addSubview(view)
+                    }
+                    transition.setFrame(view: view, frame: CGRect(origin: CGPoint(), size: peerKeepItemSize))
+                }
+                contentHeight += peerKeepItemSize.height
+                contentHeight += 8.0
+                
+                let peerKeepDescription = isSavedMessages ? LuckgramCacheStrings.savedMessagesKept(strings) : LuckgramCacheStrings.chatKeepMediaInfo(strings, size: peerSizeText)
+                let peerKeepDescriptionSize = self.luckgramPeerKeepDescriptionView.update(
+                    transition: transition,
+                    component: AnyComponent(MultilineTextComponent(
+                        text: .plain(NSAttributedString(string: peerKeepDescription, font: Font.regular(13.0), textColor: environment.theme.list.freeTextColor)),
+                        maximumNumberOfLines: 0
+                    )),
+                    environment: {},
+                    containerSize: CGSize(width: availableSize.width - sideInset - rightSideInset - 15.0 * 2.0, height: 10000.0)
+                )
+                if let view = self.luckgramPeerKeepDescriptionView.view {
+                    if view.superview == nil {
+                        self.scrollContainerView.addSubview(view)
+                    }
+                    transition.setFrame(view: view, frame: CGRect(origin: CGPoint(x: sideInset + 15.0, y: contentHeight), size: peerKeepDescriptionSize))
+                }
+                contentHeight += peerKeepDescriptionSize.height
                 contentHeight += 40.0
             }
             
@@ -2904,10 +3037,25 @@ final class StorageUsageScreenComponent: Component {
                     clearTitle = presentationData.strings.StorageManagement_ClearSelected
                 }
             }
+            // Luckgram 08 (cache): show the space that will be freed.
+            var sizeToFree: Int64 = 0
+            if fromCategories && aggregatedData.peerId == nil {
+                for (key, value) in aggregatedData.contextStats.categories {
+                    if aggregatedData.selectedCategories.isEmpty || aggregatedData.selectedCategories.contains(Category(key)) {
+                        sizeToFree += value.size
+                    }
+                }
+            } else {
+                sizeToFree = aggregatedData.selectedSize
+            }
+            var confirmationText = presentationData.strings.StorageManagement_ClearConfirmationText
+            if sizeToFree > 0 {
+                confirmationText += "\n\n" + LuckgramCacheStrings.willFree(presentationData.strings, size: dataSizeString(Int(sizeToFree), formatting: DataSizeStringFormatting(strings: presentationData.strings, decimalSeparator: ".")))
+            }
             let alertController = textAlertController(
                 context: context,
                 title: presentationData.strings.StorageManagement_ClearConfirmationTitle,
-                text: presentationData.strings.StorageManagement_ClearConfirmationText,
+                text: confirmationText,
                 actions: [
                     TextAlertAction(type: .defaultAction, title: clearTitle, action: { [weak self] in
                         self?.commitClear(fromCategories: fromCategories)
@@ -3113,6 +3261,85 @@ final class StorageUsageScreenComponent: Component {
             }
         }
         
+        // Luckgram 08 (cache): presents a check-marked option menu anchored to a row's value label.
+        private func presentLuckgramOptionMenu(sourceView: StoragePeerTypeItemComponent.View, options: [(title: String, isSelected: Bool, action: () -> Void)]) {
+            guard let component = self.component, let sourceLabelView = sourceView.labelView else {
+                return
+            }
+            let presentationData = component.context.sharedContext.currentPresentationData.with { $0 }
+            var subItems: [ContextMenuItem] = []
+            for option in options {
+                let isSelected = option.isSelected
+                let action = option.action
+                subItems.append(.action(ContextMenuActionItem(text: option.title, icon: { theme in
+                    if isSelected {
+                        return generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Check"), color: theme.contextMenu.primaryColor)
+                    } else {
+                        return UIImage()
+                    }
+                }, action: { _, f in
+                    action()
+                    f(.default)
+                })))
+            }
+            let items: Signal<ContextController.Items, NoError> = .single(ContextController.Items(content: .list(subItems)))
+            let source: ContextContentSource = .reference(StorageUsageContextReferenceContentSource(sourceView: sourceLabelView))
+            let contextController = makeContextController(
+                presentationData: presentationData,
+                source: source,
+                items: items,
+                gesture: nil
+            )
+            sourceView.setHasAssociatedMenu(true)
+            contextController.dismissed = { [weak sourceView] in
+                sourceView?.setHasAssociatedMenu(false)
+            }
+            self.controller?()?.presentInGlobalOverlay(contextController, with: nil)
+        }
+        
+        private func openCacheLimitMenu(sourceView: StoragePeerTypeItemComponent.View) {
+            guard let component = self.component else {
+                return
+            }
+            let context = component.context
+            let strings = context.sharedContext.currentPresentationData.with { $0 }.strings
+            let currentValue = LuckgramCacheStrings.normalizedCacheLimit(self.cacheSettings?.defaultCacheStorageLimitGigabytes ?? Int32.max)
+            let options = LuckgramCacheStrings.cacheLimitOptions.map { value -> (title: String, isSelected: Bool, action: () -> Void) in
+                return (LuckgramCacheStrings.cacheLimit(strings, gigabytes: value), value == currentValue, {
+                    let _ = updateCacheStorageSettingsInteractively(accountManager: context.sharedContext.accountManager, { current in
+                        var current = current
+                        current.defaultCacheStorageLimitGigabytes = value
+                        return current
+                    }).start()
+                })
+            }
+            self.presentLuckgramOptionMenu(sourceView: sourceView, options: options)
+        }
+        
+        private func openPeerKeepMediaMenu(peer: EnginePeer, category: CacheStorageSettings.PeerStorageCategory, sourceView: StoragePeerTypeItemComponent.View) {
+            guard let component = self.component else {
+                return
+            }
+            let context = component.context
+            let strings = context.sharedContext.currentPresentationData.with { $0 }.strings
+            let categoryValue = self.cacheSettings?.categoryStorageTimeout[category] ?? CacheStorageSettings.defaultSettings.categoryStorageTimeout[category] ?? Int32.max
+            let currentException = self.luckgramPeerException
+            let peerId = peer.id
+            let apply: (Int32?) -> Void = { value in
+                let _ = context.engine.resources.updatePeerStorageTimeoutException(peerId: peerId, value: value).start()
+            }
+            var options: [(title: String, isSelected: Bool, action: () -> Void)] = []
+            options.append((LuckgramCacheStrings.useCategoryDefault(strings, categoryValue: LuckgramCacheStrings.keepMedia(strings, value: categoryValue)), currentException == nil, {
+                apply(nil)
+            }))
+            for value in LuckgramCacheStrings.keepMediaOptions {
+                options.append((LuckgramCacheStrings.keepMedia(strings, value: value), currentException == value, {
+                    apply(value)
+                }))
+            }
+            self.presentLuckgramOptionMenu(sourceView: sourceView, options: options)
+        }
+        
         private func openKeepMediaCategory(mappedCategory: CacheStorageSettings.PeerStorageCategory, sourceView: StoragePeerTypeItemComponent.View) {
             guard let component = self.component else {
                 return
@@ -3224,12 +3451,8 @@ final class StorageUsageScreenComponent: Component {
                         1 * 24 * 60 * 60
                     ]
                 } else {
-                    presetValues = [
-                        Int32.max,
-                        31 * 24 * 60 * 60,
-                        7 * 24 * 60 * 60,
-                        1 * 24 * 60 * 60
-                    ]
+                    // Luckgram 08 (cache): forever / 1 month / 1 week / 3 days / 1 day / 1 hour
+                    presetValues = LuckgramCacheStrings.keepMediaOptions
                 }
                 
                 if currentValue != 0 && !presetValues.contains(currentValue) {
@@ -3238,12 +3461,7 @@ final class StorageUsageScreenComponent: Component {
                 }
                 
                 for value in presetValues {
-                    let optionText: String
-                    if value == Int32.max {
-                        optionText = presentationData.strings.ClearCache_Never
-                    } else {
-                        optionText = timeIntervalString(strings: presentationData.strings, value: value)
-                    }
+                    let optionText = LuckgramCacheStrings.keepMedia(presentationData.strings, value: value)
                     subItems.append(.action(ContextMenuActionItem(text: optionText, icon: { theme in
                         if currentValue == value {
                             return generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Check"), color: theme.contextMenu.primaryColor)
