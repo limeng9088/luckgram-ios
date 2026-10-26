@@ -11,7 +11,7 @@
 #import <AsyncDisplayKit/ASBaseDefines.h>
 #import <pthread/pthread.h>
 
-#if defined(__aarch64__)
+#if defined(__aarch64__) || defined(__x86_64__)  // Luckgram QA: os_unfair_lock on x86_64 simulators too (OSSpinLock is deprecated, -Werror)
     #define AS_USE_OS_LOCK true
 #else
     #define AS_USE_OS_LOCK false

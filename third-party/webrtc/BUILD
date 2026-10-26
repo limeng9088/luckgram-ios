@@ -287,6 +287,7 @@ webrtc_headers = [
     "common_audio/fir_filter_c.h",
     "common_audio/fir_filter_factory.h",
     "common_audio/fir_filter_neon.h",
+    "common_audio/fir_filter_sse.h",  # Luckgram QA: x86_64 simulator
     "common_audio/include/audio_util.h",
     "common_audio/real_fourier.h",
     "common_audio/real_fourier_ooura.h",
