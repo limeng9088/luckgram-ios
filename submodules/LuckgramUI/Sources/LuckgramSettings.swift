@@ -18,7 +18,7 @@ public final class LuckgramSettings {
     private let defaults: UserDefaults
     private let changesPipe = ValuePipe<String?>()
     private let remoteConfigLock = NSLock()
-    private var remoteConfigValue: [String: Any]?
+    private var remoteConfigValue: LuckgramRemoteConfig?
 
     private init() {
         self.defaults = UserDefaults(suiteName: LuckgramSettings.suiteName) ?? .standard
@@ -143,59 +143,50 @@ public final class LuckgramSettings {
 
     // MARK: - Remote config (GET /v1/config, task S4)
 
-    /// Merges the body of `GET /v1/config` (a flat object of `client: true` keys, e.g.
-    /// `"features.quick_replies": true`, `"ai.transcribe_max_mb": 25`) and caches it.
-    /// Fetching and TTL handling are task S4.
-    public func mergeRemoteConfig(_ config: [String: Any]) {
+    /// Applies the body of `GET /v1/config` exactly as the server returns it:
+    /// `{"version","ttl","values":{…},"features":{"<key>": bool}}` (issue #56). The response is the
+    /// full set, so it replaces the previous one; it is cached for offline starts. Fetching,
+    /// `If-None-Match` with `remoteConfigVersion` and TTL refresh are task S4.
+    public func mergeRemoteConfig(_ response: [String: Any]) {
+        let parsed = LuckgramRemoteConfig(response: response, fetchedAt: Date().timeIntervalSince1970)
         self.remoteConfigLock.lock()
-        var merged = self.loadRemoteConfigLocked()
-        for (key, value) in config {
-            merged[key] = value
-        }
-        self.remoteConfigValue = merged
-        if let data = try? JSONSerialization.data(withJSONObject: merged) {
+        self.remoteConfigValue = parsed
+        self.remoteConfigLock.unlock()
+        if let data = parsed.serialized() {
             self.defaults.set(data, forKey: LuckgramSettings.remoteConfigKey)
         }
-        self.remoteConfigLock.unlock()
         self.notifyChanged(nil)
     }
 
-    private func loadRemoteConfigLocked() -> [String: Any] {
+    public var remoteConfig: LuckgramRemoteConfig {
+        self.remoteConfigLock.lock()
+        defer { self.remoteConfigLock.unlock() }
         if let value = self.remoteConfigValue {
             return value
         }
-        var result: [String: Any] = [:]
-        if let data = self.defaults.data(forKey: LuckgramSettings.remoteConfigKey), let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
-            result = object
-        }
-        self.remoteConfigValue = result
-        return result
+        let value = LuckgramRemoteConfig(serialized: self.defaults.data(forKey: LuckgramSettings.remoteConfigKey))
+        self.remoteConfigValue = value
+        return value
     }
 
-    private func remoteValue(_ key: String) -> Any? {
-        self.remoteConfigLock.lock()
-        defer { self.remoteConfigLock.unlock() }
-        return self.loadRemoteConfigLocked()[key]
+    /// `version` of the cached /v1/config, for `If-None-Match`; nil if none.
+    public var remoteConfigVersion: String? {
+        return self.remoteConfig.version
     }
 
-    /// Whether the server allows the feature (`features.<key>`); true when unknown.
+    /// Whether the cached /v1/config is older than its `ttl` (or missing).
+    public var isRemoteConfigExpired: Bool {
+        return self.remoteConfig.isExpired(now: Date().timeIntervalSince1970)
+    }
+
+    /// Whether the server allows the feature (per-device `features.<key>`); true when unknown.
     public func isRemotelyAllowed(_ featureKey: String) -> Bool {
-        let value = self.remoteValue("features.\(featureKey)")
-        if let value = value as? Bool {
-            return value
-        }
-        if let value = value as? [String: Any], let enabled = value["enabled"] as? Bool {
-            return enabled
-        }
-        return true
+        return self.remoteConfig.isAllowed(featureKey)
     }
 
-    /// A `client: true` number from /v1/config, or `defaultValue` (the built-in default with the same name).
+    /// A `client: true` number from /v1/config `values`, or `defaultValue` (the built-in default with the same name).
     public func remoteInt(_ key: String, default defaultValue: Int) -> Int {
-        if let value = self.remoteValue(key) as? NSNumber {
-            return value.intValue
-        }
-        return defaultValue
+        return self.remoteConfig.int(key, default: defaultValue)
     }
 
     // MARK: - Debug tools
