@@ -1552,6 +1552,7 @@ extension ChatControllerImpl {
                 self.interfaceInteraction?.openBoostToUnrestrict()
             }
         }
+        self.luckgramSetupRoundVideo(controller: controller, isEditingMessage: isEditingMessage, isScheduledMessages: isScheduledMessages, bannedSendVideos: bannedSendVideos)
         let mediaPickerContext = controller.mediaPickerContext
         controller.openCamera = { [weak self] cameraView in
             self?.openCamera(cameraView: cameraView as? TGAttachmentCameraView, isEditingMessage: isEditingMessage)

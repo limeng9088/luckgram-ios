@@ -453,6 +453,7 @@ swift_library(
         "//submodules/TelegramUI/Components/PlainButtonComponent",
         "//submodules/Components/BalancedTextComponent",
         "//submodules/TelegramUI/Components/VideoMessageCameraScreen",
+        "//submodules/TelegramUI/Components/LuckgramRoundVideo",
         "//submodules/TelegramUI/Components/MediaScrubberComponent",
         "//submodules/TelegramUI/Components/Chat/ChatShareMessageTagView",
         "//submodules/AudioWaveform",

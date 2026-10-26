@@ -553,6 +553,22 @@ final class ChatSendMessageContextScreenComponent: Component {
             }
             switch component.params {
             case let.sendMessage(sendMessage):
+                if let extraAction = sendMessage.luckgramExtraAction {
+                    items.append(.action(ContextMenuActionItem(
+                        id: AnyHashable("luckgramRoundVideo"),
+                        text: extraAction.title,
+                        icon: { theme in
+                            return generateTintedImage(image: UIImage(bundleImageName: "Chat/Input/Text/IconVideo"), color: theme.contextMenu.primaryColor)
+                        }, action: { [weak self] _, _ in
+                            guard let self else {
+                                return
+                            }
+                            self.animateOutToEmpty = true
+                            self.environment?.controller()?.dismiss()
+                            extraAction.action()
+                        }
+                    )))
+                }
                 if !reminders {
                     items.append(.action(ContextMenuActionItem(
                         id: AnyHashable("silent"),

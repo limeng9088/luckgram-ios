@@ -725,6 +725,15 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
         
         let isUITest = CommandLine.arguments.contains("--ui-test")
 
+        // Luckgram QA: debug builds (debug_sim_arm64) start new logins on the Telegram test DC when
+        // launched with `-LuckgramTestBackend YES` (Maestro `launchApp.arguments`). Unlike --ui-test,
+        // app data is kept between launches. Compiled out of release builds.
+        #if DEBUG
+        let luckgramTestBackend = UserDefaults.standard.bool(forKey: "LuckgramTestBackend")
+        #else
+        let luckgramTestBackend = false
+        #endif
+
         let rootPath: String
         if isUITest {
             let testDataPath = appGroupUrl.path + "/telegram-ui-tests-data"
@@ -1168,7 +1177,7 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
                         self.mainWindow.coveringView = nil
                     }
                 }
-            }, appDelegate: self, testingEnvironment: isUITest)
+            }, appDelegate: self, testingEnvironment: isUITest || luckgramTestBackend)
             navigationBarOverflowMenuPresenter = { [weak sharedContext] sourceView, items in
                 guard let sharedContext, let mainWindow = sharedContext.mainWindow else {
                     return
