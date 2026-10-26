@@ -7,7 +7,7 @@ ARCHS=""
 
 for RAW_ARCH in $RAW_ARCHS; do
 	ARCH_NAME="$RAW_ARCH"
-	if [ "$ARCH_NAME" = "i386" -o "$ARCH_NAME" = "x86_64" -o "$ARCH_NAME" = "arm64" -o "$ARCH_NAME" = "armv7" -o "$ARCH_NAME" = "sim_arm64" -o "$ARCH_NAME" = "macos_arm64" -o "$ARCH_NAME" = "linux_arm64" -o "$ARCH_NAME" = "linux_x86_64" ]
+	if [ "$ARCH_NAME" = "i386" -o "$ARCH_NAME" = "x86_64" -o "$ARCH_NAME" = "arm64" -o "$ARCH_NAME" = "armv7" -o "$ARCH_NAME" = "sim_arm64" -o "$ARCH_NAME" = "sim_x86_64" -o "$ARCH_NAME" = "macos_arm64" -o "$ARCH_NAME" = "linux_arm64" -o "$ARCH_NAME" = "linux_x86_64" ]
 	then
 		ARCHS="$ARCHS $ARCH_NAME"
 	else
@@ -117,6 +117,8 @@ then
 			ARCH="arm64"
 		elif [ "$RAW_ARCH" == "macos_arm64" ]; then
 			ARCH="arm64"
+		elif [ "$RAW_ARCH" == "sim_x86_64" ]; then
+			ARCH="x86_64"
 		fi
 
 		echo "building $RAW_ARCH..."
@@ -144,6 +146,9 @@ then
 		if [ "$RAW_ARCH" = "sim_arm64" ]; then
 			PLATFORM="iPhoneSimulator"
 		    CFLAGS="$CFLAGS -mios-simulator-version-min=$DEPLOYMENT_TARGET --target=arm64-apple-ios$DEPLOYMENT_TARGET-simulator"
+		elif [ "$RAW_ARCH" = "sim_x86_64" ]; then
+			PLATFORM="iPhoneSimulator"
+		    CFLAGS="$CFLAGS -mios-simulator-version-min=$DEPLOYMENT_TARGET --target=x86_64-apple-ios$DEPLOYMENT_TARGET-simulator"
 		elif [ "$RAW_ARCH" = "macos_arm64" ]; then
 			PLATFORM="MacOSX"
 		    CFLAGS="$CFLAGS -mmacosx-version-min=14.0 --target=arm64-apple-macosx14.0"
@@ -204,6 +209,7 @@ then
 				    --cc="$CC" \
 				    --as="$AS" \
 				    $CONFIGURE_FLAGS \
+				    $( [ "$RAW_ARCH" = "sim_x86_64" ] && echo --disable-x86asm ) \
 				    --enable-audiotoolbox \
 				    --enable-decoder=alac_at,gsm_ms_at,aac_at \
 				    --enable-encoder=libvpx_vp9,aac_at \

@@ -1,0 +1,37 @@
+name: QA static checks
+
+# docs/qa.md 第 4 节「静态检查」：Nicegram 字样、中英文文案、密钥、追踪 SDK、外部域名。
+# 规则在 limeng9088/luckgram-qa static/check.py，只检查本 PR 新增 / 修改的行。
+on:
+  pull_request:
+    branches: [master]
+
+concurrency:
+  group: qa-static-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  static:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout PR
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          filter: blob:none
+          submodules: false
+
+      - name: Checkout luckgram-qa
+        uses: actions/checkout@v4
+        with:
+          repository: limeng9088/luckgram-qa
+          ref: master
+          ssh-key: ${{ secrets.QA_REPO_DEPLOY_KEY }}
+          path: .qa
+
+      - name: Static checks
+        run: python3 .qa/static/check.py --base "origin/${{ github.base_ref }}" --head HEAD --platform ios

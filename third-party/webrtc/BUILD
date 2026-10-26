@@ -2766,7 +2766,17 @@ arm64_specific_sources = ["webrtc/" + path for path in [
     "common_audio/third_party/ooura/fft_size_128/ooura_fft_neon.cc",
 ]]
 
+# Luckgram QA: Intel Mac simulators (debug_sim_x86_64). Generic C + SSE2 paths, no AVX2 / NEON.
+x86_64_specific_sources = ["webrtc/" + path for path in [
+    "common_audio/signal_processing/complex_bit_reverse.c",
+    "common_audio/signal_processing/filter_ar_fast_q12.c",
+    "common_audio/fir_filter_sse.cc",
+    "common_audio/resampler/sinc_resampler_sse.cc",
+    "common_audio/third_party/ooura/fft_size_128/ooura_fft_sse2.cc",
+]]
+
 arch_specific_sources = select({
+    "@build_bazel_rules_apple//apple:ios_x86_64": x86_64_specific_sources,
     "@build_bazel_rules_apple//apple:ios_arm64": common_arm_specific_sources + arm64_specific_sources,
     "//build-system:ios_sim_arm64": common_arm_specific_sources + arm64_specific_sources,
     "//conditions:default": common_arm_specific_sources + arm64_specific_sources,
@@ -2817,6 +2827,7 @@ arm64_specific_flags = [
 
 # Flatten platform + arch flags into a single select to avoid nested selects
 arch_specific_cflags = select({
+    "@build_bazel_rules_apple//apple:ios_x86_64": [f for f in platform_shared_flags if f != "-DLIBYUV_NEON"] + [f for f in apple_specific_flags if f != "-DWEBRTC_ENABLE_AVX2"],
     "@build_bazel_rules_apple//apple:ios_arm64": platform_shared_flags + apple_specific_flags + arm64_specific_flags,
     "//build-system:ios_sim_arm64": platform_shared_flags + apple_specific_flags + arm64_specific_flags,
     "@platforms//os:linux": platform_shared_flags + linux_specific_flags + arm64_specific_flags,

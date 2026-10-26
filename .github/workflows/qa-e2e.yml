@@ -1,16 +1,14 @@
 name: QA E2E (iOS simulator + Maestro)
 
-# 在 xcode-27 上编模拟器测试包（debug_sim_arm64，启动参数 -LuckgramTestBackend YES 时登录 Telegram 测试服务器），
-# 建临时 iOS 模拟器跑 limeng9088/luckgram-qa 里的 Maestro 用例。用例和账号池见 luckgram-qa README。
+# 1) xcode-27 编 x86_64 模拟器测试包（debug_sim_x86_64，DEBUG 构建；启动参数 -LuckgramTestBackend YES 时登录 Telegram 测试服务器），上传成产物；
+# 2) QA 专用 Intel Mac mac-local（self-hosted, qa-ios；Xcode 16.4，iOS 18.5 模拟器）下载、安装、跑 limeng9088/luckgram-qa 里的 Maestro 用例。
 #
-# xcode-27 只有一台，同时承担编译：concurrency 组和 build.yml 相同（luckgram-ios-<ref>），
-# 同一分支上编译和测试不会同时跑；本 workflow 不取消正在跑的编译（cancel-in-progress: false），
-# 但之后推送触发的编译会取消正在跑的测试。
+# 编译 job 和 build.yml 共用 concurrency 组（luckgram-ios-<ref>），xcode-27 上不会和同分支的编译同时跑。
 on:
   workflow_dispatch:
     inputs:
       build_run_id:
-        description: '已有模拟器包的 run id（本 workflow 之前的 run，产物 luckgram-ios-sim-*）；留空则先编译'
+        description: '已有模拟器包的 run id（本 workflow 之前的 run，产物 luckgram-ios-sim-x86_64-*）；留空则先编译'
         required: false
         default: ''
       flows:
@@ -25,43 +23,41 @@ on:
         description: 'luckgram-qa 的分支 / commit'
         required: false
         default: 'master'
-  push:  # TEMP: 验证用，开 PR 前删除
-    branches: [ci/qa-test-backend]
+      maestro_args:
+        description: '额外的 maestro test 参数，例如 --exclude-tags=needs-peer'
+        required: false
+        default: ''
+      sim_runtime:
+        description: 'mac-local 上的模拟器 runtime（留空 = 最新 iOS 18.x）'
+        required: false
+        default: ''
   schedule:
     # master 每晚回归：北京时间 03:00（错开 Android）
     - cron: '0 19 * * *'
 
+# 同一分支只保留最新一次 E2E
 concurrency:
-  group: luckgram-ios-${{ github.ref }}
-  cancel-in-progress: false
+  group: qa-e2e-ios-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
   actions: read
 
 jobs:
-  e2e:
+  build:
+    if: github.event_name != 'workflow_dispatch' || inputs.build_run_id == ''
     runs-on: xcode-27
-    timeout-minutes: 240
+    timeout-minutes: 180
+    concurrency:
+      group: luckgram-ios-${{ github.ref }}
+      cancel-in-progress: false
     env:
       SOURCE_DIR: /Users/Shared/telegram-ios
       BAZEL_USER_ROOT: /private/var/tmp/_bazel_containerhost
       CACHE_DIR: /Users/runner/telegram-bazel-cache-sim
-      BUILD: ${{ github.event_name != 'push' && (github.event_name != 'workflow_dispatch' || inputs.build_run_id == '') && 'true' || 'false' }}  # TEMP push=false
-      FLOWS: ${{ github.event_name == 'schedule' && 'maestro/ios/smoke maestro/ios/regression' || inputs.flows || 'maestro/ios/smoke' }}
-      ACCOUNT: ${{ github.event_name == 'schedule' && 'RI' || inputs.account || 'I1' }}
-      OUT: ${{ github.workspace }}/qa-out
     steps:
-      - name: Checkout luckgram-qa
-        uses: actions/checkout@v4
-        with:
-          repository: limeng9088/luckgram-qa
-          ref: ${{ inputs.qa_ref || 'master' }}
-          ssh-key: ${{ secrets.QA_REPO_DEPLOY_KEY }}
-          path: qa
-
       - name: Checkout (with submodules)
-        if: env.BUILD == 'true'
         uses: actions/checkout@v4
         with:
           submodules: recursive
@@ -69,7 +65,6 @@ jobs:
           path: src
 
       - name: Select Xcode from versions.json
-        if: env.BUILD == 'true'
         run: |
           XCODE_VERSION=$(python3 -c 'import json;print(json.load(open("src/versions.json"))["xcode"])')
           echo "Xcode $XCODE_VERSION"
@@ -80,7 +75,6 @@ jobs:
           df -h /
 
       - name: Inject Telegram API credentials
-        if: env.BUILD == 'true'
         working-directory: src
         env:
           TG_API_ID: ${{ secrets.TG_API_ID }}
@@ -99,7 +93,6 @@ jobs:
           PY
 
       - name: Canonical source directory
-        if: env.BUILD == 'true'
         run: |
           sudo mkdir -p /Users/Shared
           sudo chown "$USER" /Users/Shared
@@ -107,16 +100,14 @@ jobs:
           mv "$GITHUB_WORKSPACE/src" "$SOURCE_DIR"
 
       - name: Restore bazel cache (simulator)
-        if: env.BUILD == 'true'
         uses: actions/cache/restore@v4
         with:
           path: ${{ env.CACHE_DIR }}
-          key: bazel-sim-master-${{ github.run_id }}
+          key: bazel-sim-x86-master-${{ github.run_id }}
           restore-keys: |
-            bazel-sim-master-
+            bazel-sim-x86-master-
 
-      - name: Build debug_sim_arm64
-        if: env.BUILD == 'true'
+      - name: Build debug_sim_x86_64
         working-directory: ${{ env.SOURCE_DIR }}
         run: |
           set -x
@@ -128,64 +119,90 @@ jobs:
             build \
             --configurationPath=build-system/appstore-configuration.json \
             --codesigningInformationPath=build-system/fake-codesigning \
-            --configuration=debug_sim_arm64 \
+            --configuration=debug_sim_x86_64 \
             --buildNumber=10000
 
           mkdir -p "$GITHUB_WORKSPACE/app"
           IPA=$(ls bazel-bin/Telegram/Telegram.ipa bazel-out/*/bin/Telegram/Telegram.ipa 2>/dev/null | head -1)
           test -n "$IPA"
-          cp -L "$IPA" "$GITHUB_WORKSPACE/app/Luckgram-sim-$(git rev-parse --short HEAD).ipa"
+          cp -L "$IPA" "$GITHUB_WORKSPACE/app/Luckgram-sim-x86_64-$(git rev-parse --short HEAD).ipa"
 
-      # 仓库 Actions 缓存已接近 10 GB 上限：模拟器缓存只由 master 保存一份，分支只读，避免挤掉编译缓存
+      # 仓库 Actions 缓存接近 10 GB 上限：模拟器缓存只由 master 保存一份，分支只读，避免挤掉编译缓存
       - name: Save bazel cache (simulator, master only)
-        if: always() && env.BUILD == 'true' && github.ref == 'refs/heads/master'
+        if: always() && github.ref == 'refs/heads/master'
         uses: actions/cache/save@v4
         with:
           path: ${{ env.CACHE_DIR }}
-          key: bazel-sim-master-${{ github.run_id }}
+          key: bazel-sim-x86-master-${{ github.run_id }}
 
       - name: Upload simulator app
-        if: env.BUILD == 'true'
         uses: actions/upload-artifact@v4
         with:
-          name: luckgram-ios-sim-${{ github.run_number }}
+          name: luckgram-ios-sim-x86_64-${{ github.run_number }}
           path: app/*.ipa
           if-no-files-found: error
 
+  e2e:
+    needs: build
+    if: ${{ !cancelled() && (needs.build.result == 'success' || needs.build.result == 'skipped') }}
+    runs-on: [self-hosted, qa-ios]
+    timeout-minutes: 45
+    env:
+      FLOWS: ${{ github.event_name == 'schedule' && 'maestro/ios/smoke maestro/ios/regression' || inputs.flows || 'maestro/ios/smoke' }}
+      ACCOUNT: ${{ github.event_name == 'schedule' && 'RI' || inputs.account || 'I1' }}
+      MAESTRO_ARGS: ${{ inputs.maestro_args }}
+      SIM_RUNTIME: ${{ inputs.sim_runtime }}
+      OUT: ${{ github.workspace }}/qa-out
+    steps:
+      - name: Clean workspace
+        run: rm -rf qa app qa-out
+
+      - name: Checkout luckgram-qa
+        uses: actions/checkout@v4
+        with:
+          repository: limeng9088/luckgram-qa
+          ref: ${{ inputs.qa_ref || 'master' }}
+          ssh-key: ${{ secrets.QA_REPO_DEPLOY_KEY }}
+          path: qa
+
       - name: Download simulator app
-        if: env.BUILD != 'true'
         uses: actions/download-artifact@v4
         with:
-          pattern: luckgram-ios-sim-*
+          pattern: luckgram-ios-sim-x86_64-*
           merge-multiple: true
           path: app
-          run-id: ${{ inputs.build_run_id || '40305933220' }}  # TEMP
+          run-id: ${{ inputs.build_run_id || github.run_id }}
           github-token: ${{ github.token }}
 
       - name: Check app
         run: |
           IPA=$(ls app/*.ipa | head -1)
           test -n "$IPA" || { echo "::error::no simulator app"; exit 1; }
-          rm -rf /tmp/qa-ipa && mkdir /tmp/qa-ipa && unzip -q "$IPA" -d /tmp/qa-ipa
-          PLIST=$(ls -d /tmp/qa-ipa/Payload/*.app)/Info.plist
-          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$PLIST")" = com.luckgram.messenger
-          /usr/libexec/PlistBuddy -c 'Print :DTPlatformName' "$PLIST" | grep -q iphonesimulator || { echo "::error::not a simulator build"; exit 1; }
+          rm -rf "$RUNNER_TEMP/qa-ipa" && mkdir "$RUNNER_TEMP/qa-ipa" && unzip -q "$IPA" -d "$RUNNER_TEMP/qa-ipa"
+          APPDIR=$(ls -d "$RUNNER_TEMP"/qa-ipa/Payload/*.app)
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APPDIR/Info.plist")" = com.luckgram.messenger
+          /usr/libexec/PlistBuddy -c 'Print :DTPlatformName' "$APPDIR/Info.plist" | grep -q iphonesimulator || { echo "::error::not a simulator build"; exit 1; }
+          BIN="$APPDIR/$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$APPDIR/Info.plist")"
+          lipo -archs "$BIN" | grep -qw x86_64 || { echo "::error::app is $(lipo -archs "$BIN"), mac-local needs x86_64"; exit 1; }
           echo "APP=$GITHUB_WORKSPACE/$IPA" >> "$GITHUB_ENV"
 
       - name: Test account
         run: python3 qa/ci/account.py "$ACCOUNT" >> "$GITHUB_ENV"
 
-      - name: Set up JDK 17
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '17'
-
-      - name: Install Maestro
-        run: bash qa/ci/install-maestro.sh
-
       - name: Run Maestro on simulator
+        # 每个 flow 最多 10 分钟，整步最多 30 分钟（脚本内预算 27 分钟，超时前停下来，保证后面能上传产物）
+        timeout-minutes: 30
+        env:
+          FLOW_TIMEOUT_MIN: '10'
+          BUDGET_MIN: '24'   # 另留约 3 分钟给模拟器创建和启动
         run: bash qa/ci/ios-run.sh "$APP" $FLOWS
+
+      - name: Remove simulators (safety net)
+        if: always()
+        run: |
+          xcrun simctl list devices | sed -n 's/^ *luckgram-qa-[^ ]* (\([0-9A-F-]*\)).*/\1/p' | while read -r u; do
+            xcrun simctl shutdown "$u" 2>/dev/null; xcrun simctl delete "$u" 2>/dev/null; echo "removed $u"
+          done
 
       - name: Upload report
         if: always()
