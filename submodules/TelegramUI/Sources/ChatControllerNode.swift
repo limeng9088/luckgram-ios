@@ -2851,7 +2851,7 @@ class ChatControllerNode: ASDisplayNode, ASScrollViewDelegate {
         self.navigateButtons.update(rect: apparentNavigateButtonsFrame, within: layout.size, transition: transition)
         
         if let jumpNode = self.luckgramKeywordJumpNode {
-            if jumpNode.isVisible {
+            if jumpNode.isShown {
                 let jumpSize = jumpNode.updateLayout(maxWidth: max(120.0, layout.size.width - layout.safeInsets.left - layout.safeInsets.right - 140.0))
                 let jumpFrame = CGRect(origin: CGPoint(x: floor((layout.size.width - jumpSize.width) / 2.0), y: navigateButtonsFrame.maxY - jumpSize.height), size: jumpSize)
                 transition.updateFrame(node: jumpNode, frame: jumpFrame)
@@ -2859,7 +2859,7 @@ class ChatControllerNode: ASDisplayNode, ASScrollViewDelegate {
             } else {
                 transition.updateAlpha(node: jumpNode, alpha: 0.0)
             }
-            jumpNode.isUserInteractionEnabled = jumpNode.isVisible
+            jumpNode.isUserInteractionEnabled = jumpNode.isShown
         }
         
         if let secondaryInputPanelNode = self.secondaryInputPanelNode, let apparentSecondaryInputPanelFrame = apparentSecondaryInputPanelFrame, !secondaryInputPanelNode.frame.equalTo(apparentSecondaryInputPanelFrame) {

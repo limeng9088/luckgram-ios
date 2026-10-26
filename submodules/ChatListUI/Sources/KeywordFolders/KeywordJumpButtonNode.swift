@@ -33,7 +33,7 @@ public final class KeywordJumpButtonNode: ASDisplayNode {
     /// Called when the size or visibility changed and the container must lay out again.
     public var requestLayout: (() -> Void)?
 
-    public var isVisible: Bool {
+    public var isShown: Bool {
         return !self.isDismissed && !self.hits.isEmpty
     }
 
