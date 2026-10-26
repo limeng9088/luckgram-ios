@@ -42,6 +42,9 @@ public struct LuckgramUserNotesStrings {
     public var delete: String { return s("Delete", "删除") }
     public var cancel: String { return s("Cancel", "取消") }
     public var done: String { return s("Done", "完成") }
+    public var discardTitle: String { return s("Discard changes?", "放弃修改？") }
+    public var discard: String { return s("Discard", "放弃") }
+    public var tooLong: String { return s("A note can be up to 2000 characters", "备注最多 2000 字") }
 
     public var barTitle: String { return s("Private note · only visible to you", "私人备注 · 只有你能看到") }
     public var edit: String { return s("Edit", "编辑") }
