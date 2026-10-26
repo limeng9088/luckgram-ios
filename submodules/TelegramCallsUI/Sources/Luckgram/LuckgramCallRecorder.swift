@@ -168,6 +168,14 @@ public final class LuckgramCallRecorder {
             session.writerStarted = session.writer.begin(with: session.dataItem)
             if !session.writerStarted {
                 Logger.shared.log("LuckgramCallRecorder", "cannot start the Opus writer")
+                Queue.mainQueue().async {
+                    let recorder = LuckgramCallRecorder.shared
+                    guard recorder.session === session else {
+                        return
+                    }
+                    recorder.stop(save: false)
+                    luckgramCallRecordingToast(context: session.context, text: LuckgramCallRecordingStrings.startFailed)
+                }
             }
         }
         

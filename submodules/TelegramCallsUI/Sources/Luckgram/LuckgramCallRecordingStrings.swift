@@ -45,6 +45,10 @@ enum LuckgramCallRecordingStrings {
         return isChinese() ? "录音 " + elapsed : "Recording " + elapsed
     }
     static var stopRecording: String { s("停止录音", "Stop recording") }
+    static var startFailed: String { s("无法开始录音", "Couldn't start recording") }
+    static func savedToast(_ target: String) -> String {
+        return isChinese() ? "通话录音已保存到「\(target)」" : "Call recording saved to \(target)"
+    }
     
     // MARK: Saved message
     
