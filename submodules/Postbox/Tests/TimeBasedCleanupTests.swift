@@ -331,6 +331,69 @@ final class TimeBasedCleanupTests: XCTestCase {
         withExtendedLifetime(cleanup) {}
     }
 
+    // MARK: - Luckgram 08 (cache): protected media
+
+    /// Media of a protected peer (Saved Messages) is skipped by the size limit; the next
+    /// oldest files are evicted instead until the cache fits.
+    func testTheSizeLimitKeepsMediaOfProtectedPeers() {
+        let saved = self.writeSparseFile("resource-saved", megabytes: 600)
+        self.setAge(saved, seconds: 3 * 86_400)
+        let middle = self.writeSparseFile("resource-middle", megabytes: 500)
+        self.setAge(middle, seconds: 2 * 86_400)
+        let newest = self.writeSparseFile("resource-newest", megabytes: 300)
+        self.setAge(newest, seconds: 86_400)
+
+        let savedMessagesPeerId = PeerId(namespace: PeerId.Namespace._internalFromInt32Value(0), id: PeerId.Id._internalFromInt64Value(42))
+        let (cleanup, storageBox, _) = self.makeCleanupWithStorage()
+        storageBox.add(reference: StorageBox.Reference(peerId: savedMessagesPeerId.toInt64(), messageNamespace: 0, messageId: 1), to: "resource-saved".data(using: .utf8)!, contentType: 0)
+        storageBox.add(reference: StorageBox.Reference(peerId: 7, messageNamespace: 0, messageId: 1), to: "resource-middle".data(using: .utf8)!, contentType: 0)
+        XCTAssertEqual(self.storedIds(storageBox, ["resource-saved", "resource-middle"]), ["resource-saved", "resource-middle"])
+
+        cleanup.setMaxStoreTimes(general: Int32.max, shortLived: 60 * 60, gigabytesLimit: 1, protectedPeerIds: Set([savedMessagesPeerId]))
+        self.waitForScan()
+
+        XCTAssertTrue(self.exists(saved), "Saved Messages media is never evicted by the size limit")
+        XCTAssertFalse(self.exists(middle))
+        XCTAssertTrue(self.exists(newest))
+        withExtendedLifetime(cleanup) {}
+    }
+
+    /// A partial file written within the last day is a download that may still be running:
+    /// the size limit leaves it alone even when it is the oldest file.
+    func testTheSizeLimitKeepsRecentPartialDownloads() {
+        let downloading = self.writeSparseFile("resource-d_partial", megabytes: 600)
+        self.setAge(downloading, seconds: 2 * 60 * 60)
+        let middle = self.writeSparseFile("resource-middle", megabytes: 500)
+        self.setAge(middle, seconds: 60 * 60)
+        let newest = self.writeSparseFile("resource-newest", megabytes: 300)
+        self.setAge(newest, seconds: 30 * 60)
+
+        let cleanup = self.makeCleanup()
+        cleanup.setMaxStoreTimes(general: Int32.max, shortLived: 60 * 60, gigabytesLimit: 1)
+        self.waitForScan()
+
+        XCTAssertTrue(self.exists(downloading), "an in-progress download is not evicted")
+        XCTAssertFalse(self.exists(middle))
+        XCTAssertTrue(self.exists(newest))
+        withExtendedLifetime(cleanup) {}
+    }
+
+    /// An abandoned partial file (no writes for over a day) is evicted like any other file.
+    func testTheSizeLimitEvictsStalePartialFiles() {
+        let stale = self.writeSparseFile("resource-s_partial", megabytes: 600)
+        self.setAge(stale, seconds: 3 * 86_400)
+        let middle = self.writeSparseFile("resource-middle", megabytes: 500)
+        self.setAge(middle, seconds: 2 * 86_400)
+
+        let cleanup = self.makeCleanup()
+        cleanup.setMaxStoreTimes(general: Int32.max, shortLived: 60 * 60, gigabytesLimit: 1)
+        self.waitForScan()
+
+        XCTAssertFalse(self.exists(stale))
+        XCTAssertTrue(self.exists(middle))
+        withExtendedLifetime(cleanup) {}
+    }
+
     func testTheSizeLimitEvictsOldestFirstUntilTheCacheFits() {
         let oldest = self.writeSparseFile("oldest", megabytes: 600)
         self.setAge(oldest, seconds: 3 * 86_400)
