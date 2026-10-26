@@ -18,6 +18,40 @@ elif [ "$ARCH" = "sim_arm64" ]; then
     custom_xcode_path="$(xcode-select -p)/"
     sed -i '' "s|/Applications/Xcode.app/Contents/Developer/|$custom_xcode_path|g" "$TARGET_CROSSFILE"
     CROSSFILE="../package/crossfiles/arm64-iPhoneSimulator-custom.meson"
+elif [ "$ARCH" = "sim_x86_64" ]; then
+    # Luckgram QA: Intel simulator; no x86 asm (nasm is not installed on the build Mac)
+    TARGET_CROSSFILE="$BUILD_DIR/dav1d/package/crossfiles/x86_64-iPhoneSimulator-custom.meson"
+    SIM_SYSROOT="$(xcode-select -p)/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator.sdk"
+    cat > "$TARGET_CROSSFILE" << MESONEOF
+[binaries]
+c = ['clang', '-arch', 'x86_64', '-isysroot', '$SIM_SYSROOT']
+cpp = ['clang++', '-arch', 'x86_64', '-isysroot', '$SIM_SYSROOT']
+objc = ['clang', '-arch', 'x86_64', '-isysroot', '$SIM_SYSROOT']
+objcpp = ['clang++', '-arch', 'x86_64', '-isysroot', '$SIM_SYSROOT']
+ar = 'ar'
+strip = 'strip'
+
+[built-in options]
+c_args = ['-mios-simulator-version-min=11.0']
+cpp_args = ['-mios-simulator-version-min=11.0']
+c_link_args = ['-mios-simulator-version-min=11.0']
+cpp_link_args = ['-mios-simulator-version-min=11.0']
+objc_args = ['-mios-simulator-version-min=11.0']
+objcpp_args = ['-mios-simulator-version-min=11.0']
+
+[properties]
+needs_exe_wrapper = true
+
+[host_machine]
+system = 'darwin'
+subsystem = 'ios-simulator'
+kernel = 'xnu'
+cpu_family = 'x86_64'
+cpu = 'x86_64'
+endian = 'little'
+MESONEOF
+    CROSSFILE="../package/crossfiles/x86_64-iPhoneSimulator-custom.meson"
+    MESON_OPTIONS="$MESON_OPTIONS -Denable_asm=false"
 elif [ "$ARCH" = "macos_arm64" ]; then
     TARGET_CROSSFILE="$BUILD_DIR/dav1d/package/crossfiles/arm64-MacOSX-custom.meson"
     custom_xcode_path="$(xcode-select -p)"
