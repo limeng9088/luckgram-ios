@@ -80,6 +80,7 @@ swift_library(
         "//submodules/TelegramUI/Components/RichTextEditor:RichTextEditorUIKit",
         "//submodules/TelegramUI/Components/RichTextEditor:RichTextEditorCore",
         "//submodules/TelegramUIPreferences",
+        "//submodules/LuckgramUI",
     ],
     visibility = [
         "//visibility:public",

@@ -10,23 +10,19 @@ import TelegramCore
 import AccountContext
 import TelegramPresentationData
 import TelegramUIPreferences
+import LuckgramUI
 
 public enum LuckgramQuickReplies {
     /// Switch key, registered in the Luckgram feature registry ("消息与语言" group). Default: on.
     public static let featureKey = "quick_replies"
-    public static let featureDefault = true
 
     public static let maxCount = 100
     public static let maxLength = 1000
 
-    /// Device level switch shared by all accounts. Same storage as feature 00's `LuckgramSettings`
-    /// (`UserDefaults(suiteName: "luckgram_settings")`, key = feature key; unset = registry default).
-    /// Android: `SharedPreferences("luckgram_settings")`.
+    /// Local switch on "Settings -> Luckgram features" and not switched off remotely (`LuckgramSettings`,
+    /// feature 00). The default (on) comes from the registry.
     public static var isEnabled: Bool {
-        if let value = UserDefaults(suiteName: "luckgram_settings")?.object(forKey: featureKey) as? Bool {
-            return value
-        }
-        return featureDefault
+        return LuckgramSettings.shared.isEnabled(featureKey)
     }
 
     // MARK: - Strings
@@ -34,12 +30,9 @@ public enum LuckgramQuickReplies {
     public struct Strings {
         public let chinese: Bool
 
+        /// Same rule as every other Luckgram string (`LuckgramStrings`, feature 00).
         public init(_ strings: PresentationStrings?) {
-            if let code = strings?.baseLanguageCode.lowercased(), code.hasPrefix("zh") {
-                self.chinese = true
-            } else {
-                self.chinese = Locale.preferredLanguages.first?.lowercased().hasPrefix("zh") ?? false
-            }
+            self.chinese = LuckgramStrings.isChinese
         }
 
         var presets: [String] {
@@ -71,6 +64,7 @@ public enum LuckgramQuickReplies {
                 : "Templates are stored only on this device, for the current account, and are never uploaded. Tap to edit, swipe left to delete, tap Edit to reorder. Up to \(LuckgramQuickReplies.maxLength) characters each, \(LuckgramQuickReplies.maxCount) in total."
         }
         var ok: String { return self.chinese ? "好" : "OK" }
+        var back: String { return self.chinese ? "返回" : "Back" }
     }
 
     // MARK: - Storage

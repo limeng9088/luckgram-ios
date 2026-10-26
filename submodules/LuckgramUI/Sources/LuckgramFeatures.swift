@@ -30,6 +30,11 @@ public enum LuckgramFeatures {
         // ---- 账号与隐私 / Accounts & Privacy
 
         // ---- 消息与语言 / Messages & Language
+        // Quick replies "Manage" subpage is attached by TelegramUI at startup (it lives in
+        // ChatTextInputPanelNode, which depends on LuckgramUI).
+        add(.toggle("quick_replies", group: .messagesLanguage, default: true,
+            title: ("快捷回复", "Quick replies"),
+            description: ("把常用回复存成模板，输入框里一点就填入", "Save frequent replies as templates and insert them with one tap")))
 
         // ---- 媒体、通话与存储 / Media, Calls & Storage
 
