@@ -15,6 +15,17 @@ public final class LuckgramAIMock {
     private var chatLimit = 50
     private var transcribeCalls = 0
 
+    private var failTranscribeAt = 0
+    private var failTranscribeCode = ""
+
+    /// The (okSegments + 1)-th transcribe request from now fails with `code`.
+    public func failTranscribeAfter(_ okSegments: Int, code: String) {
+        self.lock.lock()
+        self.failTranscribeAt = self.transcribeCalls + okSegments + 1
+        self.failTranscribeCode = code
+        self.lock.unlock()
+    }
+
     /// Number of /v1/ai/transcribe requests so far (one per uploaded segment).
     public var transcribeCount: Int {
         self.lock.lock()
@@ -122,7 +133,14 @@ public final class LuckgramAIMock {
             self.lock.lock()
             self.transcribeCalls += 1
             let n = self.transcribeCalls
+            let failCode: String? = n == self.failTranscribeAt ? self.failTranscribeCode : nil
+            if failCode != nil {
+                self.failTranscribeAt = 0
+            }
             self.lock.unlock()
+            if let failCode {
+                return LuckgramAIMock.error(failCode == "quota_exceeded" ? 429 : 503, failCode)
+            }
             var language = "zh"
             if let query, query.hasPrefix("language=") {
                 language = String(query.dropFirst("language=".count))

@@ -97,8 +97,18 @@ public final class LuckgramAI {
         public var text: String
         public var language: String?
         public var durationSeconds: Double
-        /// Number of uploaded segments (1 unless the file was over `ai.transcribe_max_mb`).
+        /// Number of segments the file was split into (1 unless it was over `ai.transcribe_max_mb`).
         public var segments: Int = 1
+        /// Segments transcribed successfully; less than `segments` when `isPartial`.
+        public var completedSegments: Int = 0
+        /// Set when a later segment failed (e.g. `quota_exceeded`) after earlier ones succeeded: `text`
+        /// holds the completed part and this says why the rest is missing (#55). The server charges
+        /// each successful segment, so that text is kept instead of discarded.
+        public var partialError: LuckgramAIError?
+
+        public var isPartial: Bool {
+            return self.partialError != nil
+        }
     }
 
     private static let consentKey = "ai_consent"
@@ -315,7 +325,7 @@ public final class LuckgramAI {
             if index >= segments.count {
                 return .single(acc)
             }
-            return self.authorized(method: "POST", path: requestPath, contentType: mimeType, body: segments[index], accept: "application/json")
+            return (self.authorized(method: "POST", path: requestPath, contentType: mimeType, body: segments[index], accept: "application/json")
             |> mapToSignal { event -> Signal<Transcription, LuckgramAIError> in
                 guard case let .body(data) = event, let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else {
                     return .complete()
@@ -326,6 +336,22 @@ public final class LuckgramAI {
                     next.language = object["language"] as? String
                 }
                 next.durationSeconds += ((object["duration_seconds"] as? NSNumber) ?? (object["duration"] as? NSNumber))?.doubleValue ?? 0.0
+                next.completedSegments += 1
+                return .single(next)
+            })
+            |> `catch` { error -> Signal<Transcription, LuckgramAIError> in
+                // Nothing done yet, or cancelled: a plain error, as before. Otherwise keep what we have.
+                if acc.completedSegments == 0 || error.code == LuckgramAIError.cancelled {
+                    return .fail(error)
+                }
+                var partial = acc
+                partial.partialError = error
+                return .single(partial)
+            }
+            |> mapToSignal { next -> Signal<Transcription, LuckgramAIError> in
+                if next.isPartial || next.completedSegments == acc.completedSegments {
+                    return .single(next)
+                }
                 return upload(index + 1, next)
             }
         }

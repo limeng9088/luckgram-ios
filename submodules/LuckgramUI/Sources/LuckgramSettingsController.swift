@@ -336,8 +336,21 @@ private func luckgramAISelfTest(context: AccountContext, present: @escaping (Vie
         lines.append("2. transcribe ✓ text=\"\(transcription.text)\" language=\(transcription.language ?? "-")")
         return transcribeLong
     }
-    |> mapToSignal { transcription -> Signal<LuckgramAI.Image, LuckgramAIError> in
-        lines.append("2b. transcribe \(longWav.count / 1024) KB \(transcription.segments > 1 ? "✓" : "✗") \(transcription.segments) segments: \"\(transcription.text)\"")
+    |> mapToSignal { transcription -> Signal<LuckgramAI.Transcription?, LuckgramAIError> in
+        lines.append("2b. transcribe \(longWav.count / 1024) KB \(transcription.segments > 1 && !transcription.isPartial ? "✓" : "✗") \(transcription.segments) segments: \"\(transcription.text)\"")
+        if !ai.isUsingMock {
+            return .single(nil)
+        }
+        // Mock only: segment 2 fails with quota_exceeded; segment 1's text must be kept (#55).
+        ai.mock.failTranscribeAfter(1, code: LuckgramAIError.quotaExceeded)
+        return ai.transcribe(context: context, present: present, audio: longWav, mimeType: "audio/wav")
+        |> map(Optional.init)
+    }
+    |> mapToSignal { partial -> Signal<LuckgramAI.Image, LuckgramAIError> in
+        if let t = partial {
+            let ok = t.isPartial && t.completedSegments == 1 && t.partialError?.code == LuckgramAIError.quotaExceeded && !t.text.isEmpty
+            lines.append("2b'. partial \(ok ? "✓" : "✗") \(t.completedSegments)/\(t.segments) error=\(t.partialError?.code ?? "-") text=\"\(t.text)\"")
+        }
         return image
     }
     |> mapToSignal { image -> Signal<[String: Any], LuckgramAIError> in
