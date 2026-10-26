@@ -1,32 +1,18 @@
 import Foundation
 import TelegramPresentationData
+import LuckgramUI
 
 /// Luckgram: send a gallery video as a round video message (spec 03-round-video).
 ///
-/// Switch key `round_video_from_gallery`, default on. Until the shared `LuckgramSettings`
-/// framework (spec 00) lands, the value is read from the standard user defaults under
-/// `luckgram.round_video_from_gallery` (device-wide), so wiring it into `LuckgramSettings`
-/// later only touches `isEnabled`.
+/// The switch `round_video_from_gallery` is registered in `LuckgramFeatures` (group "媒体、通话与存储",
+/// default on) and read through `LuckgramSettings`, which also applies the remote switch (S4).
 public enum LuckgramRoundVideo {
-    public static let key = "round_video_from_gallery"
-    public static let defaultValue = true
+    public static let key = LuckgramFeatures.roundVideoFromGallery
     /// Longest round video Telegram accepts, seconds.
-    public static let maxDuration: Double = 60.0
-
-    private static var defaultsKey: String {
-        return "luckgram." + key
-    }
+    public static let maxDuration: Double = LuckgramRoundVideoGeometry.maxDuration
 
     public static var isEnabled: Bool {
-        get {
-            if let value = UserDefaults.standard.object(forKey: defaultsKey) as? NSNumber {
-                return value.boolValue
-            }
-            return defaultValue
-        }
-        set {
-            UserDefaults.standard.set(newValue, forKey: defaultsKey)
-        }
+        return LuckgramSettings.shared.isEnabled(key)
     }
 
     public enum StringKey: Int {
@@ -62,22 +48,9 @@ public enum LuckgramRoundVideo {
         .selected: "已选 %@"
     ]
 
+    /// The one Luckgram language rule (00, issue #42).
     public static func isChinese(_ strings: PresentationStrings?) -> Bool {
-        if let strings {
-            let code = strings.baseLanguageCode.lowercased()
-            if code.hasPrefix("zh") {
-                return true
-            }
-            if code != "en" {
-                return false
-            }
-        }
-        // Telegram has no built-in Chinese localization: on a Chinese system it falls back to
-        // English, in which case follow the system language.
-        if let preferred = Locale.preferredLanguages.first?.lowercased() {
-            return preferred.hasPrefix("zh")
-        }
-        return false
+        return LuckgramStrings.isChinese
     }
 
     public static func string(_ key: StringKey, _ strings: PresentationStrings?) -> String {
