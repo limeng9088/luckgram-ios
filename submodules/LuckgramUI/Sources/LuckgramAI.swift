@@ -295,7 +295,7 @@ public final class LuckgramAI {
     ///
     /// - Parameters:
     ///   - mimeType: e.g. `audio/ogg`, `audio/mpeg`, `audio/mp4`, `audio/wav`
-    ///   - language: optional ISO-639-1 hint
+    ///   - language: optional ISO-639-1 (2-letter) hint; other values are ignored
     public func transcribe(context: AccountContext?, present: ((ViewController) -> Void)?, audio: Data, mimeType: String, language: String? = nil) -> Signal<Transcription, LuckgramAIError> {
         if audio.isEmpty || !mimeType.hasPrefix("audio/") {
             return .fail(LuckgramAIError(code: LuckgramAIError.invalidRequest))
@@ -305,7 +305,8 @@ public final class LuckgramAI {
             return .fail(LuckgramAIError(code: LuckgramAIError.inputTooLarge))
         }
         var path = "/v1/ai/transcribe"
-        if let language, language.range(of: "^[a-z]{2,3}$", options: .regularExpression) != nil {
+        // The server accepts ISO-639-1 (2 letters) only; anything else -> let it auto-detect (#49).
+        if let language, language.range(of: "^[a-z]{2}$", options: .regularExpression) != nil {
             path += "?language=\(language)"
         }
         let requestPath = path
@@ -324,7 +325,7 @@ public final class LuckgramAI {
                 if next.language == nil {
                     next.language = object["language"] as? String
                 }
-                next.durationSeconds += (object["duration"] as? NSNumber)?.doubleValue ?? 0.0
+                next.durationSeconds += ((object["duration_seconds"] as? NSNumber) ?? (object["duration"] as? NSNumber))?.doubleValue ?? 0.0
                 return upload(index + 1, next)
             }
         }
@@ -477,7 +478,7 @@ public final class LuckgramAI {
                 let registration: [String: Any] = [
                     "platform": "ios",
                     "app_version": (info["CFBundleShortVersionString"] as? String) ?? "",
-                    "locale": Locale.current.identifier
+                    "locale": LuckgramAI.registrationLocale()
                 ]
                 request.httpBody = try? JSONSerialization.data(withJSONObject: registration)
                 disposable.set((self.send(request)
@@ -541,6 +542,20 @@ public final class LuckgramAI {
             code = LuckgramAIError.upstreamUnavailable
         }
         return LuckgramAIError(code: code, httpStatus: status)
+    }
+
+    /// "language[-Script][-REGION]" only, e.g. "zh-Hans-CN" (same as Android). "@rg=…", "@calendar=…"
+    /// and other keywords are dropped; the server rejects them (#48).
+    static func registrationLocale() -> String {
+        let locale = Locale.current
+        var parts: [String] = [locale.languageCode ?? "und"]
+        if let script = locale.scriptCode, !script.isEmpty {
+            parts.append(script)
+        }
+        if let region = locale.regionCode, !region.isEmpty {
+            parts.append(region)
+        }
+        return parts.joined(separator: "-")
     }
 
     static func sha256Hex(_ data: Data) -> String {

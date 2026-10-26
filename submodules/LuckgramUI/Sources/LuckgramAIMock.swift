@@ -127,8 +127,11 @@ public final class LuckgramAIMock {
             if let query, query.hasPrefix("language=") {
                 language = String(query.dropFirst("language=".count))
             }
+            if language.range(of: "^[a-z]{2}$", options: .regularExpression) == nil {
+                return LuckgramAIMock.error(400, "invalid_request")
+            }
             let text = LuckgramStrings.isChinese ? "第\(n)段（\(body.count) 字节）。" : "Segment \(n) (\(body.count) bytes)."
-            return .json(200, ["text": text, "language": language, "duration": Double(body.count) / 32000.0])
+            return .json(200, ["text": text, "language": language, "duration_seconds": Double(body.count) / 32000.0, "model": "mock"])
         case "/v1/me":
             self.lock.lock()
             let used = self.chats
