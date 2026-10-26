@@ -52,17 +52,15 @@ private final class LuckgramSettingsArguments {
     let toggle: (String, Bool) -> Void
     let openSubpage: (String) -> Void
     let consent: () -> Void
-    let footerTap: () -> Void
     let setMock: (Bool) -> Void
     let selfTest: () -> Void
     let consentCheck: () -> Void
     let resetToken: () -> Void
 
-    init(toggle: @escaping (String, Bool) -> Void, openSubpage: @escaping (String) -> Void, consent: @escaping () -> Void, footerTap: @escaping () -> Void, setMock: @escaping (Bool) -> Void, selfTest: @escaping () -> Void, consentCheck: @escaping () -> Void, resetToken: @escaping () -> Void) {
+    init(toggle: @escaping (String, Bool) -> Void, openSubpage: @escaping (String) -> Void, consent: @escaping () -> Void, setMock: @escaping (Bool) -> Void, selfTest: @escaping () -> Void, consentCheck: @escaping () -> Void, resetToken: @escaping () -> Void) {
         self.toggle = toggle
         self.openSubpage = openSubpage
         self.consent = consent
-        self.footerTap = footerTap
         self.setMock = setMock
         self.selfTest = selfTest
         self.consentCheck = consentCheck
@@ -186,10 +184,7 @@ private enum LuckgramSettingsEntry: ItemListNodeEntry {
         case let .debugInfo(text):
             return ItemListTextItem(presentationData: presentationData, text: .plain(text), sectionId: self.section)
         case let .footer(text):
-            // The version line is a link: tapping it 7 times toggles the debug tools.
-            return ItemListTextItem(presentationData: presentationData, text: .markdown(text), sectionId: self.section, linkAction: { _ in
-                arguments.footerTap()
-            }, textAlignment: .center)
+            return ItemListTextItem(presentationData: presentationData, text: .plain(text), sectionId: self.section, textAlignment: .center)
         }
     }
 }
@@ -235,9 +230,7 @@ private func luckgramSettingsEntries() -> [LuckgramSettingsEntry] {
     let info = Bundle.main.infoDictionary ?? [:]
     let version = "\((info["CFBundleShortVersionString"] as? String) ?? "") (\((info["CFBundleVersion"] as? String) ?? ""))"
     let footer = LuckgramStrings.footer(version: version)
-    let lines = footer.components(separatedBy: "\n")
-    let markdown = "[\(lines.first ?? "")](luckgram-version)\n" + lines.dropFirst().joined(separator: "\n")
-    entries.append(.footer(markdown))
+    entries.append(.footer(footer))
     return entries
 }
 
@@ -245,8 +238,6 @@ private func luckgramSettingsEntries() -> [LuckgramSettingsEntry] {
 public func luckgramSettingsController(context: AccountContext) -> ViewController {
     var pushImpl: ((ViewController) -> Void)?
     var presentImpl: ((ViewController) -> Void)?
-    var footerTaps = 0
-    var lastFooterTap = 0.0
 
     let arguments = LuckgramSettingsArguments(
         toggle: { key, value in
@@ -267,17 +258,6 @@ public func luckgramSettingsController(context: AccountContext) -> ViewControlle
                 ]))
             } else {
                 let _ = LuckgramAI.shared.requestConsent(context: context, present: { c in presentImpl?(c) }).start()
-            }
-        },
-        footerTap: {
-            let now = CFAbsoluteTimeGetCurrent()
-            footerTaps = now - lastFooterTap < 0.8 ? footerTaps + 1 : 1
-            lastFooterTap = now
-            if footerTaps >= 7 {
-                footerTaps = 0
-                LuckgramSettings.shared.toggleDebugToolsUnlocked()
-                let presentationData = context.sharedContext.currentPresentationData.with { $0 }
-                presentImpl?(UndoOverlayController(presentationData: presentationData, content: .info(title: nil, text: LuckgramSettings.shared.isDebugToolsVisible ? "Debug tools: on" : "Debug tools: off", timeout: nil, customUndoText: nil), elevatedLayout: false, action: { _ in return false }))
             }
         },
         setMock: { value in

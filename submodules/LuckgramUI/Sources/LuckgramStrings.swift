@@ -1,16 +1,43 @@
 import Foundation
 
-/// Luckgram UI strings in Chinese and English. Telegram has no bundled Chinese localization, so
-/// Luckgram strings pick Chinese when the system language or the Telegram language is Chinese.
+/// Luckgram UI strings in Chinese and English.
+///
+/// **The one language rule for every Luckgram feature** (same on Android, issue #42):
+/// Chinese when the Telegram UI language is a Chinese pack **or** the system language is Chinese;
+/// English otherwise. Features must use `LuckgramStrings.isChinese` / `pick(_:_:)` instead of
+/// their own check.
 public enum LuckgramStrings {
-    /// Language code of the Telegram UI language; updated by Luckgram screens from PresentationData.
-    public static var appLanguageCode: String?
+    private static let lock = NSLock()
+    private static var appLanguageCodeValue: String?
+
+    /// Language code of the Telegram UI language. Kept up to date by `SharedAccountContextImpl`
+    /// for the whole app, so it is valid before any Luckgram screen has been opened.
+    public static var appLanguageCode: String? {
+        get {
+            lock.lock()
+            defer { lock.unlock() }
+            return appLanguageCodeValue
+        }
+        set {
+            lock.lock()
+            appLanguageCodeValue = newValue
+            lock.unlock()
+        }
+    }
+
+    /// True for "zh", "zh-hans", "zh-hant-beta", "zhcncc", "classic-zh-cn", …
+    static func isChineseCode(_ code: String?) -> Bool {
+        guard let code = code?.lowercased().replacingOccurrences(of: "_", with: "-"), !code.isEmpty else {
+            return false
+        }
+        return code.hasPrefix("zh") || code.contains("-zh")
+    }
 
     public static var isChinese: Bool {
-        if let code = appLanguageCode?.lowercased(), code.hasPrefix("zh") {
+        if isChineseCode(appLanguageCode) {
             return true
         }
-        return Locale.preferredLanguages.first?.lowercased().hasPrefix("zh") ?? false
+        return isChineseCode(Locale.preferredLanguages.first)
     }
 
     public static func pick(_ zh: String, _ en: String) -> String {

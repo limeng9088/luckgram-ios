@@ -390,6 +390,8 @@ public final class SharedAccountContextImpl: SharedAccountContext {
             updatedPresentationData(accountManager: self.accountManager, applicationInForeground: self.applicationBindings.applicationInForeground, systemUserInterfaceStyle: mainWindow?.systemUserInterfaceStyle ?? .single(.light))
         )
         self._presentationData.set(presentationData)
+        // Luckgram: one language rule for every Luckgram string (LuckgramStrings.isChinese).
+        LuckgramStrings.appLanguageCode = presentationData.strings.primaryComponent.languageCode
         self._automaticMediaDownloadSettings.set(.single(initialPresentationDataAndSettings.automaticMediaDownloadSettings)
         |> then(accountManager.sharedData(keys: [SharedDataKeys.autodownloadSettings, ApplicationSpecificSharedDataKeys.automaticMediaDownloadSettings])
             |> map { sharedData in
@@ -466,6 +468,7 @@ public final class SharedAccountContextImpl: SharedAccountContext {
                 }
                 if stringsUpdated {
                     updateLegacyLocalization(strings: next.strings)
+                    LuckgramStrings.appLanguageCode = next.strings.primaryComponent.languageCode
                 }
                 if themeUpdated {
                     updateLegacyTheme()

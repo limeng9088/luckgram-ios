@@ -12,7 +12,6 @@ public final class LuckgramSettings {
     public static let shared = LuckgramSettings()
 
     private static let suiteName = "luckgram_settings"
-    private static let debugToolsKey = "_debug_tools_unlocked"
     private static let installMarkerKey = "_installed"
     private static let remoteConfigKey = "_remote_config"
 
@@ -201,17 +200,13 @@ public final class LuckgramSettings {
 
     // MARK: - Debug tools
 
-    /// Debug builds, or release builds after tapping the version on the Luckgram page 7 times.
+    /// Debug builds only (spec 00: `debug_demo` 仅调试构建可见). QA uses the qa build, never a release build.
     public var isDebugToolsVisible: Bool {
         #if DEBUG
         return true
         #else
-        return self.bool(LuckgramSettings.debugToolsKey, default: false)
+        return false
         #endif
-    }
-
-    public func toggleDebugToolsUnlocked() {
-        self.setBool(LuckgramSettings.debugToolsKey, !self.bool(LuckgramSettings.debugToolsKey, default: false))
     }
 
     // MARK: - Logout cleanup
