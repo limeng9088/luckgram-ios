@@ -127,6 +127,7 @@ import TextProcessingScreen
 import CreateBotScreen
 import EmojiStatusSelectionComponent
 import EntityKeyboard
+import ChatTextInputPanelNode
 import LuckgramUI
 
 private final class AccountUserInterfaceInUseContext {
@@ -391,6 +392,10 @@ public final class SharedAccountContextImpl: SharedAccountContext {
             updatedPresentationData(accountManager: self.accountManager, applicationInForeground: self.applicationBindings.applicationInForeground, systemUserInterfaceStyle: mainWindow?.systemUserInterfaceStyle ?? .single(.light))
         )
         self._presentationData.set(presentationData)
+        // Luckgram: the quick replies manage page lives in ChatTextInputPanelNode, which LuckgramUI can't import.
+        let _ = LuckgramFeatures.find(LuckgramQuickReplies.featureKey)?.subpage { context in
+            return luckgramQuickRepliesSettingsController(context: context)
+        }
         // Luckgram: one language rule for every Luckgram string (LuckgramStrings.isChinese).
         LuckgramStrings.appLanguageCode = initialPresentationDataAndSettings.presentationData.strings.primaryComponent.languageCode
         // Luckgram: remote config (task S4), refreshed whenever the app comes to the foreground.

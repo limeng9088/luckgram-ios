@@ -34,6 +34,11 @@ public enum LuckgramFeatures {
         add(.toggle("translate_out", group: .messagesLanguage, default: true,
             title: ("发送前翻译", "Translate before sending"),
             description: ("在输入框里先翻译成对方的语言再发送", "Translate your message into the other person's language before sending")))
+        // Quick replies "Manage" subpage is attached by TelegramUI at startup (it lives in
+        // ChatTextInputPanelNode, which depends on LuckgramUI).
+        add(.toggle("quick_replies", group: .messagesLanguage, default: true,
+            title: ("快捷回复", "Quick replies"),
+            description: ("把常用回复存成模板，输入框里一点就填入", "Save frequent replies as templates and insert them with one tap")))
 
         // ---- 媒体、通话与存储 / Media, Calls & Storage
         add(.toggle(LuckgramFeatures.roundVideoFromGallery, group: .mediaCallsStorage, default: true,
