@@ -10,6 +10,7 @@ import SwiftSignalKit
 import TelegramCore
 import TelegramPresentationData
 import AccountContext
+import LuckgramUI
 
 /// Cloud folder ids are 2...255; keyword folders use ids from here up.
 public let keywordFolderFilterIdBase: Int32 = 1_000_000
@@ -30,45 +31,22 @@ public func isKeywordFolderFilterId(_ id: Int32?) -> Bool {
 
 // MARK: - Feature switch
 
-/// Feature switch `keyword_folders`, default on.
-///
-/// Stored where foundation (00)'s `LuckgramSettings` keeps every switch: the
-/// `UserDefaults(suiteName: "luckgram_settings")` suite, key `keyword_folders` (same key as Android's
-/// `SharedPreferences("luckgram_settings")`). So the switch on "Settings → Luckgram Features" drives this
-/// feature as soon as 00 is merged. ChatListUI does not depend on LuckgramUI yet (00 is not on master);
-/// once it is, these accessors become `LuckgramSettings.shared.isEnabled(key)` / `isEnabledSignal(key)`.
-/// Changes made through LuckgramSettings are picked up via `UserDefaults.didChangeNotification`.
+/// Feature switch `keyword_folders` (registered in `LuckgramFeatures`, default on). Read through
+/// `LuckgramSettings`, so both the local switch and the S4 remote config apply (#43, #54).
 public enum KeywordFoldersSettings {
     public static let key = "keyword_folders"
-    static let suiteName = "luckgram_settings"
-    static let defaultValue = true
-
-    private static let defaults: UserDefaults = UserDefaults(suiteName: suiteName) ?? .standard
 
     public static var isEnabled: Bool {
-        if defaults.object(forKey: key) == nil {
-            return defaultValue
-        }
-        return defaults.bool(forKey: key)
+        return LuckgramSettings.shared.isEnabled(key)
     }
 
     public static func setEnabled(_ value: Bool) {
-        defaults.set(value, forKey: key)
+        LuckgramSettings.shared.setEnabled(key, value)
     }
 
-    /// Current value, then every change (whoever wrote it). Delivered on the main queue.
+    /// Current value, then every change (settings page or remote config). Main queue.
     public static var enabledSignal: Signal<Bool, NoError> {
-        return Signal<Bool, NoError> { subscriber in
-            subscriber.putNext(KeywordFoldersSettings.isEnabled)
-            let observer = NotificationCenter.default.addObserver(forName: UserDefaults.didChangeNotification, object: nil, queue: nil, using: { _ in
-                subscriber.putNext(KeywordFoldersSettings.isEnabled)
-            })
-            return ActionDisposable {
-                NotificationCenter.default.removeObserver(observer)
-            }
-        }
-        |> distinctUntilChanged
-        |> deliverOnMainQueue
+        return LuckgramSettings.shared.isEnabledSignal(key)
     }
 }
 
