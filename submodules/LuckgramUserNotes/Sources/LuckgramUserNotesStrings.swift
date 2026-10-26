@@ -3,32 +3,23 @@
 
 import Foundation
 import TelegramPresentationData
+import LuckgramUI
 
 /// Chinese / English UI strings for private notes.
 ///
-/// Telegram's language packs have no keys for Luckgram features, so the strings live here.
-/// Chinese is used when the app language is Chinese, or when the app uses its default (English)
-/// localization and the system language is Chinese.
+/// Telegram's language packs have no keys for Luckgram features, so the strings live here; the
+/// Chinese / English choice is the shared Luckgram rule `LuckgramStrings.isChinese` (specs#42).
 public struct LuckgramUserNotesStrings {
     public let isChinese: Bool
 
     public init(strings: PresentationStrings) {
-        let code = strings.primaryComponent.languageCode.lowercased()
-        if code.hasPrefix("zh") {
-            self.isChinese = true
-        } else if code == "en" {
-            self.isChinese = (Locale.preferredLanguages.first ?? "").lowercased().hasPrefix("zh")
-        } else {
-            self.isChinese = false
-        }
+        let _ = strings
+        self.isChinese = LuckgramStrings.isChinese
     }
 
     private func s(_ en: String, _ zh: String) -> String {
         return self.isChinese ? zh : en
     }
-
-    public var featureName: String { return s("Private notes", "私人备注") }
-    public var featureDescription: String { return s("Notes about contacts, groups and channels that only you can see", "给联系人、群组和频道写只有自己能看到的备注") }
 
     public var rowTitle: String { return s("Private note", "私人备注") }
     public var onlyYou: String { return s("only visible to you", "只有你能看到") }

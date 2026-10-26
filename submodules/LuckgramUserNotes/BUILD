@@ -21,6 +21,7 @@ swift_library(
         "//submodules/LocalizedPeerData:LocalizedPeerData",
         "//submodules/AppBundle:AppBundle",
         "//submodules/UndoUI:UndoUI",
+        "//submodules/LuckgramUI:LuckgramUI",
     ],
     visibility = [
         "//visibility:public",
