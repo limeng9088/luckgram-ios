@@ -1,6 +1,5 @@
 import Foundation
 import SwiftSignalKit
-import Postbox
 import TelegramCore
 import AccountContext
 import TelegramPresentationData
@@ -82,7 +81,7 @@ final class LuckgramCallRecordingUploader {
         let durationSeconds = max(1, Int(self.duration.rounded()))
         let caption = LuckgramCallRecordingStrings.caption(peerName: peerName, duration: luckgramFormatDuration(durationSeconds))
         
-        account.postbox.mediaBox.storeResourceData(self.resource.id, data: self.data, synchronous: true)
+        self.context.engine.resources.storeResourceData(id: EngineMediaResource.Id(self.resource.id), data: self.data, synchronous: true)
         let file = TelegramMediaFile(
             fileId: EngineMedia.Id(namespace: Namespaces.Media.LocalFile, id: Int64.random(in: Int64.min ... Int64.max)),
             partialReference: nil,
@@ -114,9 +113,10 @@ final class LuckgramCallRecordingUploader {
                 self.deliveredDisposable?.dispose()
                 self.deliveredDisposable = nil
                 // The local upload copy is no longer needed (spec 04 §5).
-                let resourceId = self.resource.id
+                let resourceId = EngineMediaResource.Id(self.resource.id)
+                let engine = self.context.engine
                 Queue.mainQueue().after(5.0, {
-                    let _ = account.postbox.mediaBox.removeCachedResources([resourceId], force: true).start()
+                    let _ = engine.resources.removeCachedResources(ids: [resourceId], force: true).start()
                 })
                 self.maybeFinish()
             }
