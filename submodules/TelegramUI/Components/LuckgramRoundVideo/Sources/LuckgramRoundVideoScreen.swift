@@ -8,6 +8,7 @@ import SwiftSignalKit
 import TelegramCore
 import AccountContext
 import TelegramPresentationData
+import PresentationDataUtils
 
 /// Crop page of "send gallery video as round video": a circular viewfinder over the video (drag to
 /// move, pinch to zoom), a range selector when the video is longer than 60 seconds, then a
@@ -281,16 +282,12 @@ public final class LuckgramRoundVideoScreen: ViewController {
     }
 
     private func showFailure(dismiss: Bool) {
-        let alert = UIAlertController(title: nil, message: self.string(.failed), preferredStyle: .alert)
-        alert.addAction(UIAlertAction(title: "OK", style: .default, handler: { [weak self] _ in
+        let alert = textAlertController(context: self.context, title: nil, text: self.string(.failed), actions: [TextAlertAction(type: .defaultAction, title: self.strings.Common_OK, action: { [weak self] in
             if dismiss {
                 self?.dismiss()
             }
-        }))
-        self.view.window?.rootViewController?.present(alert, animated: true)
-        if self.view.window?.rootViewController == nil, dismiss {
-            self.dismiss()
-        }
+        })])
+        self.present(alert, in: .window(.root))
     }
 
     // MARK: - Layout
