@@ -38,7 +38,7 @@ public final class KeywordJumpButtonNode: ASDisplayNode {
     }
 
     /// The folder's keywords when `chatListFilterId` is a keyword folder of this account, else nil.
-    public static func keywords(context: AccountContext, chatListFilterId: Int32?) -> [String]? {
+    public static func folderKeywords(context: AccountContext, chatListFilterId: Int32?) -> [String]? {
         guard let folder = cachedKeywordFolder(accountPeerId: context.account.peerId, filterId: chatListFilterId), !folder.keywords.isEmpty else {
             return nil
         }

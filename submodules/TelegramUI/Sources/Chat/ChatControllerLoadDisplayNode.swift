@@ -4952,7 +4952,7 @@ extension ChatControllerImpl {
         })
         
         // Luckgram: opened from a keyword folder -> "Next 'keyword'" pill above the input panel.
-        if case let .peer(peerId) = self.chatLocation, let keywords = KeywordJumpButtonNode.keywords(context: self.context, chatListFilterId: self.currentChatListFilter) {
+        if case let .peer(peerId) = self.chatLocation, let keywords = KeywordJumpButtonNode.folderKeywords(context: self.context, chatListFilterId: self.currentChatListFilter) {
             let jumpNode = KeywordJumpButtonNode(context: self.context, peerId: peerId, keywords: keywords, jump: { [weak self] messageId in
                 self?.navigateToMessage(messageLocation: .id(messageId, NavigateToMessageParams(timestamp: nil, quote: nil)), animated: true)
             }, presentController: { [weak self] c in
