@@ -62,6 +62,9 @@ public enum LuckgramFeatures {
         add(.toggle("save_to_saved", group: .messagesLanguage, default: true,
             title: ("一键收藏", "Save in one tap"),
             description: ("消息菜单里一点就存到收藏夹", "Save a message to Saved Messages straight from its menu")))
+        add(.toggle("translate_out", group: .messagesLanguage, default: true,
+            title: ("发送前翻译", "Translate before sending"),
+            description: ("在输入框里先翻译成对方的语言再发送", "Translate your message into the other person's language before sending")))
 
         // ---- 媒体、通话与存储 / Media, Calls & Storage
         // Settings page is attached by TelegramUI at startup (it lives in TelegramCallsUI,
