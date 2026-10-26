@@ -78,10 +78,12 @@ public enum LuckgramCacheStrings {
         return t(strings, "超过上限时，最久未打开的缓存会先被自动清理。收藏夹里的媒体和正在下载的文件不会被清理。", "When the cache grows beyond the limit, the files you haven't opened for the longest time are removed first. Media in Saved Messages and files being downloaded are kept.")
     }
 
+    /// Section header of the per-chat keep-media setting (same text on Android).
     public static func chatKeepMediaHeader(_ strings: PresentationStrings) -> String {
-        return t(strings, "本聊天媒体保留时间", "KEEP MEDIA FOR THIS CHAT")
+        return t(strings, "本聊天媒体保留时间", "Keep media for this chat")
     }
 
+    /// Row title of the per-chat keep-media setting (same text on Android).
     public static func chatKeepMediaTitle(_ strings: PresentationStrings) -> String {
         return t(strings, "保留时间", "Keep media")
     }
@@ -94,12 +96,9 @@ public enum LuckgramCacheStrings {
         return isChinese(strings) ? "使用分类默认值（\(categoryValue)）" : "Use default (\(categoryValue))"
     }
 
+    /// Description under the per-chat keep-media setting (same text on Android).
     public static func chatKeepMediaInfo(_ strings: PresentationStrings, size: String) -> String {
-        return isChinese(strings) ? "该聊天在本机占用 \(size)。这里的设置会覆盖私聊 / 群组 / 频道的分类设置。" : "This chat uses \(size) on this device. This setting overrides the private chats / groups / channels setting."
-    }
-
-    public static func savedMessagesKept(_ strings: PresentationStrings) -> String {
-        return t(strings, "收藏夹里的媒体永久保留，不会被自动清理。", "Media in Saved Messages is always kept and never removed automatically.")
+        return isChinese(strings) ? "该聊天在本机占用 \(size)。这里的设置会覆盖私聊 / 群组 / 频道的分类设置。收藏夹里的媒体和正在下载的文件不会被自动清理。" : "This chat uses \(size) on this device. This setting overrides the private chats / groups / channels setting. Media in Saved Messages and files being downloaded are never removed automatically."
     }
 
     /// Profile "…" menu entry.

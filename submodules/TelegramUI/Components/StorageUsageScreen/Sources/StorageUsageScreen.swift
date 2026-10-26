@@ -2058,8 +2058,9 @@ final class StorageUsageScreenComponent: Component {
                 contentHeight += 40.0
             }
             
-            if let peer = component.peer {
+            if let peer = component.peer, peer.id != component.context.account.peerId {
                 // Luckgram 08 (cache): keep-media period of this chat, overriding its category.
+                // Not shown for Saved Messages, which is always kept (same as Android).
                 let strings = environment.strings
                 let peerCategory: CacheStorageSettings.PeerStorageCategory
                 switch peer {
@@ -2076,12 +2077,9 @@ final class StorageUsageScreenComponent: Component {
                 default:
                     peerCategory = .groups
                 }
-                let isSavedMessages = peer.id == component.context.account.peerId
                 let categoryValue = self.cacheSettings?.categoryStorageTimeout[peerCategory] ?? CacheStorageSettings.defaultSettings.categoryStorageTimeout[peerCategory] ?? Int32.max
                 let valueText: String
-                if isSavedMessages {
-                    valueText = LuckgramCacheStrings.keepMedia(strings, value: Int32.max)
-                } else if let exception = self.luckgramPeerException {
+                if let exception = self.luckgramPeerException {
                     valueText = LuckgramCacheStrings.keepMedia(strings, value: exception)
                 } else {
                     valueText = LuckgramCacheStrings.followCategory(strings, categoryValue: LuckgramCacheStrings.keepMedia(strings, value: categoryValue))
@@ -2122,7 +2120,7 @@ final class StorageUsageScreenComponent: Component {
                         value: valueText,
                         hasNext: false,
                         action: { [weak self] sourceView in
-                            guard let self, !isSavedMessages else {
+                            guard let self else {
                                 return
                             }
                             self.openPeerKeepMediaMenu(peer: peer, category: peerCategory, sourceView: sourceView)
@@ -2145,7 +2143,7 @@ final class StorageUsageScreenComponent: Component {
                 contentHeight += peerKeepItemSize.height
                 contentHeight += 8.0
                 
-                let peerKeepDescription = isSavedMessages ? LuckgramCacheStrings.savedMessagesKept(strings) : LuckgramCacheStrings.chatKeepMediaInfo(strings, size: peerSizeText)
+                let peerKeepDescription = LuckgramCacheStrings.chatKeepMediaInfo(strings, size: peerSizeText)
                 let peerKeepDescriptionSize = self.luckgramPeerKeepDescriptionView.update(
                     transition: transition,
                     component: AnyComponent(MultilineTextComponent(
