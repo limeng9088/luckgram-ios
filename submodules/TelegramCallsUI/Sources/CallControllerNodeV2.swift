@@ -116,6 +116,13 @@ final class CallControllerNodeV2: ViewControllerTracingNode, CallControllerNodeP
         self.view.addSubview(self.containerView)
         self.containerView.addSubview(self.callScreen)
         
+        // Luckgram: call recording button under the call status (hides itself unless applicable).
+        let luckgramRecordButton = LuckgramCallRecordButton(call: call)
+        luckgramRecordButton.layoutUpdated = { [weak self] in
+            self?.callScreen.luckgramAccessoryViewUpdated()
+        }
+        self.callScreen.luckgramAccessoryView = luckgramRecordButton
+        
         // UIKit posts orientation changes only while someone generates them; the camera capturer
         // does so only while the local camera is on, and the remote video must follow the phone
         // even with our camera off.
