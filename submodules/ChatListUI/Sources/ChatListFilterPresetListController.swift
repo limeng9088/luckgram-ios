@@ -24,6 +24,8 @@ private final class ChatListFilterPresetListControllerArguments {
     let removePreset: (Int32) -> Void
     let updateDisplayTags: (Bool) -> Void
     let updateDisplayTagsLocked: () -> Void
+    /// Luckgram: opens a keyword folder (nil = new).
+    var openKeywordFolder: ((Int32?) -> Void)?
     
     init(context: AccountContext, addSuggestedPressed: @escaping (ChatFolderTitle, ChatListFilterData) -> Void, openPreset: @escaping (ChatListFilter) -> Void, addNew: @escaping () -> Void, setItemWithRevealedOptions: @escaping (Int32?, Int32?) -> Void, removePreset: @escaping (Int32) -> Void, updateDisplayTags: @escaping (Bool) -> Void, updateDisplayTagsLocked: @escaping () -> Void) {
         self.context = context
@@ -42,6 +44,7 @@ private enum ChatListFilterPresetListSection: Int32 {
     case suggested
     case list
     case tags
+    case keywordFolders
 }
 
 public enum ChatListFilterPresetListEntryTag: ItemListItemTag {
@@ -82,6 +85,10 @@ private enum ChatListFilterPresetListEntryStableId: Hashable {
     case listFooter
     case displayTags
     case displayTagsFooter
+    case keywordHeader
+    case keywordFolder(Int32)
+    case keywordAdd
+    case keywordFooter
 }
 
 private struct PresetIndex: Equatable {
@@ -103,6 +110,10 @@ private enum ChatListFilterPresetListEntry: ItemListNodeEntry {
     case listFooter(String)
     case displayTags(Bool?)
     case displayTagsFooter
+    case keywordHeader(String)
+    case keywordFolder(index: Int, folder: KeywordFolder, label: String)
+    case keywordAdd(String)
+    case keywordFooter(String)
     
     var section: ItemListSectionId {
         switch self {
@@ -114,6 +125,8 @@ private enum ChatListFilterPresetListEntry: ItemListNodeEntry {
             return ChatListFilterPresetListSection.list.rawValue
         case .displayTags, .displayTagsFooter:
             return ChatListFilterPresetListSection.tags.rawValue
+        case .keywordHeader, .keywordFolder, .keywordAdd, .keywordFooter:
+            return ChatListFilterPresetListSection.keywordFolders.rawValue
         }
     }
     
@@ -139,6 +152,14 @@ private enum ChatListFilterPresetListEntry: ItemListNodeEntry {
             return 3000
         case .displayTagsFooter:
             return 3001
+        case .keywordHeader:
+            return 4000
+        case let .keywordFolder(index, _, _):
+            return 4001 + index
+        case .keywordAdd:
+            return 4100
+        case .keywordFooter:
+            return 4101
         }
     }
     
@@ -164,6 +185,14 @@ private enum ChatListFilterPresetListEntry: ItemListNodeEntry {
             return .displayTags
         case .displayTagsFooter:
             return .displayTagsFooter
+        case .keywordHeader:
+            return .keywordHeader
+        case let .keywordFolder(_, folder, _):
+            return .keywordFolder(folder.id)
+        case .keywordAdd:
+            return .keywordAdd
+        case .keywordFooter:
+            return .keywordFooter
         }
     }
     
@@ -226,6 +255,18 @@ private enum ChatListFilterPresetListEntry: ItemListNodeEntry {
             }, tag: ChatListFilterPresetListEntryTag.displayTags)
         case .displayTagsFooter:
             return ItemListTextItem(presentationData: presentationData, text: .plain(presentationData.strings.ChatListFilterList_ShowTagsFooter), sectionId: self.section)
+        case let .keywordHeader(text):
+            return ItemListSectionHeaderItem(presentationData: presentationData, text: text, sectionId: self.section)
+        case let .keywordFolder(_, folder, label):
+            return ItemListDisclosureItem(presentationData: presentationData, systemStyle: .glass, title: folder.name, label: label, sectionId: self.section, style: .blocks, action: {
+                arguments.openKeywordFolder?(folder.id)
+            })
+        case let .keywordAdd(text):
+            return ItemListPeerActionItem(presentationData: presentationData, systemStyle: .glass, icon: nil, title: text, sectionId: self.section, height: .generic, editing: false, action: {
+                arguments.openKeywordFolder?(nil)
+            })
+        case let .keywordFooter(text):
+            return ItemListTextItem(presentationData: presentationData, text: .plain(text), sectionId: self.section)
         }
     }
 }
@@ -251,7 +292,7 @@ private func filtersWithAppliedOrder(filters: [(ChatListFilter, Int)], order: [I
     return sortedFilters
 }
 
-private func chatListFilterPresetListControllerEntries(presentationData: PresentationData, state: ChatListFilterPresetListControllerState, filters: [(ChatListFilter, Int)], updatedFilterOrder: [Int32]?, suggestedFilters: [ChatListFeaturedFilter], displayTags: Bool, isPremium: Bool, limits: EngineConfiguration.UserLimits, premiumLimits: EngineConfiguration.UserLimits) -> [ChatListFilterPresetListEntry] {
+private func chatListFilterPresetListControllerEntries(presentationData: PresentationData, state: ChatListFilterPresetListControllerState, filters: [(ChatListFilter, Int)], updatedFilterOrder: [Int32]?, suggestedFilters: [ChatListFeaturedFilter], displayTags: Bool, isPremium: Bool, limits: EngineConfiguration.UserLimits, premiumLimits: EngineConfiguration.UserLimits, keywordFolders: [KeywordFolder]) -> [ChatListFilterPresetListEntry] {
     var entries: [ChatListFilterPresetListEntry] = []
 
     entries.append(.screenHeader(presentationData.strings.ChatListFolderSettings_Info))
@@ -311,6 +352,17 @@ private func chatListFilterPresetListControllerEntries(presentationData: Present
     
     entries.append(.displayTags(effectiveDisplayTags))
     entries.append(.displayTagsFooter)
+    
+    if KeywordFoldersSettings.isEnabled {
+        entries.append(.keywordHeader(KeywordFolderStrings.title(presentationData.strings).uppercased()))
+        for i in 0 ..< keywordFolders.count {
+            entries.append(.keywordFolder(index: i, folder: keywordFolders[i], label: keywordFolders[i].keywords.joined(separator: ", ")))
+        }
+        if keywordFolders.count < keywordFoldersMaxCount {
+            entries.append(.keywordAdd(KeywordFolderStrings.newFolder(presentationData.strings)))
+        }
+        entries.append(.keywordFooter(KeywordFolderStrings.settingsInfo(presentationData.strings)))
+    }
     
     return entries
 }
@@ -591,7 +643,7 @@ public func chatListFilterPresetListController(context: AccountContext, mode: Ch
     )
     let signal = combineLatest(queue: .mainQueue(),
         context.sharedContext.presentationData,
-        statePromise.get(),
+        combineLatest(statePromise.get(), keywordFolders(context: context)),
         filtersWithCounts.get(),
         preferences,
         updatedFilterOrder.get(),
@@ -602,7 +654,8 @@ public func chatListFilterPresetListController(context: AccountContext, mode: Ch
             TelegramEngine.EngineData.Item.ChatList.FiltersDisplayTags()
         )
     )
-    |> map { presentationData, state, filtersWithCountsValue, preferences, updatedFilterOrderValue, suggestedFilters, peer, allLimits, displayTags -> (ItemListControllerState, (ItemListNodeState, Any)) in
+    |> map { presentationData, stateAndKeywordFolders, filtersWithCountsValue, preferences, updatedFilterOrderValue, suggestedFilters, peer, allLimits, displayTags -> (ItemListControllerState, (ItemListNodeState, Any)) in
+        let (state, keywordFoldersValue) = stateAndKeywordFolders
         var presentationData = presentationData
 
         let updatedTheme = presentationData.theme.withModalBlocksBackground()
@@ -684,7 +737,7 @@ public func chatListFilterPresetListController(context: AccountContext, mode: Ch
         }
         
         let controllerState = ItemListControllerState(presentationData: ItemListPresentationData(presentationData), title: .text(presentationData.strings.ChatListFolderSettings_Title), leftNavigationButton: leftNavigationButton, rightNavigationButton: rightNavigationButton, backNavigationButton: ItemListBackButton(title: presentationData.strings.Common_Back), animateChanges: false)
-        let entries = chatListFilterPresetListControllerEntries(presentationData: presentationData, state: state, filters: filtersWithCountsValue, updatedFilterOrder: updatedFilterOrderValue, suggestedFilters: suggestedFilters, displayTags: displayTags, isPremium: isPremium, limits: limits, premiumLimits: premiumLimits)
+        let entries = chatListFilterPresetListControllerEntries(presentationData: presentationData, state: state, filters: filtersWithCountsValue, updatedFilterOrder: updatedFilterOrderValue, suggestedFilters: suggestedFilters, displayTags: displayTags, isPremium: isPremium, limits: limits, premiumLimits: premiumLimits, keywordFolders: keywordFoldersValue)
         let listState = ItemListNodeState(presentationData: ItemListPresentationData(presentationData), entries: entries, style: .blocks, ensureVisibleItemTag: focusOnItemTag, initialScrollToItem: scrollToTags ? ListViewScrollToItem(index: entries.count - 1, position: .center(.bottom), animated: true, curve: .Spring(duration: 0.4), directionHint: .Down) : nil, animateChanges: true)
         
         return (controllerState, (listState, arguments))
@@ -708,6 +761,17 @@ public func chatListFilterPresetListController(context: AccountContext, mode: Ch
     }
     pushControllerImpl = { [weak controller] c in
         controller?.push(c)
+    }
+    arguments.openKeywordFolder = { folderId in
+        if let folderId {
+            pushControllerImpl?(keywordFolderEditController(context: context, folderId: folderId))
+        } else {
+            openNewKeywordFolder(context: context, push: { c in
+                pushControllerImpl?(c)
+            }, present: { c in
+                presentControllerImpl?(c)
+            })
+        }
     }
     presentControllerImpl = { [weak controller] c in
         controller?.present(c, in: .window(.root))
