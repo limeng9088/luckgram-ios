@@ -1,0 +1,47 @@
+name: Luckgram unit tests
+
+# Foundation-only Luckgram logic, tested with SwiftPM on Linux so the single
+# xcode-27 Mac stays free for app builds. The same tests also run on the
+# simulator via Bazel (e.g. //submodules/TelegramUI/Components/LuckgramRoundVideo:LuckgramRoundVideoTests).
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [master]
+    paths:
+      - 'submodules/TelegramUI/Components/LuckgramRoundVideo/**'
+      - '.github/workflows/luckgram-unit-tests.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: false
+      - name: Swift version
+        run: swift --version
+      - name: Round video geometry tests
+        run: |
+          set -euo pipefail
+          C=submodules/TelegramUI/Components/LuckgramRoundVideo
+          P="$RUNNER_TEMP/pkg"
+          mkdir -p "$P/Sources/LuckgramRoundVideo" "$P/Tests/LuckgramRoundVideoTests"
+          # Only Foundation-only files: UIKit/AVFoundation code is covered by the app build.
+          cp "$C/Sources/LuckgramRoundVideoGeometry.swift" "$P/Sources/LuckgramRoundVideo/"
+          cp "$C"/Tests/*.swift "$P/Tests/LuckgramRoundVideoTests/"
+          cat > "$P/Package.swift" <<'SWIFT'
+          // swift-tools-version:5.9
+          import PackageDescription
+          let package = Package(
+              name: "LuckgramRoundVideo",
+              targets: [
+                  .target(name: "LuckgramRoundVideo"),
+                  .testTarget(name: "LuckgramRoundVideoTests", dependencies: ["LuckgramRoundVideo"]),
+              ]
+          )
+          SWIFT
+          cd "$P" && swift test

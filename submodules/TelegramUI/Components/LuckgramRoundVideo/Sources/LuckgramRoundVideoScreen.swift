@@ -229,15 +229,16 @@ public final class LuckgramRoundVideoScreen: ViewController {
             self.showFailure(dismiss: true)
             return
         }
-        self.rangeStart = 0.0
-        self.rangeEnd = min(self.duration, LuckgramRoundVideo.maxDuration)
+        let initialRange = LuckgramRoundVideoGeometry.initialRange(duration: self.duration)
+        self.rangeStart = initialRange.start
+        self.rangeEnd = initialRange.end
 
         self.activityIndicator.stopAnimating()
         self.activityIndicator.isHidden = true
         self.sendButton.isEnabled = true
         self.sendButton.alpha = 1.0
 
-        if self.duration > LuckgramRoundVideo.maxDuration + 0.05 {
+        if LuckgramRoundVideoGeometry.needsRange(duration: self.duration) {
             self.rangeView.isHidden = false
             self.rangeLabel.isHidden = false
             self.rangeView.configure(asset: asset, duration: self.duration, maxLength: LuckgramRoundVideo.maxDuration)
@@ -347,7 +348,7 @@ public final class LuckgramRoundVideoScreen: ViewController {
         self.progressLayer.path = UIBezierPath(arcCenter: CGPoint(x: ringRect.midX, y: ringRect.midY), radius: ringRect.width / 2.0, startAngle: -CGFloat.pi / 2.0, endAngle: CGFloat.pi * 1.5, clockwise: true).cgPath
 
         if self.displaySize.width > 0.0 && self.displaySize.height > 0.0 {
-            self.baseScale = self.circleDiameter / min(self.displaySize.width, self.displaySize.height)
+            self.baseScale = CGFloat(LuckgramRoundVideoGeometry.baseScale(circleDiameter: Double(self.circleDiameter), width: Double(self.displaySize.width), height: Double(self.displaySize.height)))
             self.applyTransform()
         }
     }
@@ -358,10 +359,8 @@ public final class LuckgramRoundVideoScreen: ViewController {
         }
         let baseWidth = self.displaySize.width * self.baseScale
         let baseHeight = self.displaySize.height * self.baseScale
-        let maxX = max(0.0, (baseWidth * self.zoom - self.circleDiameter) / 2.0)
-        let maxY = max(0.0, (baseHeight * self.zoom - self.circleDiameter) / 2.0)
-        self.offset.x = max(-maxX, min(maxX, self.offset.x))
-        self.offset.y = max(-maxY, min(maxY, self.offset.y))
+        let clamped = LuckgramRoundVideoGeometry.clampOffset(width: Double(self.displaySize.width), height: Double(self.displaySize.height), baseScale: Double(self.baseScale), zoom: Double(self.zoom), circleDiameter: Double(self.circleDiameter), x: Double(self.offset.x), y: Double(self.offset.y))
+        self.offset = CGPoint(x: clamped.x, y: clamped.y)
 
         self.playerView.transform = .identity
         self.playerView.bounds = CGRect(x: 0.0, y: 0.0, width: baseWidth, height: baseHeight)
@@ -390,7 +389,7 @@ public final class LuckgramRoundVideoScreen: ViewController {
         case .began:
             self.pinchStartZoom = self.zoom
         case .changed:
-            let newZoom = max(1.0, min(4.0, self.pinchStartZoom * gesture.scale))
+            let newZoom = CGFloat(LuckgramRoundVideoGeometry.clampZoom(Double(self.pinchStartZoom * gesture.scale)))
             let ratio = newZoom / self.zoom
             self.offset = CGPoint(x: self.offset.x * ratio, y: self.offset.y * ratio)
             self.zoom = newZoom
@@ -447,18 +446,12 @@ public final class LuckgramRoundVideoScreen: ViewController {
         guard scale > 0.0 else {
             return
         }
-        let displayedWidth = self.displaySize.width * scale
-        let displayedHeight = self.displaySize.height * scale
-        var cropSide = self.circleDiameter / scale
-        cropSide = min(cropSide, min(self.displaySize.width, self.displaySize.height))
-        var cropX = (displayedWidth / 2.0 - self.offset.x - self.circleDiameter / 2.0) / scale
-        var cropY = (displayedHeight / 2.0 - self.offset.y - self.circleDiameter / 2.0) / scale
-        cropX = max(0.0, min(self.displaySize.width - cropSide, cropX))
-        cropY = max(0.0, min(self.displaySize.height - cropSide, cropY))
-        let cropRect = CGRect(x: cropX, y: cropY, width: cropSide, height: cropSide)
+        let crop = LuckgramRoundVideoGeometry.cropSquare(width: Double(self.displaySize.width), height: Double(self.displaySize.height), baseScale: Double(self.baseScale), zoom: Double(self.zoom), circleDiameter: Double(self.circleDiameter), offsetX: Double(self.offset.x), offsetY: Double(self.offset.y))
+        let cropRect = CGRect(x: crop.x, y: crop.y, width: crop.side, height: crop.side)
 
-        let start = self.rangeStart
-        let end = min(self.rangeEnd, start + LuckgramRoundVideo.maxDuration)
+        let range = LuckgramRoundVideoGeometry.exportRange(start: self.rangeStart, end: self.rangeEnd)
+        let start = range.start
+        let end = range.end
         let timeRange = CMTimeRange(start: CMTime(seconds: start, preferredTimescale: 600), end: CMTime(seconds: end, preferredTimescale: 600))
 
         self.player?.pause()
@@ -755,24 +748,16 @@ final class LuckgramRangeView: UIView {
                 return
             }
             let delta = Double((location.x - self.dragStartX) / self.bounds.width) * self.duration
-            var start = self.dragStartRange.0
-            var end = self.dragStartRange.1
+            let mode: LuckgramRoundVideoGeometry.DragMode
             switch dragMode {
             case .left:
-                start = max(0.0, min(end - self.minLength, start + delta))
-                if end - start > self.maxLength {
-                    start = end - self.maxLength
-                }
+                mode = .left
             case .right:
-                end = min(self.duration, max(start + self.minLength, end + delta))
-                if end - start > self.maxLength {
-                    end = start + self.maxLength
-                }
+                mode = .right
             case .window:
-                let length = end - start
-                start = max(0.0, min(self.duration - length, start + delta))
-                end = start + length
+                mode = .window
             }
+            let (start, end) = LuckgramRoundVideoGeometry.dragRange(mode: mode, start: self.dragStartRange.0, end: self.dragStartRange.1, delta: delta, duration: self.duration, minLength: self.minLength)
             self.start = start
             self.end = end
             self.setNeedsLayout()
