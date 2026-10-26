@@ -30,6 +30,9 @@ public enum LuckgramFeatures {
         // ---- 账号与隐私 / Accounts & Privacy
 
         // ---- 消息与语言 / Messages & Language
+        add(.toggle("translate_out", group: .messagesLanguage, default: true,
+            title: ("发送前翻译", "Translate before sending"),
+            description: ("在输入框里先翻译成对方的语言再发送", "Translate your message into the other person's language before sending")))
 
         // ---- 媒体、通话与存储 / Media, Calls & Storage
 
