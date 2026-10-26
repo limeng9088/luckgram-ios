@@ -120,6 +120,7 @@ jobs:
             --configurationPath=build-system/appstore-configuration.json \
             --codesigningInformationPath=build-system/fake-codesigning \
             --configuration=debug_sim_x86_64 \
+            --continueOnError \
             --buildNumber=10000
 
           mkdir -p "$GITHUB_WORKSPACE/app"
