@@ -268,7 +268,7 @@ final class AutomaticCacheEvictionContext {
             self.processDisposable = (processOnce
             |> then(
                 (processOnce |> delay(60.0 * 60.0, queue: Queue.concurrentDefaultQueue()))
-                |> restart
+                |> SwiftSignalKit.restart
             )).start()
         }
     }
