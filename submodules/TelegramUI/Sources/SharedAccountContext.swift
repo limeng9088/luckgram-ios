@@ -397,6 +397,10 @@ public final class SharedAccountContextImpl: SharedAccountContext {
         LuckgramFeatures.find(LuckgramUserNotesStore.featureKey)?.subpage { context in
             return luckgramUserNotesListController(context: context)
         }
+        // Luckgram: the call recording settings page lives in TelegramCallsUI, which LuckgramUI can't import.
+        let _ = LuckgramFeatures.find("call_recording")?.subpage { context in
+            return luckgramCallRecordingSettingsController(context: context)
+        }
         self._automaticMediaDownloadSettings.set(.single(initialPresentationDataAndSettings.automaticMediaDownloadSettings)
         |> then(accountManager.sharedData(keys: [SharedDataKeys.autodownloadSettings, ApplicationSpecificSharedDataKeys.automaticMediaDownloadSettings])
             |> map { sharedData in

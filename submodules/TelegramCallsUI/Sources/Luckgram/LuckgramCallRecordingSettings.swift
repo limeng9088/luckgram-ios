@@ -1,14 +1,14 @@
 import Foundation
 import TelegramCore
 import AccountContext
+import LuckgramUI
+import Display
+import SwiftSignalKit
 
 /// Luckgram: call recording settings.
 ///
-/// Switches are per device and shared by all accounts (spec 00 §5). They live in exactly the
-/// store 00's `LuckgramSettings` uses — `UserDefaults(suiteName: "luckgram_settings")`, bare key,
-/// same keys as Android (`call_recording`, …) — so the switch on the Luckgram features page and
-/// this feature read the same value (limeng9088/luckgram-specs#43). `LuckgramUI` is not on master
-/// yet; once 00 is merged these accessors switch to `LuckgramSettings.shared`.
+/// Switches are per device and shared by all accounts (spec 00 §5), read and written through
+/// 00's `LuckgramSettings` with the same keys as Android (`call_recording`, …).
 ///
 /// The save-to chat is per account (a peer id only means something inside one account), stored
 /// in a small file in the account's own directory, which Telegram removes with the account on
@@ -21,34 +21,21 @@ public enum LuckgramCallRecordingSettings {
     /// Post a transcript + summary reply via the AI gateway. Default on.
     public static let aiTranscriptKey = "call_recording_ai_transcript"
     
-    /// Must match `LuckgramSettings.suiteName` in submodules/LuckgramUI (feature 00).
-    private static let suiteName = "luckgram_settings"
-    private static let defaults: UserDefaults = UserDefaults(suiteName: suiteName) ?? .standard
-    
-    private static func bool(_ key: String, _ def: Bool) -> Bool {
-        if defaults.object(forKey: key) == nil {
-            return def
-        }
-        return defaults.bool(forKey: key)
-    }
-    
-    private static func setBool(_ key: String, _ value: Bool) {
-        defaults.set(value, forKey: key)
-    }
-    
+    /// Local switch AND remote config (`features.call_recording`), via 00's LuckgramSettings
+    /// (limeng9088/luckgram-specs#43, #54). Default off (registry).
     public static var isEnabled: Bool {
-        get { bool(enabledKey, false) }
-        set { setBool(enabledKey, newValue) }
+        get { LuckgramSettings.shared.isEnabled(enabledKey) }
+        set { LuckgramSettings.shared.setEnabled(enabledKey, newValue) }
     }
     
     public static var isAutoRecord: Bool {
-        get { bool(autoRecordKey, false) }
-        set { setBool(autoRecordKey, newValue) }
+        get { LuckgramSettings.shared.bool(autoRecordKey, default: false) }
+        set { LuckgramSettings.shared.setBool(autoRecordKey, newValue) }
     }
     
     public static var isAiTranscriptEnabled: Bool {
-        get { bool(aiTranscriptKey, true) }
-        set { setBool(aiTranscriptKey, newValue) }
+        get { LuckgramSettings.shared.bool(aiTranscriptKey, default: true) }
+        set { LuckgramSettings.shared.setBool(aiTranscriptKey, newValue) }
     }
     
     // MARK: Per-account target chat
@@ -102,5 +89,57 @@ public protocol LuckgramCallRecordingAI: AnyObject {
 }
 
 public enum LuckgramCallRecordingAIRegistry {
-    public static var instance: LuckgramCallRecordingAI?
+    public static var instance: LuckgramCallRecordingAI? = LuckgramCallRecordingLuckgramAI()
+}
+
+/// `LuckgramCallRecordingAI` on top of 00's `LuckgramAI`.
+final class LuckgramCallRecordingLuckgramAI: LuckgramCallRecordingAI {
+    /// Same default as the server's ai.max_input_chars.
+    private static let defaultMaxInputChars = 60000
+    
+    var hasConsent: Bool {
+        return LuckgramAI.shared.hasConsent
+    }
+    
+    func requestConsent(context: AccountContext, completion: @escaping (Bool) -> Void) {
+        let present: (ViewController) -> Void = { controller in
+            context.sharedContext.mainWindow?.present(controller, on: .root, blockInteraction: false, completion: {})
+        }
+        let _ = (LuckgramAI.shared.requestConsent(context: context, present: present)
+        |> deliverOnMainQueue).start(next: { agreed in
+            completion(agreed)
+        })
+    }
+    
+    func transcribe(audio: Data, mimeType: String, completion: @escaping (String?, String?) -> Void) {
+        // Consent was given before the call (settings); no alert can be shown after hang-up, and
+        // LuckgramAI does not ask again once agreed (context/present nil = deny if not agreed).
+        let _ = (LuckgramAI.shared.transcribe(context: nil, present: nil, audio: audio, mimeType: mimeType)
+        |> deliverOnMainQueue).start(next: { transcription in
+            // #55: a partial transcript keeps the finished segments and says why the rest is missing.
+            completion(transcription.text, transcription.partialError?.localizedMessage)
+        }, error: { error in
+            completion(nil, error.localizedMessage)
+        })
+    }
+    
+    var maxSummaryInputChars: Int {
+        return LuckgramSettings.shared.remoteInt("ai.max_input_chars", default: LuckgramCallRecordingLuckgramAI.defaultMaxInputChars)
+    }
+    
+    func summarize(transcript: String, completion: @escaping (String?, String?) -> Void) {
+        var done = false
+        let _ = (LuckgramAI.shared.chat(context: nil, present: nil, task: .summary, messages: [.user(transcript)], stream: false)
+        |> deliverOnMainQueue).start(next: { event in
+            if case let .completed(text) = event, !done {
+                done = true
+                completion(text, nil)
+            }
+        }, error: { error in
+            if !done {
+                done = true
+                completion(nil, error.localizedMessage)
+            }
+        })
+    }
 }

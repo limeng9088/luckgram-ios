@@ -32,6 +32,11 @@ public enum LuckgramFeatures {
         // ---- 消息与语言 / Messages & Language
 
         // ---- 媒体、通话与存储 / Media, Calls & Storage
+        // Settings page is attached by TelegramUI at startup (it lives in TelegramCallsUI,
+        // which depends on LuckgramUI).
+        add(.toggle("call_recording", group: .mediaCallsStorage, default: false,
+            title: ("通话录音", "Call recording"),
+            description: ("一对一通话中录音，挂断后保存到收藏夹", "Record one-on-one calls and save them to Saved Messages")))
 
         // ---- 资料与整理 / Profiles & Organization
         // The "All notes" subpage lives in LuckgramUserNotes (which depends on this module);
