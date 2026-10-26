@@ -1,0 +1,195 @@
+name: QA E2E (iOS simulator + Maestro)
+
+# 在 xcode-27 上编模拟器测试包（debug_sim_arm64，启动参数 -LuckgramTestBackend YES 时登录 Telegram 测试服务器），
+# 建临时 iOS 模拟器跑 limeng9088/luckgram-qa 里的 Maestro 用例。用例和账号池见 luckgram-qa README。
+#
+# xcode-27 只有一台，同时承担编译：concurrency 组和 build.yml 相同（luckgram-ios-<ref>），
+# 同一分支上编译和测试不会同时跑；本 workflow 不取消正在跑的编译（cancel-in-progress: false），
+# 但之后推送触发的编译会取消正在跑的测试。
+on:
+  workflow_dispatch:
+    inputs:
+      build_run_id:
+        description: '已有模拟器包的 run id（本 workflow 之前的 run，产物 luckgram-ios-sim-*）；留空则先编译'
+        required: false
+        default: ''
+      flows:
+        description: 'luckgram-qa 里的用例路径（空格分隔），例如 maestro/ios/smoke 或 maestro/ios/features/06-keyword-folders'
+        required: false
+        default: 'maestro/ios/smoke'
+      account:
+        description: 'luckgram-qa/accounts.md 里的账号组 ID'
+        required: false
+        default: 'I1'
+      qa_ref:
+        description: 'luckgram-qa 的分支 / commit'
+        required: false
+        default: 'master'
+  schedule:
+    # master 每晚回归：北京时间 03:00（错开 Android）
+    - cron: '0 19 * * *'
+
+concurrency:
+  group: luckgram-ios-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  e2e:
+    runs-on: xcode-27
+    timeout-minutes: 240
+    env:
+      SOURCE_DIR: /Users/Shared/telegram-ios
+      BAZEL_USER_ROOT: /private/var/tmp/_bazel_containerhost
+      CACHE_DIR: /Users/runner/telegram-bazel-cache-sim
+      BUILD: ${{ (github.event_name != 'workflow_dispatch' || inputs.build_run_id == '') && 'true' || 'false' }}
+      FLOWS: ${{ github.event_name == 'schedule' && 'maestro/ios/smoke maestro/ios/regression' || inputs.flows || 'maestro/ios/smoke' }}
+      ACCOUNT: ${{ github.event_name == 'schedule' && 'RI' || inputs.account || 'I1' }}
+      OUT: ${{ github.workspace }}/qa-out
+    steps:
+      - name: Checkout luckgram-qa
+        uses: actions/checkout@v4
+        with:
+          repository: limeng9088/luckgram-qa
+          ref: ${{ inputs.qa_ref || 'master' }}
+          ssh-key: ${{ secrets.QA_REPO_DEPLOY_KEY }}
+          path: qa
+
+      - name: Checkout (with submodules)
+        if: env.BUILD == 'true'
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+          path: src
+
+      - name: Select Xcode from versions.json
+        if: env.BUILD == 'true'
+        run: |
+          XCODE_VERSION=$(python3 -c 'import json;print(json.load(open("src/versions.json"))["xcode"])')
+          echo "Xcode $XCODE_VERSION"
+          sudo xcode-select -s "/Applications/Xcode_${XCODE_VERSION}.app/Contents/Developer"
+          xcodebuild -version
+          sudo rm -rf /Applications/Xcode.app
+          sudo ln -s "$(readlink -f /Applications/Xcode_${XCODE_VERSION}.app)" /Applications/Xcode.app
+          df -h /
+
+      - name: Inject Telegram API credentials
+        if: env.BUILD == 'true'
+        working-directory: src
+        env:
+          TG_API_ID: ${{ secrets.TG_API_ID }}
+          TG_API_HASH: ${{ secrets.TG_API_HASH }}
+        run: |
+          python3 - <<'PY'
+          import json, os, re, sys
+          api_id, api_hash = os.environ.get("TG_API_ID", ""), os.environ.get("TG_API_HASH", "")
+          if not re.fullmatch(r"[0-9]+", api_id) or not re.fullmatch(r"[0-9a-f]{32}", api_hash):
+              sys.exit("::error::TG_API_ID / TG_API_HASH secrets missing or malformed")
+          p = "build-system/appstore-configuration.json"
+          d = json.load(open(p))
+          d["api_id"], d["api_hash"] = api_id, api_hash
+          open(p, "w").write(json.dumps(d, indent="\t") + "\n")
+          print("api credentials injected")
+          PY
+
+      - name: Canonical source directory
+        if: env.BUILD == 'true'
+        run: |
+          sudo mkdir -p /Users/Shared
+          sudo chown "$USER" /Users/Shared
+          rm -rf "$SOURCE_DIR"
+          mv "$GITHUB_WORKSPACE/src" "$SOURCE_DIR"
+
+      - name: Restore bazel cache (simulator)
+        if: env.BUILD == 'true'
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ env.CACHE_DIR }}
+          key: bazel-sim-${{ github.ref_name }}-${{ github.run_id }}
+          restore-keys: |
+            bazel-sim-${{ github.ref_name }}-
+            bazel-sim-master-
+            bazel-sim-
+
+      - name: Build debug_sim_arm64
+        if: env.BUILD == 'true'
+        working-directory: ${{ env.SOURCE_DIR }}
+        run: |
+          set -x
+          python3 build-system/Make/ImportCertificates.py --path build-system/fake-codesigning/certs
+          python3 -u build-system/Make/Make.py \
+            --bazelUserRoot="$BAZEL_USER_ROOT" \
+            --cacheDir="$CACHE_DIR" \
+            --overrideXcodeVersion \
+            build \
+            --configurationPath=build-system/appstore-configuration.json \
+            --codesigningInformationPath=build-system/fake-codesigning \
+            --configuration=debug_sim_arm64 \
+            --buildNumber=10000
+
+          mkdir -p "$GITHUB_WORKSPACE/app"
+          IPA=$(ls bazel-bin/Telegram/Telegram.ipa bazel-out/*/bin/Telegram/Telegram.ipa 2>/dev/null | head -1)
+          test -n "$IPA"
+          cp -L "$IPA" "$GITHUB_WORKSPACE/app/Luckgram-sim-$(git rev-parse --short HEAD).ipa"
+
+      - name: Save bazel cache (simulator)
+        if: always() && env.BUILD == 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ env.CACHE_DIR }}
+          key: bazel-sim-${{ github.ref_name }}-${{ github.run_id }}
+
+      - name: Upload simulator app
+        if: env.BUILD == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: luckgram-ios-sim-${{ github.run_number }}
+          path: app/*.ipa
+          if-no-files-found: error
+
+      - name: Download simulator app
+        if: env.BUILD != 'true'
+        uses: actions/download-artifact@v4
+        with:
+          pattern: luckgram-ios-sim-*
+          merge-multiple: true
+          path: app
+          run-id: ${{ inputs.build_run_id }}
+          github-token: ${{ github.token }}
+
+      - name: Check app
+        run: |
+          IPA=$(ls app/*.ipa | head -1)
+          test -n "$IPA" || { echo "::error::no simulator app"; exit 1; }
+          rm -rf /tmp/qa-ipa && mkdir /tmp/qa-ipa && unzip -q "$IPA" -d /tmp/qa-ipa
+          PLIST=$(ls -d /tmp/qa-ipa/Payload/*.app)/Info.plist
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$PLIST")" = com.luckgram.messenger
+          /usr/libexec/PlistBuddy -c 'Print :DTPlatformName' "$PLIST" | grep -q iphonesimulator || { echo "::error::not a simulator build"; exit 1; }
+          echo "APP=$GITHUB_WORKSPACE/$IPA" >> "$GITHUB_ENV"
+
+      - name: Test account
+        run: python3 qa/ci/account.py "$ACCOUNT" >> "$GITHUB_ENV"
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Install Maestro
+        run: bash qa/ci/install-maestro.sh
+
+      - name: Run Maestro on simulator
+        run: bash qa/ci/ios-run.sh "$APP" $FLOWS
+
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: maestro-report-ios-${{ github.run_number }}
+          path: qa-out
+          if-no-files-found: warn
