@@ -288,6 +288,7 @@ webrtc_headers = [
     "common_audio/fir_filter_factory.h",
     "common_audio/fir_filter_neon.h",
     "common_audio/fir_filter_sse.h",  # Luckgram QA: x86_64 simulator
+    "common_audio/fir_filter_avx2.h",  # Luckgram QA: x86_64 simulator
     "common_audio/include/audio_util.h",
     "common_audio/real_fourier.h",
     "common_audio/real_fourier_ooura.h",
@@ -2767,13 +2768,22 @@ arm64_specific_sources = ["webrtc/" + path for path in [
     "common_audio/third_party/ooura/fft_size_128/ooura_fft_neon.cc",
 ]]
 
-# Luckgram QA: Intel Mac simulators (debug_sim_x86_64). Generic C + SSE2 paths, no AVX2 / NEON.
+# Luckgram QA: Intel Mac simulators (debug_sim_x86_64). Generic C + SSE2 + AVX2 paths, no NEON.
+# On x86 WebRTC picks the AVX2 kernels at runtime (GetCPUInfo), so they have to be linked in.
 x86_64_specific_sources = ["webrtc/" + path for path in [
     "common_audio/signal_processing/complex_bit_reverse.c",
     "common_audio/signal_processing/filter_ar_fast_q12.c",
     "common_audio/fir_filter_sse.cc",
+    "common_audio/fir_filter_avx2.cc",
     "common_audio/resampler/sinc_resampler_sse.cc",
+    "common_audio/resampler/sinc_resampler_avx2.cc",
     "common_audio/third_party/ooura/fft_size_128/ooura_fft_sse2.cc",
+    "modules/audio_processing/aec3/adaptive_fir_filter_avx2.cc",
+    "modules/audio_processing/aec3/adaptive_fir_filter_erl_avx2.cc",
+    "modules/audio_processing/aec3/fft_data_avx2.cc",
+    "modules/audio_processing/aec3/matched_filter_avx2.cc",
+    "modules/audio_processing/aec3/vector_math_avx2.cc",
+    "modules/audio_processing/agc2/rnn_vad/vector_math_avx2.cc",
 ]]
 
 arch_specific_sources = select({
@@ -2828,7 +2838,7 @@ arm64_specific_flags = [
 
 # Flatten platform + arch flags into a single select to avoid nested selects
 arch_specific_cflags = select({
-    "@build_bazel_rules_apple//apple:ios_x86_64": [f for f in platform_shared_flags if f != "-DLIBYUV_NEON"] + [f for f in apple_specific_flags if f != "-DWEBRTC_ENABLE_AVX2"],
+    "@build_bazel_rules_apple//apple:ios_x86_64": [f for f in platform_shared_flags if f != "-DLIBYUV_NEON"] + apple_specific_flags + ["-mavx2", "-mfma"],
     "@build_bazel_rules_apple//apple:ios_arm64": platform_shared_flags + apple_specific_flags + arm64_specific_flags,
     "//build-system:ios_sim_arm64": platform_shared_flags + apple_specific_flags + arm64_specific_flags,
     "@platforms//os:linux": platform_shared_flags + linux_specific_flags + arm64_specific_flags,
