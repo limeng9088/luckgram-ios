@@ -8,6 +8,10 @@ arch_specific_crc32c_sources = select({
     "//build-system:ios_sim_arm64": [
         "third_party/crc32c/src/crc32c_arm64.cc",
     ],
+    # Luckgram QA: x86_64 simulator. crc32c_config.h sets HAVE_SSE42 on x86_64, so crc32c.cc calls ExtendSse42.
+    "@build_bazel_rules_apple//apple:ios_x86_64": [
+        "third_party/crc32c/src/crc32c_sse42.cc",
+    ],
     "//conditions:default": [],
 })
 
@@ -33,7 +37,10 @@ cc_library(
     srcs = crc32c_sources,
     copts = [
         "-Ithird-party/webrtc/crc32c/third_party/crc32c/src/include"
-    ],
+    ] + select({
+        "@build_bazel_rules_apple//apple:ios_x86_64": ["-msse4.2"],
+        "//conditions:default": [],
+    }),
     cxxopts = [
         "-std=c++17",
     ],
