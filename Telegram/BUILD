@@ -1026,7 +1026,7 @@ ios_framework(
         "$(location //third-party/boringssl:crypto)",
         # The iOS 27 SDK auto-links the Swift WebKit overlay, which only exists on iOS 26+.
         # Linking it strongly kills the app at launch on iOS 15-25 (dyld: Library missing).
-        "-Wl,-weak-lswiftWebKit",
+        "-weak-lswiftWebKit",
     ],
     deps = [
         "//submodules/TelegramUI:TelegramUI",
