@@ -1185,8 +1185,10 @@ final class BrowserWebContent: UIView, BrowserContent, WKNavigationDelegate, WKU
                 }
                 
                 if #available(iOS 14.5, *) {
-                    self.webView.createWebArchiveData { [weak self] result in
-                        guard let self, case let .success(data) = result else {
+                    // The Objective-C method, not the Swift overlay's: built with the iOS 27 SDK the overlay lives in
+                    // libswiftWebKit.dylib, which iOS < 26 does not have, so the app would not launch there.
+                    self.webView.__createWebArchiveData { [weak self] data, error in
+                        guard let self, error == nil, let data = data as Data? else {
                             return
                         }
                         let readability = Readability(url: url, archiveData: data, completionHandler: { [weak self] result, error in
@@ -1231,8 +1233,9 @@ final class BrowserWebContent: UIView, BrowserContent, WKNavigationDelegate, WKU
                 return
             }
             if #available(iOS 14.0, *), contentType == "text/html" {
-                self.webView.createWebArchiveData { [weak self] result in
-                    guard let self, case let .success(data) = result else {
+                // Objective-C method, not the Swift overlay's (libswiftWebKit is iOS 26+ with the iOS 27 SDK).
+                self.webView.__createWebArchiveData { [weak self] data, error in
+                    guard let self, error == nil, let data = data as Data? else {
                         return
                     }
                     let path = NSTemporaryDirectory() + NSUUID().uuidString
@@ -1304,27 +1307,27 @@ final class BrowserWebContent: UIView, BrowserContent, WKNavigationDelegate, WKU
                        return await blobToDataURLAsync(url)
                    """
         
-        self.webView.callAsyncJavaScript(script,
+        // Objective-C method, not the Swift overlay's (libswiftWebKit is iOS 26+ with the iOS 27 SDK).
+        self.webView.__callAsyncJavaScript(script,
                                     arguments: ["blobUrl": url.absoluteString],
-                                    in: nil,
-                                    in: WKContentWorld.defaultClient) { result in
-            switch result {
-            case .success(let dataUrl):
-                guard let url = URL(string: dataUrl as! String) else {
-                    print("Failed to get data")
-                    return
-                }
-                guard let data = try? Data(contentsOf: url) else {
-                    print("Failed to decode data URL")
-                    return
-                }
-                
-                print(data)
-                // Do anything with the data. It was a pdf on my case.
-                //So I used UIDocumentInteractionController to show the pdf
-            case .failure(let error):
+                                    inFrame: nil,
+                                    in: WKContentWorld.defaultClient) { dataUrl, error in
+            if let error {
                 print("Failed with: \(error)")
+                return
             }
+            guard let url = URL(string: dataUrl as! String) else {
+                print("Failed to get data")
+                return
+            }
+            guard let data = try? Data(contentsOf: url) else {
+                print("Failed to decode data URL")
+                return
+            }
+            
+            print(data)
+            // Do anything with the data. It was a pdf on my case.
+            //So I used UIDocumentInteractionController to show the pdf
         }
         
 //        let urlString = url.absoluteString
