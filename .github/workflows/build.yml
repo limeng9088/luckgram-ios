@@ -122,6 +122,11 @@ jobs:
           /usr/libexec/PlistBuddy -c 'Print :CFBundleDisplayName' "$PLIST"
           test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$PLIST")" = com.luckgram.messenger
 
+      # luckgram-specs#57：iOS 26 以下没有 /usr/lib/swift/libswiftWebKit.dylib，App 链接了它就启动闪退。
+      # 任何 Mach-O（主程序、framework、扩展）都不能链接它，弱链接也不行。失败时不发 release。
+      - name: Check linked dylibs (no libswiftWebKit)
+        run: bash "$SOURCE_DIR/ci/check_ios_links.sh" out/*.ipa
+
       - name: Save bazel cache
         if: always()
         uses: actions/cache/save@v4
