@@ -145,6 +145,7 @@ public final class LuckgramChatSummaryModel {
         }
         let maxChars = self.maxChars
         self.disposable = (self.load(count: count)
+        |> deliverOnMainQueue
         |> mapToSignal { [weak self] lines -> Signal<String, LuckgramAIError> in
             guard let self else {
                 return .complete()
