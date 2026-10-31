@@ -24,6 +24,9 @@ public protocol LuckgramAIWritingHost: AnyObject {
     func hidePanel(_ view: UIView)
     /// Presents a controller (e.g. the AI consent alert or an error toast).
     func present(_ controller: UIViewController)
+    /// Sends `text` to the chat the way the user would from the field (as the channel when posting
+    /// in a channel); with `schedule`, Telegram's schedule picker opens first.
+    func send(_ text: String, schedule: Bool)
 }
 
 /// Extension points of AI writing (spec 21 需求 6), for 20 (AI reply) and 24 (AI post). Those

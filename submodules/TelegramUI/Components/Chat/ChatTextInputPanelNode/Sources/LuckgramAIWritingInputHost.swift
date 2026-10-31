@@ -8,6 +8,7 @@ import AccountContext
 import ChatPresentationInterfaceState
 import UndoUI
 import LuckgramUI
+import ChatControllerInteraction
 
 /// spec 21: the message field as seen by AI writing and the features that extend it (20, 24): the
 /// ✦ menu, the five effects streamed back into the field, undo, and the panel above the field.
@@ -95,6 +96,26 @@ final class LuckgramAIWritingInputHost: LuckgramAIWritingHost, LuckgramAIWriting
             self.node?.interfaceInteraction?.presentController(controller, nil)
         } else {
             self.context.sharedContext.mainWindow?.presentNative(controller)
+        }
+    }
+
+    func send(_ text: String, schedule: Bool) {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty {
+            return
+        }
+        self.undoState = nil
+        self.replaceText(trimmed)
+        // Let the chat take the new field state first, then use its own send path.
+        DispatchQueue.main.async { [weak self] in
+            guard let interaction = self?.node?.chatControllerInteraction else {
+                return
+            }
+            if schedule {
+                interaction.scheduleCurrentMessage(nil)
+            } else {
+                interaction.sendCurrentMessage(false, nil)
+            }
         }
     }
 
