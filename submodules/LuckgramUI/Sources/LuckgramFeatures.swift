@@ -77,6 +77,10 @@ public enum LuckgramFeatures {
         add(.toggle("shared_activity", group: .profileOrganize, default: true,
             title: ("共同群动态", "Activity in shared groups"),
             description: ("用户资料页显示对方最近在共同群组里发的消息", "Show a user's recent messages in your groups in common on their profile")))
+        add(.toggle(LuckgramHiddenChats.featureKey, group: .profileOrganize, default: true,
+            title: ("隐藏聊天", "Hidden chats"),
+            description: ("把聊天从列表里藏起来，下拉列表找回", "Hide chats from the list; pull down to find them"))
+            .subpage { context in luckgramHiddenChatsSettingsController(context: context) })
 
         // ---- AI
         add(.toggle(LuckgramFeatures.aiWriting, group: .ai, default: true,

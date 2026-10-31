@@ -4,6 +4,7 @@ import TelegramCore
 import TelegramPresentationData
 import MergeLists
 import AccountContext
+import LuckgramAccountsStore
 
 enum ChatListNodeEntryId: Hashable {
     case Header
@@ -621,6 +622,9 @@ func chatListNodeEntriesForView(view: EngineChatList, state: ChatListNodeState, 
     if !view.hasEarlier {
         var existingPeerIds = Set<EnginePeer.Id>()
         for item in view.items {
+            if LuckgramHiddenChatsStore.shared.isHidden(accountPeerId: accountPeerId.toInt64(), peerId: item.renderedPeer.peerId.toInt64()) {
+                continue
+            }
             existingPeerIds.insert(item.renderedPeer.peerId)
         }
         
@@ -668,6 +672,10 @@ func chatListNodeEntriesForView(view: EngineChatList, state: ChatListNodeState, 
     var hasPinned = false
     
     loop: for entry in view.items {
+        // Luckgram 12 (hidden chats): hidden chats appear in no list or folder.
+        if LuckgramHiddenChatsStore.shared.isHidden(accountPeerId: accountPeerId.toInt64(), peerId: entry.renderedPeer.peerId.toInt64()) {
+            continue
+        }
         var peerId: EnginePeer.Id?
         var threadId: Int64?
         var activityItemId: ChatListNodePeerInputActivities.ItemId?

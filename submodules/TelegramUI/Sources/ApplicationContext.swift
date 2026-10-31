@@ -138,9 +138,27 @@ final class AuthorizedApplicationContext {
     }
     
     var applicationBadge: Signal<Int32, NoError> {
-        return renderedTotalUnreadCount(accountManager: self.context.sharedContext.accountManager, engine: self.context.engine)
+        let total = renderedTotalUnreadCount(accountManager: self.context.sharedContext.accountManager, engine: self.context.engine)
         |> map {
             $0.0
+        }
+        // Luckgram 12 (hidden chats): unread of hidden chats is left out of the badge.
+        let context = self.context
+        let hidden: Signal<Int32, NoError> = LuckgramHiddenChatsStore.shared.updated
+        |> mapToSignal { _ -> Signal<Int32, NoError> in
+            let accountPeerId = context.account.peerId.toInt64()
+            if LuckgramHiddenChatsStore.shared.isNotifyEnabled || !LuckgramHiddenChatsStore.shared.hasHidden(accountPeerId: accountPeerId) {
+                return .single(0)
+            }
+            let ids = LuckgramHiddenChatsStore.shared.hiddenPeerIds(accountPeerId: accountPeerId).map { EnginePeer.Id($0) }
+            return context.engine.data.subscribe(EngineDataMap(ids.map { TelegramEngine.EngineData.Item.Messages.PeerUnreadCount(id: $0) }))
+            |> map { map -> Int32 in
+                return Int32(map.values.reduce(0, +))
+            }
+        }
+        return combineLatest(total, hidden)
+        |> map { total, hidden -> Int32 in
+            return max(0, total - hidden)
         }
     }
     
@@ -313,6 +331,10 @@ final class AuthorizedApplicationContext {
                         return false
                     }
                     guard let message = item.0.first else {
+                        return false
+                    }
+                    // Luckgram 12 (hidden chats): no in-app notification for a hidden chat
+                    if LuckgramHiddenChatsStore.shared.suppressNotifications(accountPeerId: context.account.peerId.toInt64(), peerId: message.id.peerId.toInt64()) {
                         return false
                     }
                     if let maybeChatListIndex = chatListIndexMap[message.id.peerId], maybeChatListIndex != nil {

@@ -1246,6 +1246,16 @@ private final class NotificationServiceHandler {
                         }
                     } else {
                         if let aps = payloadJson["aps"] as? [String: Any], var peerId = peerId {
+                            // Luckgram 12 (hidden chats): nothing for a hidden chat unless the user chose otherwise.
+                            if LuckgramHiddenChatsStore.snapshot(rootPath: rootPath).suppressNotifications(accountPeerId: accountPeerId.toInt64(), peerId: peerId.toInt64()) {
+                                Logger.shared.log("NotificationService \(episode)", "Chat is hidden")
+
+                                let content = NotificationContent(isLockedMessage: nil)
+                                updateCurrentContent(content)
+                                completed()
+
+                                return
+                            }
                             var content: NotificationContent = NotificationContent(isLockedMessage: isLockedMessage)
                             content.recipientAccountName = recipientAccountName
                             if let alert = aps["alert"] as? [String: Any] {
