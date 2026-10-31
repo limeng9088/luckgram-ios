@@ -254,6 +254,14 @@ func inputTextPanelStateForChatPresentationInterfaceState(_ chatPresentationInte
                     accessoryItems.append(.commands)
                 }
                 
+                // Luckgram: AI writing ✦ button (feature 21): with text, or when an item works on an empty field (20).
+                if canSendTextMessages, !hasForward, LuckgramAIWriting.isEnabled {
+                    if case .customChatContents = chatPresentationInterfaceState.subject {
+                    } else if !isTextEmpty || LuckgramAIWriting.hasItemsForEmptyText(peer: chatPresentationInterfaceState.renderedPeer?.peer.flatMap(EnginePeer.init)) {
+                        accessoryItems.append(.aiWriting)
+                    }
+                }
+                
                 // Luckgram: voice input button (feature 17), also while typing: the text goes in at the cursor.
                 if canSendTextMessages, !hasForward, LuckgramSettings.shared.isEnabled(LuckgramFeatures.dictation) {
                     if case .customChatContents = chatPresentationInterfaceState.subject {

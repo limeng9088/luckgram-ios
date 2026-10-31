@@ -182,12 +182,15 @@ final class AccessoryItemIconButton: HighlightTrackingButton, GlassBackgroundVie
             case .dictation:
                 let image = UIImage(systemName: "waveform.and.mic", withConfiguration: UIImage.SymbolConfiguration(pointSize: 18.0, weight: .regular))?.withTintColor(theme.chat.inputPanel.inputControlColor.withAlphaComponent(1.0), renderingMode: .alwaysOriginal)
                 return (image, nil, LuckgramStrings.pick("语音输入", "Voice input"), 1.0, UIEdgeInsets())
+            case .aiWriting:
+                let image = UIImage(systemName: "sparkles", withConfiguration: UIImage.SymbolConfiguration(pointSize: 18.0, weight: .regular))?.withTintColor(theme.chat.inputPanel.inputControlColor.withAlphaComponent(1.0), renderingMode: .alwaysOriginal)
+                return (image, nil, LuckgramStrings.pick("AI 写作", "AI writing"), 1.0, UIEdgeInsets())
         }
     }
     
     private static func calculateWidth(item: ChatTextInputAccessoryItem, image: UIImage?, text: String?, strings: PresentationStrings) -> CGFloat {
         switch item {
-        case .input, .botInput, .silentPost, .commands, .scheduledMessages, .gift, .suggestPost, .translate, .quickReplies, .dictation:
+        case .input, .botInput, .silentPost, .commands, .scheduledMessages, .gift, .suggestPost, .translate, .quickReplies, .dictation, .aiWriting:
             return 32.0
         case let .messageAutoremoveTimeout(timeout):
             var imageWidth = (image?.size.width ?? 0.0) + CGFloat(8.0)

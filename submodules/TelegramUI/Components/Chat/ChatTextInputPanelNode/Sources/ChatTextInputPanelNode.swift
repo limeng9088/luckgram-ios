@@ -1648,6 +1648,7 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
         self.isUpdating = true
         defer {
             self.isUpdating = false
+            self.layoutLuckgramPanel()
         }
         
         let isFirstTime = self.validLayout == nil
@@ -6106,6 +6107,83 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
         })
     }
 
+    // MARK: - Luckgram: AI writing (feature 21)
+
+    private var luckgramWritingHost: LuckgramAIWritingInputHost?
+    private var luckgramPanelContainer: UIView?
+    private var luckgramPanelHeight: CGFloat = 0.0
+
+    func luckgramAIWritingHost() -> LuckgramAIWritingInputHost? {
+        if let current = self.luckgramWritingHost {
+            return current
+        }
+        guard let context = self.context else {
+            return nil
+        }
+        let host = LuckgramAIWritingInputHost(node: self, context: context)
+        self.luckgramWritingHost = host
+        return host
+    }
+
+    func luckgramSetGenerating(_ value: Bool) {
+        self.richTextInputNode?.alpha = value ? 0.45 : 1.0
+    }
+
+    /// spec 21 需求 6: one panel at a time, just above the input field.
+    func luckgramShowPanel(_ view: UIView, height: CGFloat) {
+        let container: UIView
+        if let current = self.luckgramPanelContainer {
+            container = current
+        } else {
+            container = UIView()
+            container.layer.cornerRadius = 16.0
+            container.clipsToBounds = true
+            self.luckgramPanelContainer = container
+            self.view.addSubview(container)
+        }
+        for subview in container.subviews where subview !== view {
+            subview.removeFromSuperview()
+        }
+        if view.superview !== container {
+            view.removeFromSuperview()
+            container.addSubview(view)
+        }
+        if let theme = self.presentationInterfaceState?.theme {
+            container.backgroundColor = theme.chat.inputPanel.panelBackgroundColor.withAlphaComponent(1.0)
+        }
+        container.isHidden = false
+        self.luckgramPanelHeight = height
+        self.layoutLuckgramPanel()
+    }
+
+    func luckgramHidePanel(_ view: UIView) {
+        guard let container = self.luckgramPanelContainer, view.superview === container else {
+            return
+        }
+        view.removeFromSuperview()
+        if container.subviews.isEmpty {
+            container.isHidden = true
+        }
+    }
+
+    private func layoutLuckgramPanel() {
+        guard let container = self.luckgramPanelContainer, !container.isHidden else {
+            return
+        }
+        let width = self.bounds.width
+        container.frame = CGRect(x: 8.0, y: -self.luckgramPanelHeight - 8.0, width: max(0.0, width - 16.0), height: self.luckgramPanelHeight)
+        for subview in container.subviews {
+            subview.frame = container.bounds
+        }
+    }
+
+    private func luckgramPanelHitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
+        guard let container = self.luckgramPanelContainer, !container.isHidden, container.frame.contains(point) else {
+            return nil
+        }
+        return container.hitTest(self.view.convert(point, to: container), with: event)
+    }
+
     // MARK: - Luckgram: voice input (feature 17)
 
     private func showDictation() {
@@ -6187,6 +6265,8 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
                     self.showQuickReplies()
                 case .dictation:
                     self.showDictation()
+                case .aiWriting:
+                    self.luckgramAIWritingHost()?.showMenu()
                 }
                 break
             }
@@ -6194,6 +6274,9 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
     }
     
     override public func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
+        if let result = self.luckgramPanelHitTest(point, with: event) {
+            return result
+        }
         if let audioRecordingCancelIndicator = self.audioRecordingCancelIndicator {
             if let result = audioRecordingCancelIndicator.hitTest(self.view.convert(point, to: audioRecordingCancelIndicator), with: event) {
                 return result
