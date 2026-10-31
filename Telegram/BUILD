@@ -1750,6 +1750,10 @@ plist_fragment(
     </array>
     <key>LSRequiresIPhoneOS</key>
     <true/>
+    <key>LuckgramAPIURL</key>
+    <string>https://api.luckgram.cc</string>
+    <key>LuckgramAPIURLDebug</key>
+    <string>https://api-dev.luckgram.cc</string>
     <key>NSAppTransportSecurity</key>
     <dict>
         <key>NSAllowsArbitraryLoads</key>
