@@ -278,12 +278,14 @@ public final class LuckgramAIChatController: UIViewController, LuckgramAIChatHos
         avatar.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([avatar.widthAnchor.constraint(equalToConstant: 34.0), avatar.heightAnchor.constraint(equalToConstant: 34.0)])
 
+        // A conversation opened by a feature with its own key (e.g. an agent, spec 22) shows its title.
+        let keyedTitle = self.conversation.key != nil ? self.conversation.title : nil
         let title = UILabel()
-        title.text = "Luckgram AI"
+        title.text = keyedTitle ?? "Luckgram AI"
         title.font = UIFont.systemFont(ofSize: 16.0, weight: .semibold)
         title.textColor = self.theme.rootController.navigationBar.primaryTextColor
         let subtitle = UILabel()
-        subtitle.text = LuckgramStrings.pick("助手", "Assistant")
+        subtitle.text = keyedTitle != nil ? "Luckgram AI" : LuckgramStrings.pick("助手", "Assistant")
         subtitle.font = UIFont.systemFont(ofSize: 13.0)
         subtitle.textColor = self.theme.rootController.navigationBar.secondaryTextColor
         let texts = UIStackView(arrangedSubviews: [title, subtitle])
@@ -379,6 +381,7 @@ public final class LuckgramAIChatController: UIViewController, LuckgramAIChatHos
         }
         self.stopStreaming()
         self.conversation = conversation
+        self.navigationItem.titleView = self.makeTitleView()
         self.tableView.reloadData()
         self.updateEmpty()
         self.scrollToBottom(animated: false)
