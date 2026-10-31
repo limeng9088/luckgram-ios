@@ -1,8 +1,8 @@
 name: Luckgram unit tests
 
-# Foundation-only Luckgram logic, tested with SwiftPM on Linux so the single
-# xcode-27 Mac stays free for app builds. The same tests also run on the
-# simulator via Bazel (e.g. //submodules/TelegramUI/Components/LuckgramRoundVideo:LuckgramRoundVideoTests).
+# Foundation-only Luckgram logic, tested with SwiftPM on Linux so the single xcode-27 Mac stays free
+# for app builds. Each step copies one Foundation-only source + its tests into a throwaway package;
+# a step whose source is not on this branch is skipped.
 on:
   workflow_dispatch:
   pull_request:
@@ -10,6 +10,8 @@ on:
     paths:
       - 'submodules/TelegramUI/Components/LuckgramRoundVideo/**'
       - 'submodules/LuckgramUI/**'
+      - 'submodules/TelegramCore/Sources/Luckgram/**'
+      - 'submodules/TelegramCore/Tests/Luckgram/**'
       - '.github/workflows/luckgram-unit-tests.yml'
 
 permissions:
@@ -25,44 +27,26 @@ jobs:
           submodules: false
       - name: Swift version
         run: swift --version
-      - name: Round video geometry tests
+      - name: Run tests
         run: |
           set -euo pipefail
-          C=submodules/TelegramUI/Components/LuckgramRoundVideo
-          P="$RUNNER_TEMP/pkg"
-          mkdir -p "$P/Sources/LuckgramRoundVideo" "$P/Tests/LuckgramRoundVideoTests"
-          # Only Foundation-only files: UIKit/AVFoundation code is covered by the app build.
-          cp "$C/Sources/LuckgramRoundVideoGeometry.swift" "$P/Sources/LuckgramRoundVideo/"
-          cp "$C"/Tests/*.swift "$P/Tests/LuckgramRoundVideoTests/"
-          cat > "$P/Package.swift" <<'SWIFT'
-          // swift-tools-version:5.9
-          import PackageDescription
-          let package = Package(
-              name: "LuckgramRoundVideo",
-              targets: [
-                  .target(name: "LuckgramRoundVideo"),
-                  .testTarget(name: "LuckgramRoundVideoTests", dependencies: ["LuckgramRoundVideo"]),
-              ]
-          )
-          SWIFT
-          cd "$P" && swift test
-      - name: Remote config logic tests (S4)
-        run: |
-          set -euo pipefail
-          C=submodules/LuckgramUI
-          P="$RUNNER_TEMP/pkg-remoteconfig"
-          mkdir -p "$P/Sources/LuckgramUI" "$P/Tests/LuckgramRemoteConfigLogicTests"
-          cp "$C/Sources/LuckgramRemoteConfigLogic.swift" "$P/Sources/LuckgramUI/"
-          cp "$C"/Tests/LuckgramRemoteConfigLogicTests.swift "$P/Tests/LuckgramRemoteConfigLogicTests/"
-          cat > "$P/Package.swift" <<'SWIFT'
-          // swift-tools-version:5.9
-          import PackageDescription
-          let package = Package(
-              name: "LuckgramUIRemoteConfig",
-              targets: [
-                  .target(name: "LuckgramUI"),
-                  .testTarget(name: "LuckgramRemoteConfigLogicTests", dependencies: ["LuckgramUI"]),
-              ]
-          )
-          SWIFT
-          cd "$P" && swift test
+          # module | source file | test file
+          SUITES="
+          LuckgramRoundVideo|submodules/TelegramUI/Components/LuckgramRoundVideo/Sources/LuckgramRoundVideoGeometry.swift|submodules/TelegramUI/Components/LuckgramRoundVideo/Tests/LuckgramRoundVideoGeometryTests.swift
+          LuckgramUI|submodules/LuckgramUI/Sources/LuckgramRemoteConfigLogic.swift|submodules/LuckgramUI/Tests/LuckgramRemoteConfigLogicTests.swift
+          TelegramCore|submodules/TelegramCore/Sources/Luckgram/LuckgramStoreRestrictions.swift|submodules/TelegramCore/Tests/Luckgram/LuckgramStoreRestrictionsTests.swift
+          "
+          ran=0
+          for line in $SUITES; do
+            IFS='|' read -r MOD SRC TST <<< "$line"
+            if [ ! -f "$SRC" ] || [ ! -f "$TST" ]; then echo "skip $MOD ($SRC)"; continue; fi
+            P="$RUNNER_TEMP/pkg-$(basename "$SRC" .swift)"
+            mkdir -p "$P/Sources/$MOD" "$P/Tests/${MOD}Tests"
+            cp "$SRC" "$P/Sources/$MOD/"
+            cp "$TST" "$P/Tests/${MOD}Tests/"
+            printf '%s\n' '// swift-tools-version:5.9' 'import PackageDescription' \
+              "let package = Package(name: \"pkg\", targets: [.target(name: \"$MOD\"), .testTarget(name: \"${MOD}Tests\", dependencies: [\"$MOD\"])])" > "$P/Package.swift"
+            (cd "$P" && swift test)
+            ran=$((ran + 1))
+          done
+          test "$ran" -gt 0
