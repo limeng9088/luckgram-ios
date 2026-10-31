@@ -12,6 +12,7 @@ swift_library(
     deps = [
         "//submodules/UrlWhitelist",
         "//submodules/LuckgramProfileInfo",
+        "//submodules/LuckgramSharedActivity",
         "//submodules/LuckgramUserNotes",
         "//submodules/TelegramUI/Components/NavigationBarNode",
         "//submodules/TelegramUI/Components/NavigationBarComponent",

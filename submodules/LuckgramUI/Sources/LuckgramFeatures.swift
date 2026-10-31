@@ -45,6 +45,9 @@ public enum LuckgramFeatures {
         add(.toggle("profile_details", group: .profileOrganize, default: true,
             title: ("资料详情", "Profile details"),
             description: ("资料页显示 ID、大致注册时间，简介里的链接可以点开", "Show ID and approximate registration date; links in bios are clickable")))
+        add(.toggle("shared_activity", group: .profileOrganize, default: true,
+            title: ("共同群动态", "Activity in shared groups"),
+            description: ("用户资料页显示对方最近在共同群组里发的消息", "Show a user's recent messages in your groups in common on their profile")))
 
         // ---- AI
 

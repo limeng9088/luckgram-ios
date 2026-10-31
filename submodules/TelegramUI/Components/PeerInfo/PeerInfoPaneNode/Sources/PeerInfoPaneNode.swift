@@ -23,6 +23,8 @@ public enum PeerInfoPaneKey: Int32 {
     case similarChannels
     case similarBots
     case storyArchive
+    /// Luckgram (spec 16): recent messages in groups in common.
+    case luckgramActivity
     
     public init(tab: TelegramProfileTab) {
         switch tab {

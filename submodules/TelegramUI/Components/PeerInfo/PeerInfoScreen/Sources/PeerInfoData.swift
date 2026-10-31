@@ -1619,6 +1619,10 @@ func peerInfoScreenData(
                             availablePanes?.append(.groupsInCommon)
                         }
                     }
+                    // Luckgram (spec 16): "Activity" for other people (not bots); empty state when nothing is shared.
+                    if availablePanes != nil, LuckgramActivityPane.isEnabled, let user = peerView.peers[peerView.peerId] as? TelegramUser, user.botInfo == nil, peerView.peerId != context.account.peerId {
+                        availablePanes?.append(.luckgramActivity)
+                    }
                     
                     if case .peer = chatLocation {
                         if peerId == context.account.peerId {

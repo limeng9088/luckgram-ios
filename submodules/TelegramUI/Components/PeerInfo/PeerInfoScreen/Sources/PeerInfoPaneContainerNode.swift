@@ -538,6 +538,8 @@ private final class PeerInfoPendingPane {
         case .gifs:
             let visualPaneNode = PeerInfoGifPaneNode(context: context, chatControllerInteraction: chatControllerInteraction, peerId: chatLocationPeerId, chatLocation: chatLocation, chatLocationContextHolder: chatLocationContextHolder, contentType: .gifs)
             paneNode = visualPaneNode
+        case .luckgramActivity:
+            paneNode = PeerInfoLuckgramActivityPaneNode(context: context, userId: peerId, chatControllerInteraction: chatControllerInteraction)
         case .groupsInCommon:
             paneNode = PeerInfoGroupsInCommonPaneNode(context: context, peerId: peerId, chatControllerInteraction: chatControllerInteraction, openPeerContextAction: openPeerContextAction, groupsInCommonContext: data.groupsInCommon!)
         case .members:
@@ -1310,6 +1312,8 @@ final class PeerInfoPaneContainerNode: ASDisplayNode, ASGestureRecognizerDelegat
                         canReorder = self.peerId.namespace == Namespaces.Peer.CloudChannel
                     case .groupsInCommon:
                         content = .title(HorizontalTabsComponent.Tab.Title(text: presentationData.strings.PeerInfo_PaneGroups, entities: [], enableAnimations: false))
+                    case .luckgramActivity:
+                        content = .title(HorizontalTabsComponent.Tab.Title(text: LuckgramActivityPane.tabTitle, entities: [], enableAnimations: false))
                     case .members:
                         content = .title(HorizontalTabsComponent.Tab.Title(text: presentationData.strings.PeerInfo_PaneMembers, entities: [], enableAnimations: false))
                     case .similarChannels:

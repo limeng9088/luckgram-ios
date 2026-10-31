@@ -1,0 +1,45 @@
+name: Luckgram unit tests (shared activity)
+
+# Foundation-only shared-activity rules (spec 16), tested with SwiftPM on Linux so the single
+# xcode-27 Mac stays free for app builds. Same approach as the profile-details tests.
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [master]
+    paths:
+      - 'submodules/LuckgramSharedActivity/**'
+      - '.github/workflows/luckgram-sharedactivity-unit-tests.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: false
+      - name: Swift version
+        run: swift --version
+      - name: Shared activity tests
+        run: |
+          set -euo pipefail
+          C=submodules/LuckgramSharedActivity
+          P="$RUNNER_TEMP/pkg"
+          mkdir -p "$P/Sources/LuckgramSharedActivity" "$P/Tests/LuckgramSharedActivityTests"
+          cp "$C"/Sources/*.swift "$P/Sources/LuckgramSharedActivity/"
+          cp "$C"/Tests/*.swift "$P/Tests/LuckgramSharedActivityTests/"
+          cat > "$P/Package.swift" <<'SWIFT'
+          // swift-tools-version:5.9
+          import PackageDescription
+          let package = Package(
+              name: "LuckgramSharedActivity",
+              targets: [
+                  .target(name: "LuckgramSharedActivity"),
+                  .testTarget(name: "LuckgramSharedActivityTests", dependencies: ["LuckgramSharedActivity"]),
+              ]
+          )
+          SWIFT
+          cd "$P" && swift test
