@@ -57,8 +57,15 @@ public final class LuckgramSettings {
 
     // MARK: - Registered switches
 
-    /// Switch state of a registered feature (falls back to the registry default).
+    /// Whether a registered feature is on: the user's switch (falling back to the registry default)
+    /// and not switched off remotely (`GET /v1/config`, task S4). Entry points read this, so a
+    /// remotely disabled feature disappears everywhere.
     public func isEnabled(_ key: String) -> Bool {
+        return self.isRemotelyAllowed(key) && self.isLocallyEnabled(key)
+    }
+
+    /// The user's own switch only (what the settings row shows).
+    public func isLocallyEnabled(_ key: String) -> Bool {
         let defaultValue = LuckgramFeatures.find(key)?.defaultValue ?? false
         return self.bool(key, default: defaultValue)
     }

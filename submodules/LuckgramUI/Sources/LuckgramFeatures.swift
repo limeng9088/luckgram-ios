@@ -20,6 +20,7 @@ import Foundation
 /// (or `isEnabledSignal(_:)` to follow changes).
 public enum LuckgramFeatures {
     public static let debugDemo = "debug_demo"
+    public static let roundVideoFromGallery = "round_video_from_gallery"
 
     public static let all: [LuckgramFeature] = {
         var list: [LuckgramFeature] = []
@@ -30,8 +31,19 @@ public enum LuckgramFeatures {
         // ---- 账号与隐私 / Accounts & Privacy
 
         // ---- 消息与语言 / Messages & Language
+        add(.toggle("translate_out", group: .messagesLanguage, default: true,
+            title: ("发送前翻译", "Translate before sending"),
+            description: ("在输入框里先翻译成对方的语言再发送", "Translate your message into the other person's language before sending")))
+        // Quick replies "Manage" subpage is attached by TelegramUI at startup (it lives in
+        // ChatTextInputPanelNode, which depends on LuckgramUI).
+        add(.toggle("quick_replies", group: .messagesLanguage, default: true,
+            title: ("快捷回复", "Quick replies"),
+            description: ("把常用回复存成模板，输入框里一点就填入", "Save frequent replies as templates and insert them with one tap")))
 
         // ---- 媒体、通话与存储 / Media, Calls & Storage
+        add(.toggle(LuckgramFeatures.roundVideoFromGallery, group: .mediaCallsStorage, default: true,
+            title: ("相册视频发成圆形视频", "Gallery video as round video"),
+            description: ("附件菜单里选一个视频，可作为圆形视频发送", "Send a video from the gallery as a round video message")))
 
         // ---- 资料与整理 / Profiles & Organization
 

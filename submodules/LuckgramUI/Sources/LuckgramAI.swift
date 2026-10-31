@@ -442,7 +442,20 @@ public final class LuckgramAI {
     }
 
     /// Ensures a device token, sends the request, re-registers once on 401, parses SSE or JSON.
-    private func authorized(method: String, path: String, contentType: String?, body: Data?, accept: String) -> Signal<HTTPEvent, LuckgramAIError> {
+    /// Authenticated GET for non-AI endpoints (remote config, task S4): registers the device if
+    /// needed, never asks for AI consent (no user content is sent). Returns the JSON body; a 304
+    /// fails with `httpStatus == 304`.
+    public func getJSON(path: String, headers: [String: String]) -> Signal<[String: Any], LuckgramAIError> {
+        return self.authorized(method: "GET", path: path, contentType: nil, body: nil, accept: "application/json", extraHeaders: headers)
+        |> mapToSignal { event -> Signal<[String: Any], LuckgramAIError> in
+            guard case let .body(data) = event, let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else {
+                return .fail(LuckgramAIError(code: LuckgramAIError.upstreamUnavailable))
+            }
+            return .single(object)
+        }
+    }
+
+    private func authorized(method: String, path: String, contentType: String?, body: Data?, accept: String, extraHeaders: [String: String] = [:]) -> Signal<HTTPEvent, LuckgramAIError> {
         func attempt(_ retry: Bool) -> Signal<HTTPEvent, LuckgramAIError> {
             return self.ensureToken()
             |> mapToSignal { token -> Signal<HTTPEvent, LuckgramAIError> in
@@ -455,6 +468,9 @@ public final class LuckgramAI {
                 request.setValue(accept, forHTTPHeaderField: "Accept")
                 if let contentType {
                     request.setValue(contentType, forHTTPHeaderField: "Content-Type")
+                }
+                for (name, value) in extraHeaders {
+                    request.setValue(value, forHTTPHeaderField: name)
                 }
                 request.httpBody = body
                 return self.send(request)

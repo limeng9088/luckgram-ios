@@ -39,9 +39,7 @@ final class LuckgramRoundVideoExporter {
         self.timeRange = timeRange
 
         // Same ceiling as Telegram's own video message export (480 px, never upscaled).
-        var side = Int(min(480.0, cropRect.width).rounded(.down))
-        side = max(240, side - side % 2)
-        self.outputSide = side
+        self.outputSide = LuckgramRoundVideoGeometry.outputSide(cropSide: Double(cropRect.width))
 
         self.outputURL = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("luckgram-round-\(UInt64.random(in: 0 ... UInt64.max)).mp4")
     }
@@ -127,7 +125,7 @@ final class LuckgramRoundVideoExporter {
         }
         reader.add(videoOutput)
 
-        let bitrate = self.outputSide <= 400 ? 1000 * 1000 : 1200 * 1000
+        let bitrate = LuckgramRoundVideoGeometry.videoBitrate(outputSide: self.outputSide)
         let videoInput = AVAssetWriterInput(mediaType: .video, outputSettings: [
             AVVideoCodecKey: AVVideoCodecType.h264,
             AVVideoWidthKey: self.outputSide,

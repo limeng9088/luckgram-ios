@@ -76,6 +76,11 @@ public final class LuckgramFeature {
         return LuckgramSettings.shared.isEnabled(self.key)
     }
 
+    /// The user's switch, as shown on the settings row.
+    public var isLocallyEnabled: Bool {
+        return LuckgramSettings.shared.isLocallyEnabled(self.key)
+    }
+
     public var isVisible: Bool {
         return (!self.isDebugOnly || LuckgramSettings.shared.isDebugToolsVisible) && LuckgramSettings.shared.isRemotelyAllowed(self.key)
     }
