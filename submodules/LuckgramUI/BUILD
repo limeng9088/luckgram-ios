@@ -23,7 +23,6 @@ swift_library(
         "//submodules/PromptUI:PromptUI",
         "//submodules/LuckgramAccountsStore:LuckgramAccountsStore",
         "//submodules/PasscodeCore:PasscodeCore",
-        "//submodules/Postbox:Postbox",
         "//submodules/LegacyMediaPickerUI:LegacyMediaPickerUI",
         "//submodules/OverlayStatusController:OverlayStatusController",
     ],
