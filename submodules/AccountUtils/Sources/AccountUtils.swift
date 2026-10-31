@@ -3,9 +3,20 @@ import SwiftSignalKit
 import TelegramCore
 import TelegramUIPreferences
 import AccountContext
+import LuckgramAccountsStore
 
-public let maximumNumberOfAccounts = 3
-public let maximumPremiumNumberOfAccounts = 4
+// Luckgram 09 (more accounts): 20 accounts for everyone, no Premium tier.
+public let maximumNumberOfAccounts = LuckgramAccountsStore.maxAccounts
+public let maximumPremiumNumberOfAccounts = LuckgramAccountsStore.maxAccounts
+
+/// Luckgram 09: the account as shown in account lists, with its local name in front ("Work (Noah)").
+private func luckgramDisplayPeer(_ peer: EnginePeer, accountId: AccountRecordId) -> EnginePeer {
+    guard case let .user(user) = peer, LuckgramAccountsStore.shared.alias(accountId.int64) != nil else {
+        return peer
+    }
+    let name = [user.firstName, user.lastName].compactMap({ $0 }).filter({ !$0.isEmpty }).joined(separator: " ")
+    return .user(user.withUpdatedNames(firstName: LuckgramAccountsStore.shared.displayName(accountId.int64, name: name), lastName: nil))
+}
 
 public func activeAccountsAndPeers(context: AccountContext, includePrimary: Bool = false) -> Signal<((AccountContext, EnginePeer)?, [(AccountContext, EnginePeer, Int32)]), NoError> {
     let sharedContext = context.sharedContext
@@ -38,11 +49,15 @@ public func activeAccountsAndPeers(context: AccountContext, includePrimary: Bool
             accounts.append(accountWithPeer(context))
         }
         
-        return combineLatest(accounts)
-        |> map { accounts -> ((AccountContext, EnginePeer)?, [(AccountContext, EnginePeer, Int32)]) in
+        // Luckgram 09: the user's account order and local names; re-emit when they change.
+        return combineLatest(combineLatest(accounts), LuckgramAccountsStore.shared.updated)
+        |> map { accounts, _ -> ((AccountContext, EnginePeer)?, [(AccountContext, EnginePeer, Int32)]) in
             var primaryRecord: (AccountContext, EnginePeer)?
             if let first = accounts.filter({ $0?.0.account.id == primary?.account.id }).first, let (account, peer, _) = first {
                 primaryRecord = (account, peer)
+            }
+            let accounts: [(AccountContext, EnginePeer, Int32)?] = LuckgramAccountsStore.shared.sorted(accounts.compactMap({ $0 }), id: { $0.0.account.id.int64 }).map { item -> (AccountContext, EnginePeer, Int32)? in
+                return (item.0, luckgramDisplayPeer(item.1, accountId: item.0.account.id), item.2)
             }
             let accountRecords: [(AccountContext, EnginePeer, Int32)] = (includePrimary ? accounts : accounts.filter({ $0?.0.account.id != primary?.account.id })).compactMap({ $0 })
             return (primaryRecord, accountRecords)

@@ -139,6 +139,7 @@ swift_library(
         "//submodules/DirectionalPanGesture:DirectionalPanGesture",
         "//submodules/UndoUI:UndoUI",
         "//submodules/LuckgramUI:LuckgramUI",
+        "//submodules/LuckgramAccountsStore:LuckgramAccountsStore",
         "//submodules/PhotoResources:PhotoResources",
         "//submodules/PassRenderer:PassRenderer",
         "//submodules/TinyThumbnail:TinyThumbnail",
