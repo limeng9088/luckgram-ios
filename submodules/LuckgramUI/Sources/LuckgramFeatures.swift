@@ -38,6 +38,11 @@ public enum LuckgramFeatures {
         }
 
         // ---- 账号与隐私 / Accounts & Privacy
+        add(.toggle(LuckgramStoreRestrictionsFeature.key, group: .accountPrivacy, default: false,
+            title: ("受限频道", "Store-restricted channels"),
+            description: ("查看只在商店版 Telegram 中被隐藏的频道和群组；点进去可调整「显示 18+ 内容」", "View channels and groups hidden only in store versions of Telegram; tap for the 18+ content setting"))
+            .subpage { context in context.sharedContext.makeDataAndStorageController(context: context, sensitiveContent: true) }
+            .confirmEnable { context, present, done in LuckgramStoreRestrictionsFeature.confirmEnable(context: context, present: present, done: done) })
 
         // ---- 消息与语言 / Messages & Language
         add(.toggle("select_all_from_sender", group: .messagesLanguage, default: true,

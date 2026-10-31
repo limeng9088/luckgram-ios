@@ -35,6 +35,10 @@ public extension Peer {
                 if rule.reason == "sensitive" {
                     continue
                 }
+                // Luckgram (spec 13): skip rules that apply only to the store builds.
+                if LuckgramStoreRestrictions.ignore(rule.platform) {
+                    continue
+                }
                 if rule.platform == "all" || rule.platform == platform || contentSettings.addContentRestrictionReasons.contains(rule.platform) {
                     if !contentSettings.ignoreContentRestrictionReasons.contains(rule.reason) {
                         return rule.text
