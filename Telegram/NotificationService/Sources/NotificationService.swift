@@ -951,6 +951,16 @@ private final class NotificationServiceHandler {
 
                 return
             }
+            // Luckgram 11 (double space): nothing for an account hidden by the second space.
+            if LuckgramDoubleBottomState.snapshot(rootPath: rootPath).isHidden(recordId.int64) {
+                Logger.shared.log("NotificationService \(episode)", "Account is hidden by the second space")
+
+                let content = NotificationContent(isLockedMessage: nil)
+                updateCurrentContent(content)
+                completed()
+
+                return
+            }
             let luckgramAlias = luckgramAccounts.alias(recordId.int64)
 
             let _ = (standaloneStateManager(

@@ -1,4 +1,5 @@
 import Foundation
+import LuckgramAccountsStore
 
 /// The Luckgram feature registry. Adding a feature = adding one `add(...)` line here; the
 /// "Settings → Luckgram Features" page is generated from this list (rows keep the order of the
@@ -38,6 +39,13 @@ public enum LuckgramFeatures {
         }
 
         // ---- 账号与隐私 / Accounts & Privacy
+        add(.toggle(LuckgramDoubleBottom.featureKey, group: .accountPrivacy, default: false,
+            title: ("双重空间", "Double space"),
+            description: ("用第二个密码解锁时只显示选定的账号", "A second passcode that shows only the accounts you pick"))
+            .subpage { context in luckgramDoubleBottomController(context: context) }
+            .confirmEnable { context, present, done in LuckgramDoubleBottom.confirmEnable(context: context, present: present, done: done) }
+            .confirmDisable { context, present, done in LuckgramDoubleBottom.confirmDisable(context: context, present: present, done: done) }
+            .hiddenWhen { LuckgramDoubleBottomState.shared.isActive })
 
         // ---- 消息与语言 / Messages & Language
         add(.toggle("select_all_from_sender", group: .messagesLanguage, default: true,

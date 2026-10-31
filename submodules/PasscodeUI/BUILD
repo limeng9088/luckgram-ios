@@ -31,6 +31,7 @@ swift_library(
         "//submodules/MonotonicTime",
         "//submodules/GradientBackground",
         "//submodules/PasscodeCore",
+        "//submodules/LuckgramAccountsStore:LuckgramAccountsStore",
     ],
     visibility = [
         "//visibility:public",
