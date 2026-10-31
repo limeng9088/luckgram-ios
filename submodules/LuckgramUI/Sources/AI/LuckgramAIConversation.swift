@@ -180,6 +180,14 @@ public final class LuckgramAIStore {
         return self.directory + "/conversations.json"
     }
 
+    /// Folder for files belonging to one conversation (e.g. generated images, spec 23); deleted with
+    /// the conversation and, being inside the account's folder, with the account's data.
+    public func conversationDirectory(_ conversationId: String) -> String {
+        let path = self.directory + "/files/" + conversationId
+        try? FileManager.default.createDirectory(atPath: path, withIntermediateDirectories: true)
+        return path
+    }
+
     private func ensureLoaded() {
         if self.loaded {
             return
@@ -244,6 +252,10 @@ public final class LuckgramAIStore {
     public func delete(_ id: String) {
         self.ensureLoaded()
         self.conversations.removeAll(where: { $0.id == id })
+        let folder = self.directory + "/files/" + id
+        self.queue.async {
+            try? FileManager.default.removeItem(atPath: folder)
+        }
         self.scheduleWrite()
         self.changesPipe.putNext(Void())
     }
