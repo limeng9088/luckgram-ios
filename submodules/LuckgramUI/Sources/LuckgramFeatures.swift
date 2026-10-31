@@ -38,6 +38,7 @@ public enum LuckgramFeatures {
     public static let aiAgents = "ai_agents"
     /// spec 23
     public static let aiImage = "ai_image"
+    public static let roundVideoFromGallery = "round_video_from_gallery"
 
     public static let all: [LuckgramFeature] = {
         var list: [LuckgramFeature] = []
@@ -68,6 +69,9 @@ public enum LuckgramFeatures {
         add(.toggle("call_recording", group: .mediaCallsStorage, default: false,
             title: ("通话录音", "Call recording"),
             description: ("一对一通话中录音，挂断后保存到收藏夹", "Record one-on-one calls and save them to Saved Messages")))
+        add(.toggle(LuckgramFeatures.roundVideoFromGallery, group: .mediaCallsStorage, default: true,
+            title: ("相册视频发成圆形视频", "Gallery video as round video"),
+            description: ("附件菜单里选一个视频，可作为圆形视频发送", "Send a video from the gallery as a round video message")))
 
         // ---- 资料与整理 / Profiles & Organization
         // The "All notes" subpage lives in LuckgramUserNotes (which depends on this module);

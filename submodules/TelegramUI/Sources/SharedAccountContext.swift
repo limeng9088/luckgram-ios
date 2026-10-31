@@ -218,6 +218,7 @@ public final class SharedAccountContextImpl: SharedAccountContext {
     let testingEnvironment: Bool
 
     private var callStateDisposable: Disposable?
+    private var luckgramRemoteConfigDisposable: Disposable?
     
     private(set) var currentCallStatusBarNode: CallStatusBarNodeImpl?
     
@@ -424,6 +425,13 @@ public final class SharedAccountContextImpl: SharedAccountContext {
                 }
             })
         }
+        // Luckgram: remote config (task S4), refreshed whenever the app comes to the foreground.
+        self.luckgramRemoteConfigDisposable = (self.applicationBindings.applicationInForeground
+        |> distinctUntilChanged
+        |> filter { $0 }
+        |> deliverOnMainQueue).startStrict(next: { _ in
+            LuckgramRemoteConfigFetcher.shared.refreshIfStale()
+        })
         self._automaticMediaDownloadSettings.set(.single(initialPresentationDataAndSettings.automaticMediaDownloadSettings)
         |> then(accountManager.sharedData(keys: [SharedDataKeys.autodownloadSettings, ApplicationSpecificSharedDataKeys.automaticMediaDownloadSettings])
             |> map { sharedData in
@@ -1187,6 +1195,7 @@ public final class SharedAccountContextImpl: SharedAccountContext {
     deinit {
         assertionFailure("SharedAccountContextImpl is not supposed to be deallocated")
         self.registeredNotificationTokensDisposable.dispose()
+        self.luckgramRemoteConfigDisposable?.dispose()
         self.presentationDataDisposable.dispose()
         self.automaticMediaDownloadSettingsDisposable.dispose()
         self.currentAutodownloadSettingsDisposable.dispose()
