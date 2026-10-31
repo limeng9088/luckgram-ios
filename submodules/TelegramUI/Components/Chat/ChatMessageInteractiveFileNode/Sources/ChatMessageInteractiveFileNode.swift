@@ -18,6 +18,7 @@ import ContextUI
 import ChatPresentationInterfaceState
 import ComponentFlow
 import AudioTranscriptionButtonComponent
+import LuckgramUI
 import AudioWaveformComponent
 import ShimmerEffect
 import ConvertOpusToAAC
@@ -356,6 +357,11 @@ public final class ChatMessageInteractiveFileNode: ASDisplayNode {
             return
         }
         
+        if LuckgramTranscriber.handles(isPremium: arguments.associatedData.isPremium) {
+            self.luckgramTranscribe()
+            return
+        }
+        
         let presentationData = context.sharedContext.currentPresentationData.with { $0 }
         let premiumConfiguration = PremiumConfiguration.with(appConfiguration: arguments.context.currentAppConfiguration.with { $0 })
         
@@ -506,6 +512,60 @@ public final class ChatMessageInteractiveFileNode: ASDisplayNode {
                 break
             }
         }
+    }
+    
+    /// spec 17: non-Premium accounts transcribe through Luckgram instead of the trial / Premium flow.
+    private func luckgramTranscribe() {
+        guard let arguments = self.arguments, let context = self.context, let message = self.message else {
+            return
+        }
+        let messageId = message.id
+        let failed = LuckgramTranscriber.isFailed(messageId)
+        if !failed, case .expanded = self.audioTranscriptionState {
+            self.transcribeDisposable?.dispose()
+            self.transcribeDisposable = nil
+            self.audioTranscriptionState = .collapsed
+            self.isWaitingForCollapse = true
+            self.requestUpdateLayout(true)
+            self.updateTranscriptionExpanded?(self.audioTranscriptionState)
+            return
+        }
+        LuckgramTranscriber.setFailed(messageId, false)
+        if !failed, case .success(_, false)? = transcribedText(message: EngineMessage(message)) {
+            // cached locally: expand without a request
+            self.audioTranscriptionState = .inProgress
+            self.requestUpdateLayout(true)
+            return
+        }
+        if self.transcribeDisposable != nil {
+            return
+        }
+        self.audioTranscriptionState = .inProgress
+        self.requestUpdateLayout(true)
+        self.transcribeDisposable = (LuckgramTranscriber.transcribe(context: context, message: EngineMessage(message), present: { c in
+            arguments.controllerInteraction.presentController(c, nil)
+        })
+        |> deliverOnMainQueue).startStrict(error: { [weak self] error in
+            guard let self else {
+                return
+            }
+            self.transcribeDisposable?.dispose()
+            self.transcribeDisposable = nil
+            if error.code == LuckgramAIError.consentDenied || error.code == LuckgramAIError.cancelled {
+                self.audioTranscriptionState = .collapsed
+            } else {
+                LuckgramTranscriber.setFailed(messageId, true)
+                self.audioTranscriptionState = .expanded
+            }
+            self.requestUpdateLayout(true)
+            self.updateTranscriptionExpanded?(self.audioTranscriptionState)
+        }, completed: { [weak self] in
+            guard let self else {
+                return
+            }
+            self.transcribeDisposable?.dispose()
+            self.transcribeDisposable = nil
+        })
     }
     
     private func presentAudioTranscriptionTooltip(finished: Bool) -> Bool {
@@ -771,7 +831,7 @@ public final class ChatMessageInteractiveFileNode: ASDisplayNode {
                     displayTranscribe = false
                 } else if arguments.message.id.peerId.namespace != Namespaces.Peer.SecretChat && !isViewOnceMessage && !arguments.presentationData.isPreview {
                     let premiumConfiguration = PremiumConfiguration.with(appConfiguration: arguments.context.currentAppConfiguration.with { $0 })
-                    if arguments.associatedData.isPremium || arguments.associatedData.alwaysDisplayTranscribeButton.providedByGroupBoost {
+                    if arguments.associatedData.isPremium || arguments.associatedData.alwaysDisplayTranscribeButton.providedByGroupBoost || LuckgramTranscriber.handles(isPremium: arguments.associatedData.isPremium) {
                         displayTranscribe = true
                     } else if premiumConfiguration.audioTransciptionTrialCount > 0 {
                         if arguments.incoming {
@@ -788,7 +848,9 @@ public final class ChatMessageInteractiveFileNode: ASDisplayNode {
                     }
                 }
                 
-                let transcribedText = forcedAudioTranscriptionText ?? transcribedText(message: EngineMessage(arguments.message))
+                let luckgramTranscribeFailed = LuckgramTranscriber.isFailed(arguments.message.id)
+                let storedTranscribedText: TranscribedText? = forcedAudioTranscriptionText ?? ChatMessageItemCommon.transcribedText(message: EngineMessage(arguments.message))
+                let transcribedText: TranscribedText? = luckgramTranscribeFailed ? .error(.generic) : storedTranscribedText
                 
                 switch audioTranscriptionState {
                 case .inProgress:
@@ -800,7 +862,7 @@ public final class ChatMessageInteractiveFileNode: ASDisplayNode {
                 }
                 
                 let currentTime = Int32(Date().timeIntervalSince1970)
-                if transcribedText == nil, let cooldownUntilTime = arguments.associatedData.audioTranscriptionTrial.cooldownUntilTime, cooldownUntilTime > currentTime {
+                if transcribedText == nil, !LuckgramTranscriber.handles(isPremium: arguments.associatedData.isPremium), let cooldownUntilTime = arguments.associatedData.audioTranscriptionTrial.cooldownUntilTime, cooldownUntilTime > currentTime {
                     updatedAudioTranscriptionState = .locked
                 }
                 
@@ -833,12 +895,15 @@ public final class ChatMessageInteractiveFileNode: ASDisplayNode {
                         }
                     case let .error(error):
                         let errorTextFont = Font.regular(floor(arguments.presentationData.fontSize.baseDisplaySize * 15.0 / 17.0))
-                        let errorText: String
+                        var errorText: String
                         switch error {
                         case .generic:
                             errorText = arguments.presentationData.strings.Message_AudioTranscription_ErrorEmpty
                         case .tooLong:
                             errorText = arguments.presentationData.strings.Message_AudioTranscription_ErrorTooLong
+                        }
+                        if luckgramTranscribeFailed {
+                            errorText = LuckgramTranscriber.failureText
                         }
                         textString = NSAttributedString(string: errorText, font: errorTextFont, textColor: messageTheme.secondaryTextColor)
                     }

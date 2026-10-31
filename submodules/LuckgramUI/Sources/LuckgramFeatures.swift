@@ -20,6 +20,10 @@ import Foundation
 /// (or `isEnabledSignal(_:)` to follow changes).
 public enum LuckgramFeatures {
     public static let debugDemo = "debug_demo"
+    /// spec 17
+    public static let freeTranscribe = "free_transcribe"
+    public static let dictation = "dictation"
+    public static let dictationAITidy = "dictation_ai_tidy"
 
     public static let all: [LuckgramFeature] = {
         var list: [LuckgramFeature] = []
@@ -36,6 +40,15 @@ public enum LuckgramFeatures {
         // ---- 资料与整理 / Profiles & Organization
 
         // ---- AI
+        add(.toggle(LuckgramFeatures.freeTranscribe, group: .ai, default: true,
+            title: ("免费语音转文字", "Free voice-to-text"),
+            description: ("不需要会员，把语音消息和圆形视频转成文字", "Transcribe voice and video messages without Premium")))
+        add(.toggle(LuckgramFeatures.dictation, group: .ai, default: true,
+            title: ("语音输入", "Voice input"),
+            description: ("输入框旁的按钮，说话即可输入文字", "A button in the message field to type by speaking")))
+        add(.toggle(LuckgramFeatures.dictationAITidy, group: .ai, default: false,
+            title: ("语音输入 AI 整理", "Tidy voice input with AI"),
+            description: ("去掉口头禅、补全标点，语言不变", "Remove filler words and add punctuation, same language")))
 
         // ---- 调试 / Debug (debug builds or unlocked debug tools only)
         add(.toggle(LuckgramFeatures.debugDemo, group: .debug, default: false,
