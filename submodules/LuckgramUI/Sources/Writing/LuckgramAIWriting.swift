@@ -155,6 +155,7 @@ public enum LuckgramAIWritingFeatures {
         self.registerDebugDemo()
         // ---- other features register here (20 AI reply, 24 AI post) ----
         LuckgramAIWriting.register(LuckgramAIReply.menuItem)
+        LuckgramAIWriting.register(LuckgramAIPost.menuItem)
     }
 
     private static func effect(_ effect: String, _ title: (String, String), _ icon: String, _ order: Int, _ done: (String, String)) {
