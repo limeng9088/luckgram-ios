@@ -455,6 +455,32 @@ public final class LuckgramAI {
         }
     }
 
+    /// Authenticated JSON request for the account endpoints (S6 link, S7 billing, S8
+    /// announcements). Registers the device if needed but never asks for AI consent: nothing but
+    /// the device's own state is sent. Delivers on the main queue.
+    public func requestJSON(method: String, path: String, body: [String: Any]? = nil) -> Signal<[String: Any], LuckgramAIError> {
+        let data = body.flatMap { try? JSONSerialization.data(withJSONObject: $0) }
+        let info = Bundle.main.infoDictionary ?? [:]
+        var headers: [String: String] = [:]
+        if let version = info["CFBundleShortVersionString"] as? String, version.range(of: #"^\d+(\.\d+){0,3}$"#, options: .regularExpression) != nil {
+            headers["X-Luckgram-App-Version"] = version
+        }
+        return self.authorized(method: method, path: path, contentType: data != nil ? "application/json" : nil, body: data, accept: "application/json", extraHeaders: headers)
+        |> mapToSignal { event -> Signal<[String: Any], LuckgramAIError> in
+            guard case let .body(data) = event else {
+                return .complete()
+            }
+            if data.isEmpty {
+                return .single([:])
+            }
+            guard let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else {
+                return .fail(LuckgramAIError(code: LuckgramAIError.upstreamUnavailable))
+            }
+            return .single(object)
+        }
+        |> deliverOnMainQueue
+    }
+
     private func authorized(method: String, path: String, contentType: String?, body: Data?, accept: String, extraHeaders: [String: String] = [:]) -> Signal<HTTPEvent, LuckgramAIError> {
         func attempt(_ retry: Bool) -> Signal<HTTPEvent, LuckgramAIError> {
             return self.ensureToken()

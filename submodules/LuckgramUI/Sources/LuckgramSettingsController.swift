@@ -56,8 +56,9 @@ private final class LuckgramSettingsArguments {
     let selfTest: () -> Void
     let consentCheck: () -> Void
     let resetToken: () -> Void
+    let openAccount: (Bool) -> Void // false: Account (S6), true: Luckgram Pro (S7)
 
-    init(toggle: @escaping (String, Bool) -> Void, openSubpage: @escaping (String) -> Void, consent: @escaping () -> Void, setMock: @escaping (Bool) -> Void, selfTest: @escaping () -> Void, consentCheck: @escaping () -> Void, resetToken: @escaping () -> Void) {
+    init(toggle: @escaping (String, Bool) -> Void, openSubpage: @escaping (String) -> Void, consent: @escaping () -> Void, setMock: @escaping (Bool) -> Void, selfTest: @escaping () -> Void, consentCheck: @escaping () -> Void, resetToken: @escaping () -> Void, openAccount: @escaping (Bool) -> Void) {
         self.toggle = toggle
         self.openSubpage = openSubpage
         self.consent = consent
@@ -65,6 +66,7 @@ private final class LuckgramSettingsArguments {
         self.selfTest = selfTest
         self.consentCheck = consentCheck
         self.resetToken = resetToken
+        self.openAccount = openAccount
     }
 }
 
@@ -72,6 +74,7 @@ private enum LuckgramSettingsEntry: ItemListNodeEntry {
     case header(group: Int, text: String)
     case feature(group: Int, index: Int, key: String, title: String, text: String, value: Bool, hasSubpage: Bool, needsConfirm: Bool)
     case placeholder(group: Int, text: String)
+    case account(index: Int, title: String)
     case consent(title: String, label: String)
     case consentFooter(String)
     case debugMock(String, Bool)
@@ -86,6 +89,8 @@ private enum LuckgramSettingsEntry: ItemListNodeEntry {
         switch self {
         case let .header(group, _), let .feature(group, _, _, _, _, _, _, _), let .placeholder(group, _):
             return Int32(group)
+        case .account:
+            return Int32(LuckgramFeature.Group.accountPrivacy.rawValue)
         case .consent, .consentFooter:
             return Int32(LuckgramFeature.Group.ai.rawValue)
         case .debugMock, .debugAction, .debugInfo:
@@ -103,6 +108,8 @@ private enum LuckgramSettingsEntry: ItemListNodeEntry {
             return Int32(group) * 10000 + 10 + Int32(index)
         case let .placeholder(group, _):
             return Int32(group) * 10000 + 9000
+        case let .account(index, _):
+            return Int32(LuckgramFeature.Group.accountPrivacy.rawValue) * 10000 + 1 + Int32(index)
         case .consent:
             return Int32(LuckgramFeature.Group.ai.rawValue) * 10000 + 9100
         case .consentFooter:
@@ -125,6 +132,8 @@ private enum LuckgramSettingsEntry: ItemListNodeEntry {
         case let (.feature(a1, a2, a3, a4, a5, a6, a7, a8), .feature(b1, b2, b3, b4, b5, b6, b7, b8)):
             return a1 == b1 && a2 == b2 && a3 == b3 && a4 == b4 && a5 == b5 && a6 == b6 && a7 == b7 && a8 == b8
         case let (.placeholder(a1, a2), .placeholder(b1, b2)):
+            return a1 == b1 && a2 == b2
+        case let (.account(a1, a2), .account(b1, b2)):
             return a1 == b1 && a2 == b2
         case let (.consent(a1, a2), .consent(b1, b2)):
             return a1 == b1 && a2 == b2
@@ -162,6 +171,10 @@ private enum LuckgramSettingsEntry: ItemListNodeEntry {
             } : nil)
         case let .placeholder(_, text):
             return ItemListDisclosureItem(presentationData: presentationData, systemStyle: .glass, title: text, enabled: false, label: "", sectionId: self.section, style: .blocks, disclosureStyle: .none, action: nil)
+        case let .account(index, title):
+            return ItemListDisclosureItem(presentationData: presentationData, systemStyle: .glass, title: title, label: "", sectionId: self.section, style: .blocks, action: {
+                arguments.openAccount(index == 1)
+            })
         case let .consent(title, label):
             return ItemListDisclosureItem(presentationData: presentationData, systemStyle: .glass, title: title, label: label, sectionId: self.section, style: .blocks, action: {
                 arguments.consent()
@@ -208,12 +221,21 @@ private func luckgramSettingsEntries() -> [LuckgramSettingsEntry] {
     for group in pageGroups {
         entries.append(.header(group: group.rawValue, text: LuckgramStrings.group(group).uppercased()))
         let features = featureEntries(group)
+        var hasRows = !features.isEmpty
+        if group == .accountPrivacy {
+            // S6 account linking; S7 Pro only while billing.enabled (remote config, default off).
+            entries.append(.account(index: 0, title: LuckgramAccountLogic.Texts(zh: LuckgramStrings.isChinese).accountTitle))
+            if LuckgramSettings.shared.remoteConfig.bool("billing.enabled", default: false) {
+                entries.append(.account(index: 1, title: "Luckgram Pro"))
+            }
+            hasRows = true
+        }
         entries.append(contentsOf: features)
         if group == .ai {
             let granted = LuckgramAI.shared.hasConsent
             entries.append(.consent(title: LuckgramStrings.aiConsentRow, label: granted ? LuckgramStrings.aiConsentAllowed : LuckgramStrings.aiConsentNotAllowed))
             entries.append(.consentFooter(granted ? LuckgramStrings.aiConsentGrantedFooter : LuckgramStrings.aiConsentNotGrantedFooter))
-        } else if features.isEmpty {
+        } else if !hasRows {
             entries.append(.placeholder(group: group.rawValue, text: LuckgramStrings.comingSoon))
         }
     }
@@ -282,6 +304,9 @@ public func luckgramSettingsController(context: AccountContext) -> ViewControlle
         },
         resetToken: {
             LuckgramAI.shared.resetLocalState()
+        },
+        openAccount: { pro in
+            pushImpl?(pro ? luckgramProController(context: context) : luckgramAccountController(context: context))
         }
     )
 

@@ -34,6 +34,7 @@ jobs:
           SUITES="
           LuckgramRoundVideo|submodules/TelegramUI/Components/LuckgramRoundVideo/Sources/LuckgramRoundVideoGeometry.swift|submodules/TelegramUI/Components/LuckgramRoundVideo/Tests/LuckgramRoundVideoGeometryTests.swift
           LuckgramUI|submodules/LuckgramUI/Sources/LuckgramRemoteConfigLogic.swift|submodules/LuckgramUI/Tests/LuckgramRemoteConfigLogicTests.swift
+          LuckgramUI|submodules/LuckgramUI/Sources/LuckgramAccountLogic.swift|submodules/LuckgramUI/Tests/LuckgramAccountLogicTests.swift
           TelegramCore|submodules/TelegramCore/Sources/Luckgram/LuckgramStoreRestrictions.swift|submodules/TelegramCore/Tests/Luckgram/LuckgramStoreRestrictionsTests.swift
           "
           ran=0
