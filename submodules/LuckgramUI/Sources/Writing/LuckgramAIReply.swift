@@ -65,7 +65,7 @@ public enum LuckgramAIReply {
         return context.engine.messages.searchMessages(location: .peer(peerId: peerId, fromId: nil, tags: nil, reactions: nil, threadId: threadId, minDate: nil, maxDate: nil), query: "", state: nil, limit: Int32(self.contextMessages))
         |> take(1)
         |> map { result, _ -> String in
-            let messages = result.messages.map(EngineMessage.init).sorted(by: { $0.id.id < $1.id.id }).suffix(self.contextMessages)
+            let messages = result.messages.map { EngineMessage($0) }.sorted(by: { $0.id.id < $1.id.id }).suffix(self.contextMessages)
             var lines: [String] = []
             for message in messages {
                 var text = message.text
