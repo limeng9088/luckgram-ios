@@ -30,6 +30,9 @@ public enum LuckgramFeatures {
         // ---- 账号与隐私 / Accounts & Privacy
 
         // ---- 消息与语言 / Messages & Language
+        add(.toggle("select_all_from_sender", group: .messagesLanguage, default: true,
+            title: ("全选某人的消息", "Select all from sender"),
+            description: ("长按消息一次选中这个人在本聊天的全部消息", "Long-press a message to select everything its sender wrote here")))
 
         // ---- 媒体、通话与存储 / Media, Calls & Storage
 

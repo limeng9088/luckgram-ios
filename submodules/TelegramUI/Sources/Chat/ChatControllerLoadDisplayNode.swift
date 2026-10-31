@@ -1756,7 +1756,11 @@ extension ChatControllerImpl {
             self.updateChatPresentationInterfaceState(transition: transition, interactive: true, { $0.updatedInterfaceState { $0.withoutSelectionState() } })
         }, deleteSelectedMessages: { [weak self] sourceView in
             if let strongSelf = self {
-                if let messageIds = strongSelf.presentationInterfaceState.interfaceState.selectionState?.selectedIds, !messageIds.isEmpty {
+                if let selectedIds = strongSelf.presentationInterfaceState.interfaceState.selectionState?.selectedIds, !selectedIds.isEmpty {
+                  strongSelf.luckgramPrepareDelete(selectedIds) { messageIds in
+                    guard let strongSelf = self else {
+                        return
+                    }
                     strongSelf.messageContextDisposable.set((strongSelf.context.sharedContext.chatAvailableMessageActions(engine: strongSelf.context.engine, accountPeerId: strongSelf.context.account.peerId, messageIds: messageIds, keepUpdated: false)
                     |> deliverOnMainQueue).startStrict(next: { actions in
                         if let strongSelf = self, !actions.options.isEmpty {
@@ -1773,6 +1777,7 @@ extension ChatControllerImpl {
                             }
                         }
                     }))
+                  }
                 }
             }
         }, reportSelectedMessages: { [weak self] in

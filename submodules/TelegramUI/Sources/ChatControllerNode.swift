@@ -184,6 +184,10 @@ class ChatControllerNode: ASDisplayNode, ASScrollViewDelegate {
     private var chatLocationContextHolder: Atomic<ChatLocationContextHolder?>
     let controllerInteraction: ChatControllerInteraction
     private weak var controller: ChatControllerImpl?
+    /// Luckgram: the owning chat screen, for context-menu actions that need it.
+    var luckgramController: ChatControllerImpl? {
+        return self.controller
+    }
     
     let navigationBar: NavigationBar?
     let statusBar: StatusBar?
