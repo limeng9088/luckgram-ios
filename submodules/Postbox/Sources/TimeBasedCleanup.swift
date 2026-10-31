@@ -344,6 +344,8 @@ private final class TimeBasedCleanupImpl {
     private var generalMaxStoreTime: Int32?
     private var shortLivedMaxStoreTime: Int32?
     private var gigabytesLimit: Int32?
+    /// Luckgram 08 (cache): peers whose media is never removed by the size limit (Saved Messages).
+    private var protectedPeerIds: Set<PeerId> = Set()
     private let scheduledScanDisposable = MetaDisposable()
     private let scanQueue = Queue(name: "TimeBasedCleanupScan", qos: .background)
     private let scanDelay: Double
@@ -364,16 +366,18 @@ private final class TimeBasedCleanupImpl {
         self.scheduledScanDisposable.dispose()
     }
     
-    func setMaxStoreTimes(general: Int32, shortLived: Int32, gigabytesLimit: Int32) {
-        if self.generalMaxStoreTime != general || self.shortLivedMaxStoreTime != shortLived || self.gigabytesLimit != gigabytesLimit {
+    func setMaxStoreTimes(general: Int32, shortLived: Int32, gigabytesLimit: Int32, protectedPeerIds: Set<PeerId>) {
+        if self.generalMaxStoreTime != general || self.shortLivedMaxStoreTime != shortLived || self.gigabytesLimit != gigabytesLimit || self.protectedPeerIds != protectedPeerIds {
             self.generalMaxStoreTime = general
             self.gigabytesLimit = gigabytesLimit
             self.shortLivedMaxStoreTime = shortLived
+            self.protectedPeerIds = protectedPeerIds
             self.resetScan(general: general, shortLived: shortLived, gigabytesLimit: gigabytesLimit)
         }
     }
     
     private func resetScan(general: Int32, shortLived: Int32, gigabytesLimit: Int32) {
+        let protectedPeerIds = self.protectedPeerIds
         let shortLived = gigabytesLimit == Int32.max ? Int32.max : shortLived
         
         if general == Int32.max && shortLived == Int32.max && gigabytesLimit == Int32.max {
@@ -520,9 +524,48 @@ private final class TimeBasedCleanupImpl {
                 if totalLimitSize > bytesLimit && !isCancelled() {
                     var remainingSize = Int64(totalLimitSize)
                     var unlinkedResourceIdSet = Set<Data>()
+                    
+                    // Luckgram 08 (cache): resources referenced by protected peers (Saved Messages)
+                    // are kept; so are partial files written in the last day (downloads in progress).
+                    var protectedResourceIds = Set<Data>()
+                    for peerId in protectedPeerIds {
+                        let semaphore = DispatchSemaphore(value: 0)
+                        let disposable = (storageBox.all(peerId: peerId, excludeType: UInt8.max)
+                        |> take(1)).start(next: { ids in
+                            protectedResourceIds.formUnion(ids)
+                        }, completed: {
+                            semaphore.signal()
+                        })
+                        if semaphore.wait(timeout: .now() + 30.0) == .timedOut {
+                            disposable.dispose()
+                        }
+                    }
+                    let recentPartialTimestamp = Int(timestamp) - 24 * 60 * 60
+                    let isProtected: ([String]) -> Bool = { filePaths in
+                        for filePath in filePaths {
+                            guard (filePath as NSString).deletingLastPathComponent == totalSizeBasedPath else {
+                                continue
+                            }
+                            let fileName = (filePath as NSString).lastPathComponent
+                            if fileName.hasSuffix("_partial") || fileName.hasSuffix("_partial.meta") {
+                                var value = stat()
+                                if stat(filePath, &value) == 0 && value.st_nlink <= 1 && Int(value.st_mtimespec.tv_sec) > recentPartialTimestamp {
+                                    return true
+                                }
+                            }
+                            if !protectedResourceIds.isEmpty, !fileName.hasSuffix("_partial.meta"), let idData = MediaBox.idForFileName(name: fileName).data(using: .utf8), protectedResourceIds.contains(idData) {
+                                return true
+                            }
+                        }
+                        return false
+                    }
+                    
                     tempDatabase.topByAccessTime { size, filePaths in
                         if isCancelled() {
                             return false
+                        }
+                        if isProtected(filePaths) {
+                            return true
                         }
                         remainingSize -= size
                         
@@ -551,6 +594,9 @@ private final class TimeBasedCleanupImpl {
                     }
                 }
                 
+                if gigabytesLimit < Int32.max && totalLimitSize > bytesLimit {
+                    postboxLog("[TimeBasedCleanup] luckgram cache limit \(bytesLimit) B: before \(totalLimitSize) B, removed \(removedGeneralLimitCount) files")
+                }
                 if !unlinkedResourceIds.isEmpty {
                     storageBox.remove(ids: unlinkedResourceIds)
                 }
@@ -574,7 +620,13 @@ private final class TimeBasedCleanupImpl {
         let scanFirstTime = scanOnce
         |> delay(self.scanDelay, queue: Queue.concurrentDefaultQueue())
         
+        // Luckgram 08 (cache): repeat hourly so the size limit and short keep periods (1 hour)
+        // are enforced while the app keeps running, not only at launch.
         let scan = scanFirstTime
+        |> then(
+            (scanOnce |> delay(60.0 * 60.0, queue: Queue.concurrentDefaultQueue()))
+            |> restart
+        )
         self.scheduledScanDisposable.set((scan
         |> deliverOn(self.queue)).start())
     }
@@ -628,9 +680,9 @@ final class TimeBasedCleanup {
         }
     }
     
-    func setMaxStoreTimes(general: Int32, shortLived: Int32, gigabytesLimit: Int32) {
+    func setMaxStoreTimes(general: Int32, shortLived: Int32, gigabytesLimit: Int32, protectedPeerIds: Set<PeerId> = Set()) {
         self.impl.with { impl in
-            impl.setMaxStoreTimes(general: general, shortLived: shortLived, gigabytesLimit: gigabytesLimit)
+            impl.setMaxStoreTimes(general: general, shortLived: shortLived, gigabytesLimit: gigabytesLimit, protectedPeerIds: protectedPeerIds)
         }
     }
 }

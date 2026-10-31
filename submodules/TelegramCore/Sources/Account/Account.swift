@@ -1613,14 +1613,19 @@ public class Account {
 
         if !supplementary {
             let mediaBox = postbox.mediaBox
-            let _ = (accountManager.sharedData(keys: [SharedDataKeys.cacheStorageSettings])
-            |> take(1)).start(next: { [weak mediaBox] sharedData in
+            let accountPeerId = self.peerId
+            // Luckgram 08 (cache): follow settings changes (a new limit applies without a restart);
+            // Saved Messages media is protected from the size limit.
+            self.managedOperationsDisposable.add((accountManager.sharedData(keys: [SharedDataKeys.cacheStorageSettings])
+            |> map { sharedData -> CacheStorageSettings in
+                return sharedData.entries[SharedDataKeys.cacheStorageSettings]?.get(CacheStorageSettings.self) ?? CacheStorageSettings.defaultSettings
+            }
+            |> distinctUntilChanged).start(next: { [weak mediaBox] settings in
                 guard let mediaBox = mediaBox else {
                     return
                 }
-                let settings: CacheStorageSettings = sharedData.entries[SharedDataKeys.cacheStorageSettings]?.get(CacheStorageSettings.self) ?? CacheStorageSettings.defaultSettings
-                mediaBox.setMaxStoreTimes(general: settings.defaultCacheStorageTimeout, shortLived: 60 * 60, gigabytesLimit: settings.defaultCacheStorageLimitGigabytes)
-            })
+                mediaBox.setMaxStoreTimes(general: settings.defaultCacheStorageTimeout, shortLived: 60 * 60, gigabytesLimit: settings.defaultCacheStorageLimitGigabytes, protectedPeerIds: Set([accountPeerId]))
+            }))
         }
         
         let _ = masterNotificationsKey(masterNotificationKeyValue: self.masterNotificationKey, postbox: self.postbox, ignoreDisabled: false, createIfNotExists: true).start(next: { key in
@@ -1636,7 +1641,7 @@ public class Account {
         }
         self.restartConfigurationUpdates()
         
-        self.automaticCacheEvictionContext = AutomaticCacheEvictionContext(postbox: postbox, accountManager: accountManager)
+        self.automaticCacheEvictionContext = AutomaticCacheEvictionContext(postbox: postbox, accountManager: accountManager, accountPeerId: self.peerId)
         
         /*#if DEBUG
         self.managedOperationsDisposable.add(debugFetchAllStickers(account: self).start(completed: {

@@ -13,12 +13,14 @@ final class AutomaticCacheEvictionContext {
         let processingQueue: Queue
         let accountManager: AccountManager<TelegramAccountManagerTypes>
         let postbox: Postbox
+        let accountPeerId: PeerId
         
         var settingsDisposable: Disposable?
         var processDisposable: Disposable?
         
-        init(queue: Queue, accountManager: AccountManager<TelegramAccountManagerTypes>, postbox: Postbox) {
+        init(queue: Queue, accountManager: AccountManager<TelegramAccountManagerTypes>, postbox: Postbox, accountPeerId: PeerId) {
             self.queue = queue
+            self.accountPeerId = accountPeerId
             self.processingQueue = Queue(name: "AutomaticCacheEviction-Processing", qos: .background)
             self.accountManager = accountManager
             self.postbox = postbox
@@ -82,11 +84,12 @@ final class AutomaticCacheEvictionContext {
             let processingQueue = self.processingQueue
             let postbox = self.postbox
             let mediaBox = self.postbox.mediaBox
+            let accountPeerId = self.accountPeerId
             
             let _ = processingQueue
             let _ = mediaBox
             
-            self.processDisposable = (self.postbox.mediaBox.storageBox.allPeerIds()
+            let processOnce: Signal<Never, NoError> = (self.postbox.mediaBox.storageBox.allPeerIds()
             |> mapToSignal { peerIds -> Signal<Never, NoError> in
                 return postbox.transaction { transaction -> [PeerId: CacheStorageSettings.PeerStorageCategory] in
                     var channelCategoryMapping: [PeerId: CacheStorageSettings.PeerStorageCategory] = [:]
@@ -116,6 +119,10 @@ final class AutomaticCacheEvictionContext {
                     }
                     
                     signals = listSignal |> mapToQueue { peerId -> Signal<Never, NoError> in
+                        // Luckgram 08 (cache): media in Saved Messages is never removed automatically.
+                        if peerId == accountPeerId {
+                            return .complete()
+                        }
                         let timeout: Int32
                         if let value = settings.exceptions.first(where: { $0.key == peerId }) {
                             timeout = value.value
@@ -254,18 +261,26 @@ final class AutomaticCacheEvictionContext {
                     
                     return signals
                 }
-            }).start()
+            })
+            
+            // Luckgram 08 (cache): re-run hourly so short keep periods (1 hour) are enforced while
+            // the app keeps running, not only when the settings change or at launch.
+            self.processDisposable = (processOnce
+            |> then(
+                (processOnce |> delay(60.0 * 60.0, queue: Queue.concurrentDefaultQueue()))
+                |> SwiftSignalKit.restart
+            )).start()
         }
     }
     
     private let queue: Queue
     private let impl: QueueLocalObject<Impl>
     
-    init(postbox: Postbox, accountManager: AccountManager<TelegramAccountManagerTypes>) {
+    init(postbox: Postbox, accountManager: AccountManager<TelegramAccountManagerTypes>, accountPeerId: PeerId) {
         let queue = Queue(name: "AutomaticCacheEviction")
         self.queue = queue
         self.impl = QueueLocalObject(queue: queue, generate: {
-            return Impl(queue: queue, accountManager: accountManager, postbox: postbox)
+            return Impl(queue: queue, accountManager: accountManager, postbox: postbox, accountPeerId: accountPeerId)
         })
     }
 }
