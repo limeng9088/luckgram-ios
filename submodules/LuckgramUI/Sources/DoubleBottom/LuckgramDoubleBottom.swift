@@ -41,7 +41,7 @@ public enum LuckgramDoubleBottom {
     static var visibleHeader: String { LuckgramStrings.pick("第二密码下可见的账号", "Accounts visible with the second passcode") }
     static var visibleInfo: String { LuckgramStrings.pick("用第二密码解锁时，只有这些账号会出现在账号列表、快速切换和通知中。至少选一个。", "With the second passcode, only these accounts appear in the account list, the account switcher and notifications. Pick at least one.") }
     static var atLeastOne: String { LuckgramStrings.pick("至少选择一个账号", "Pick at least one account") }
-    static var turnOff: String { LuckgramStrings.pick("关闭双重空间", "Turn off double space") }
+    static var turnOffText: String { LuckgramStrings.pick("关闭双重空间", "Turn off double space") }
     static var enterMain: String { LuckgramStrings.pick("输入主密码", "Enter the main passcode") }
     static var wrongMain: String { LuckgramStrings.pick("主密码不正确", "Incorrect main passcode") }
     static var saved: String { LuckgramStrings.pick("第二密码已设置", "Second passcode set") }
@@ -379,7 +379,7 @@ public enum LuckgramDoubleBottom {
         }
         entries.append(.visibleInfo(visibleInfo))
         if hasSecond {
-            entries.append(.turnOff(turnOff))
+            entries.append(.turnOff(turnOffText))
         }
         return entries
     }
