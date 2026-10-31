@@ -200,7 +200,7 @@ private func luckgramSettingsEntries() -> [LuckgramSettingsEntry] {
     func featureEntries(_ group: LuckgramFeature.Group) -> [LuckgramSettingsEntry] {
         var result: [LuckgramSettingsEntry] = []
         for (index, feature) in all.enumerated() where feature.group == group && feature.isVisible {
-            result.append(.feature(group: group.rawValue, index: index, key: feature.key, title: feature.title, text: feature.descriptionText, value: feature.isEnabled, hasSubpage: feature.subpageBuilder != nil, needsConfirm: feature.confirmEnableHandler != nil))
+            result.append(.feature(group: group.rawValue, index: index, key: feature.key, title: feature.title, text: feature.descriptionText, value: feature.isLocallyEnabled, hasSubpage: feature.subpageBuilder != nil, needsConfirm: feature.confirmEnableHandler != nil))
         }
         return result
     }

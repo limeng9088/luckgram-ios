@@ -20,6 +20,7 @@ import Foundation
 /// (or `isEnabledSignal(_:)` to follow changes).
 public enum LuckgramFeatures {
     public static let debugDemo = "debug_demo"
+    public static let roundVideoFromGallery = "round_video_from_gallery"
 
     public static let all: [LuckgramFeature] = {
         var list: [LuckgramFeature] = []
@@ -32,6 +33,9 @@ public enum LuckgramFeatures {
         // ---- 消息与语言 / Messages & Language
 
         // ---- 媒体、通话与存储 / Media, Calls & Storage
+        add(.toggle(LuckgramFeatures.roundVideoFromGallery, group: .mediaCallsStorage, default: true,
+            title: ("相册视频发成圆形视频", "Gallery video as round video"),
+            description: ("附件菜单里选一个视频，可作为圆形视频发送", "Send a video from the gallery as a round video message")))
 
         // ---- 资料与整理 / Profiles & Organization
 

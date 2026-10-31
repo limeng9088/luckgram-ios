@@ -9,6 +9,7 @@ on:
     branches: [master]
     paths:
       - 'submodules/TelegramUI/Components/LuckgramRoundVideo/**'
+      - 'submodules/LuckgramUI/**'
       - '.github/workflows/luckgram-unit-tests.yml'
 
 permissions:
@@ -41,6 +42,26 @@ jobs:
               targets: [
                   .target(name: "LuckgramRoundVideo"),
                   .testTarget(name: "LuckgramRoundVideoTests", dependencies: ["LuckgramRoundVideo"]),
+              ]
+          )
+          SWIFT
+          cd "$P" && swift test
+      - name: Remote config logic tests (S4)
+        run: |
+          set -euo pipefail
+          C=submodules/LuckgramUI
+          P="$RUNNER_TEMP/pkg-remoteconfig"
+          mkdir -p "$P/Sources/LuckgramUI" "$P/Tests/LuckgramRemoteConfigLogicTests"
+          cp "$C/Sources/LuckgramRemoteConfigLogic.swift" "$P/Sources/LuckgramUI/"
+          cp "$C"/Tests/LuckgramRemoteConfigLogicTests.swift "$P/Tests/LuckgramRemoteConfigLogicTests/"
+          cat > "$P/Package.swift" <<'SWIFT'
+          // swift-tools-version:5.9
+          import PackageDescription
+          let package = Package(
+              name: "LuckgramUIRemoteConfig",
+              targets: [
+                  .target(name: "LuckgramUI"),
+                  .testTarget(name: "LuckgramRemoteConfigLogicTests", dependencies: ["LuckgramUI"]),
               ]
           )
           SWIFT
