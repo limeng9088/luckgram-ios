@@ -218,6 +218,11 @@ extension ChatControllerImpl {
                                         }
                                     }
                                     
+                                    if peerMessages.count > LuckgramSelectAll.batchSize {
+                                        // Luckgram (spec 14): 100 per request, progress toast, retry.
+                                        strongSelf.luckgramForwardInBatches(peerId: peer.id, messages: peerMessages)
+                                        continue
+                                    }
                                     let _ = (enqueueMessages(account: strongSelf.context.account, peerId: peer.id, messages: peerMessages)
                                     |> deliverOnMainQueue).startStandalone(next: { messageIds in
                                         if let strongSelf = self {
@@ -424,6 +429,10 @@ extension ChatControllerImpl {
                         }, additionalView: messages.count > 0 ? chatShareToSavedMessagesAdditionalView(strongSelf, reactionItems: reactionItems, correlationIds: correlationIds) : nil), in: .current)
                     })
                     
+                    if mappedMessages.count > LuckgramSelectAll.batchSize {
+                        // Luckgram (spec 14): 100 per request, progress toast, retry.
+                        strongSelf.luckgramForwardInBatches(peerId: peerId, messages: mappedMessages)
+                    } else {
                     let _ = (enqueueMessages(account: strongSelf.context.account, peerId: peerId, messages: mappedMessages)
                     |> deliverOnMainQueue).startStandalone(next: { messageIds in
                         if let strongSelf = self {
@@ -448,6 +457,7 @@ extension ChatControllerImpl {
                             |> deliverOnMainQueue).startStrict())
                         }
                     })
+                    }
                     strongSelf.updateChatPresentationInterfaceState(animated: false, interactive: true, { $0.updatedInterfaceState({ $0.withoutSelectionState() }) })
                     strongController.dismiss()
                 } else {
