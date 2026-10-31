@@ -10,6 +10,7 @@ import SwiftSignalKit
 import TelegramCore
 import TelegramPresentationData
 import AccountContext
+import LuckgramUI
 
 /// Cloud folder ids are 2...255; keyword folders use ids from here up.
 public let keywordFolderFilterIdBase: Int32 = 1_000_000
@@ -30,27 +31,22 @@ public func isKeywordFolderFilterId(_ id: Int32?) -> Bool {
 
 // MARK: - Feature switch
 
-/// Feature switch `keyword_folders`, default on. Will move to LuckgramSettings once foundation (00) lands.
+/// Feature switch `keyword_folders` (registered in `LuckgramFeatures`, default on). Read through
+/// `LuckgramSettings`, so both the local switch and the S4 remote config apply (#43, #54).
 public enum KeywordFoldersSettings {
     public static let key = "keyword_folders"
-    private static let defaultsKey = "luckgram.keyword_folders"
 
     public static var isEnabled: Bool {
-        if let value = UserDefaults.standard.object(forKey: defaultsKey) as? Bool {
-            return value
-        }
-        return true
+        return LuckgramSettings.shared.isEnabled(key)
     }
 
     public static func setEnabled(_ value: Bool) {
-        UserDefaults.standard.set(value, forKey: defaultsKey)
-        enabledPromise.set(value)
+        LuckgramSettings.shared.setEnabled(key, value)
     }
 
-    static let enabledPromise = ValuePromise<Bool>(KeywordFoldersSettings.isEnabled, ignoreRepeated: true)
-
+    /// Current value, then every change (settings page or remote config). Main queue.
     public static var enabledSignal: Signal<Bool, NoError> {
-        return enabledPromise.get()
+        return LuckgramSettings.shared.isEnabledSignal(key)
     }
 }
 

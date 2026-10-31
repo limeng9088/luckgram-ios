@@ -128,6 +128,7 @@ import CreateBotScreen
 import EmojiStatusSelectionComponent
 import EntityKeyboard
 import LuckgramUI
+import LuckgramUserNotes
 
 private final class AccountUserInterfaceInUseContext {
     let subscribers = Bag<(Bool) -> Void>()
@@ -392,6 +393,10 @@ public final class SharedAccountContextImpl: SharedAccountContext {
         self._presentationData.set(presentationData)
         // Luckgram: one language rule for every Luckgram string (LuckgramStrings.isChinese).
         LuckgramStrings.appLanguageCode = initialPresentationDataAndSettings.presentationData.strings.primaryComponent.languageCode
+        // Luckgram 05: "Private notes" opens "All notes" (registered here to avoid a LuckgramUI → LuckgramUserNotes cycle).
+        LuckgramFeatures.find(LuckgramUserNotesStore.featureKey)?.subpage { context in
+            return luckgramUserNotesListController(context: context)
+        }
         self._automaticMediaDownloadSettings.set(.single(initialPresentationDataAndSettings.automaticMediaDownloadSettings)
         |> then(accountManager.sharedData(keys: [SharedDataKeys.autodownloadSettings, ApplicationSpecificSharedDataKeys.automaticMediaDownloadSettings])
             |> map { sharedData in
