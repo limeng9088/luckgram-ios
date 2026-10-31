@@ -17,7 +17,7 @@ public final class LuckgramAccountsStore {
 
     public static let shared = LuckgramAccountsStore()
 
-    private struct Values: Codable, Equatable {
+    fileprivate struct Values: Codable, Equatable {
         var order: [Int64] = []
         var aliases: [String: String] = [:]
         var notificationsOff: [Int64] = []
