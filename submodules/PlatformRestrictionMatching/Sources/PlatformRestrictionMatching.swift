@@ -22,6 +22,10 @@ public extension RestrictedContentMessageAttribute {
             if rule.reason == "sensitive" {
                 continue
             }
+            // Luckgram (spec 13): skip rules that apply only to the store builds.
+            if LuckgramStoreRestrictions.ignore(rule.platform) {
+                continue
+            }
             if rule.platform == "all" || rule.platform == "ios" || contentSettings.addContentRestrictionReasons.contains(rule.platform) {
                 if !contentSettings.ignoreContentRestrictionReasons.contains(rule.reason) {
                     return rule.text

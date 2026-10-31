@@ -220,6 +220,7 @@ public final class SharedAccountContextImpl: SharedAccountContext {
 
     private var callStateDisposable: Disposable?
     private var luckgramRemoteConfigDisposable: Disposable?
+    private var luckgramStoreRestrictionsDisposable: Disposable?
     
     private(set) var currentCallStatusBarNode: CallStatusBarNodeImpl?
     
@@ -437,6 +438,11 @@ public final class SharedAccountContextImpl: SharedAccountContext {
         |> deliverOnMainQueue).startStrict(next: { _ in
             LuckgramRemoteConfigFetcher.shared.refreshIfStale()
             LuckgramAnnouncements.shared.refreshIfStale() // Luckgram: announcements (S8)
+        })
+        // Luckgram spec 13: TelegramCore reads the store-restrictions switch from LuckgramStoreRestrictions.
+        self.luckgramStoreRestrictionsDisposable = (LuckgramSettings.shared.isEnabledSignal(LuckgramStoreRestrictionsFeature.key)
+        |> deliverOnMainQueue).startStrict(next: { _ in
+            LuckgramStoreRestrictionsFeature.sync()
         })
         self._automaticMediaDownloadSettings.set(.single(initialPresentationDataAndSettings.automaticMediaDownloadSettings)
         |> then(accountManager.sharedData(keys: [SharedDataKeys.autodownloadSettings, ApplicationSpecificSharedDataKeys.automaticMediaDownloadSettings])
