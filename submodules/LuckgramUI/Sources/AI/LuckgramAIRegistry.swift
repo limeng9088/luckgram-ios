@@ -114,6 +114,8 @@ public enum LuckgramAIRegistry {
             }), at: i)
         }
         LuckgramAIDebugDemo.register()
+        // ---- features that extend the assistant register here ----
+        LuckgramAgents.register() // 22 agents
     }
 
     /// Puts `prefix` in front of what is already typed (replacing another built-in prefix).

@@ -1512,6 +1512,20 @@ final class ChatListControllerNode: ASDisplayNode, ASGestureRecognizerDelegate {
                 )))
             )
         }
+        // Luckgram: agents added to the chat list (feature 22)
+        if case .chatList(.root) = self.location {
+            let agents = LuckgramAgents.pinnedAgents(accountId: self.context.account.id.int64)
+            if !agents.isEmpty {
+                let context = self.context
+                panels.append(HeaderPanelContainerComponent.Panel(
+                    key: "luckgramAgents",
+                    orderIndex: 0,
+                    component: AnyComponent(LuckgramAgentsStripComponent(agents: agents, theme: self.presentationData.theme, open: { agent in
+                        LuckgramAgents.open(agent, context: context, from: nil)
+                    }))
+                ))
+            }
+        }
         if let mediaPlayback = self.controller?.globalControlPanelsContextState?.mediaPlayback {
             if let playlistLocation = mediaPlayback.playlistLocation as? PeerMessagesPlaylistLocation, case let .custom(_, _, _, _, hidePanel) = playlistLocation, hidePanel {
                 
