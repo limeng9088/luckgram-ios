@@ -62,6 +62,7 @@ import LiveLocationHeaderPanelComponent
 import TranslateHeaderPanelComponent
 import AdPanelHeaderPanelComponent
 import MessageFeeHeaderPanelComponent
+import LuckgramUserNotes
 import LegacyChatHeaderPanelComponent
 import ChatSearchNavigationContentNode
 import GroupCallHeaderPanelComponent
@@ -364,6 +365,7 @@ class ChatControllerNode: ASDisplayNode, ASScrollViewDelegate {
     var dismissUrlPreview: () -> Void = { }
     var setupSendActionOnViewUpdate: (@escaping () -> Void, Int64?) -> Void = { _, _ in }
     var requestLayout: (ContainedViewLayoutTransition) -> Void = { _ in }
+    private var luckgramUserNotesDisposable: Disposable?
     var dismissAsOverlay: () -> Void = { }
     
     var interfaceInteraction: ChatPanelInterfaceInteraction?
@@ -1084,9 +1086,16 @@ class ChatControllerNode: ASDisplayNode, ASScrollViewDelegate {
             }
             strongSelf.inputMediaNodeData = value
         })
+        
+        // Luckgram: private notes (spec 05) — relayout the header panels when a note or its bar state changes.
+        self.luckgramUserNotesDisposable = (LuckgramUserNotesStore.shared(context: context).updates
+        |> deliverOnMainQueue).startStrict(next: { [weak self] _ in
+            self?.requestLayout(.animated(duration: 0.3, curve: .easeInOut))
+        })
     }
     
     deinit {
+        self.luckgramUserNotesDisposable?.dispose()
         self.interactiveEmojisDisposable?.dispose()
         self.openStickersDisposable?.dispose()
         self.displayVideoUnmuteTipDisposable?.dispose()
@@ -1676,6 +1685,20 @@ class ChatControllerNode: ASDisplayNode, ASScrollViewDelegate {
             )
         } else {
             self.currentTitleAccessoryPanelNode = nil
+        }
+        
+        // Luckgram: private notes (spec 05). Appended after the title accessory panel so it sits below the pinned message bar.
+        if !hideTopPanels, self.chatPresentationInterfaceState.search == nil, self.chatPresentationInterfaceState.subject == nil, case .peer = self.chatPresentationInterfaceState.chatLocation, let notePeerId = self.chatPresentationInterfaceState.renderedPeer?.chatMainPeer?.id, let notePanel = luckgramUserNoteHeaderPanel(context: self.context, peerId: notePeerId, theme: self.chatPresentationInterfaceState.theme, strings: self.chatPresentationInterfaceState.strings, edit: { [weak self] in
+            guard let self, let controller = self.controller else {
+                return
+            }
+            controller.push(luckgramUserNoteEditController(context: self.context, peerId: notePeerId))
+        }) {
+            headerPanels.append(HeaderPanelContainerComponent.Panel(
+                key: "luckgramUserNote",
+                orderIndex: 3,
+                component: notePanel
+            ))
         }
         
         var displayFeePanel: (value: Int64, peer: EnginePeer)?
