@@ -3,6 +3,7 @@ import SwiftSignalKit
 import TelegramCore
 import AccountContext
 import TelegramPresentationData
+import LuckgramUI
 
 /// Luckgram: posts a finished call recording (spec 04 §4–5).
 ///
@@ -11,7 +12,9 @@ import TelegramPresentationData
 /// 2. If the AI transcript switch is on and the user agreed to AI processing, transcribes and
 ///    summarises it via the Luckgram AI gateway and replies to the audio message with the summary
 ///    followed by the full transcript.
-/// 3. Removes the local upload copy from the media box once the message is on the server.
+/// 3. Removes the local upload copy from the media box once the message is on the server. A copy
+///    whose message never got there (send failed, app quit) is removed on the next recording, like
+///    Android deletes stale recording files.
 final class LuckgramCallRecordingUploader {
     /// Telegram's text limit is 4096; leave room for the header.
     private static let maxTextChunk = 4000
@@ -24,7 +27,8 @@ final class LuckgramCallRecordingUploader {
     private let duration: Double
     private let startDate: Date
     private let correlationId = Int64.random(in: Int64.min ... Int64.max)
-    private let resource = LocalFileMediaResource(fileId: Int64.random(in: Int64.min ... Int64.max))
+    private let fileId = Int64.random(in: Int64.min ... Int64.max)
+    private var resource: LocalFileMediaResource { LocalFileMediaResource(fileId: self.fileId) }
     
     private var targetPeerId: EnginePeer.Id?
     private var targetName: String = LuckgramCallRecordingStrings.savedMessages
@@ -34,11 +38,41 @@ final class LuckgramCallRecordingUploader {
     private var aiReply: String?
     
     static func upload(context: AccountContext, peer: EnginePeer, data: Data, duration: Double, startDate: Date) {
+        self.removeStaleCopies(context: context)
         let uploader = LuckgramCallRecordingUploader(context: context, peer: peer, data: data, duration: duration, startDate: startDate)
         self.active.append(uploader)
         uploader.start()
     }
     
+    // MARK: - Upload copies that were never delivered
+
+    /// Per-account list of media box upload copies (LocalFileMediaResource file ids) still waiting
+    /// for their message to reach the server.
+    private static let pendingCopiesKey = "call_recording_pending_copies"
+
+    private static func pendingCopies(_ context: AccountContext) -> [Int64] {
+        let value = LuckgramSettings.shared.string(pendingCopiesKey, forAccount: context.account.id.int64, default: nil) ?? ""
+        return value.split(separator: ",").compactMap { Int64($0) }
+    }
+
+    private static func setPendingCopies(_ context: AccountContext, _ ids: [Int64]) {
+        LuckgramSettings.shared.setString(pendingCopiesKey, ids.isEmpty ? nil : ids.map { "\($0)" }.joined(separator: ","), forAccount: context.account.id.int64)
+    }
+
+    /// Removes copies left by uploads that are no longer running (their message was never
+    /// delivered: the send failed or the app quit before it finished).
+    private static func removeStaleCopies(context: AccountContext) {
+        let running = Set(self.active.filter { $0.context.account.id == context.account.id }.map { $0.fileId })
+        let pending = self.pendingCopies(context)
+        let stale = pending.filter { !running.contains($0) }
+        if stale.isEmpty {
+            return
+        }
+        self.setPendingCopies(context, pending.filter { running.contains($0) })
+        let ids = stale.map { EngineMediaResource.Id(LocalFileMediaResource(fileId: $0).id) }
+        let _ = context.engine.resources.removeCachedResources(ids: ids, force: true).start()
+    }
+
     private init(context: AccountContext, peer: EnginePeer, data: Data, duration: Double, startDate: Date) {
         self.context = context
         self.peer = peer
@@ -92,6 +126,7 @@ final class LuckgramCallRecordingUploader {
         let durationSeconds = max(1, Int(self.duration.rounded()))
         let caption = LuckgramCallRecordingStrings.caption(peerName: peerName, duration: luckgramFormatDuration(durationSeconds))
         
+        LuckgramCallRecordingUploader.setPendingCopies(self.context, LuckgramCallRecordingUploader.pendingCopies(self.context) + [self.fileId])
         self.context.engine.resources.storeResourceData(id: EngineMediaResource.Id(self.resource.id), data: self.data, synchronous: true)
         let file = TelegramMediaFile(
             fileId: EngineMedia.Id(namespace: Namespaces.Media.LocalFile, id: Int64.random(in: Int64.min ... Int64.max)),
@@ -127,6 +162,8 @@ final class LuckgramCallRecordingUploader {
                 // The local upload copy is no longer needed (spec 04 §5).
                 let resourceId = EngineMediaResource.Id(self.resource.id)
                 let engine = self.context.engine
+                let fileId = self.fileId
+                LuckgramCallRecordingUploader.setPendingCopies(self.context, LuckgramCallRecordingUploader.pendingCopies(self.context).filter { $0 != fileId })
                 Queue.mainQueue().after(5.0, {
                     let _ = engine.resources.removeCachedResources(ids: [resourceId], force: true).start()
                 })
