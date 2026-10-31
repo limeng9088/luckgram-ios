@@ -34,6 +34,9 @@ public enum LuckgramFeatures {
         // ---- 媒体、通话与存储 / Media, Calls & Storage
 
         // ---- 资料与整理 / Profiles & Organization
+        add(.toggle("keyword_folders", group: .profileOrganize, default: true,
+            title: ("关键词文件夹", "Keyword folders"),
+            description: ("按关键词自动归类聊天（只在本机）", "Group chats by keyword (this device only)")))
 
         // ---- AI
 
