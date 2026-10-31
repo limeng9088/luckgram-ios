@@ -564,9 +564,17 @@ func settingsEditingItems(data: PeerInfoScreenData?, state: PeerInfoState, conte
         interaction.openSettings(.addAccount)
     }))
     
-    // Luckgram 09 (more accounts): 20 accounts for everyone, no Premium tier.
+    // Luckgram 09 (more accounts): 20 accounts for everyone, no Premium tier; same text as Android
+    // ("You can add N additional accounts" until the limit).
     LuckgramStrings.appLanguageCode = presentationData.strings.primaryComponent.languageCode
-    items[.account]!.append(PeerInfoScreenCommentItem(id: ItemAddAccountHelp, text: LuckgramAccountsStrings.limitReached))
+    var luckgramAccountCount = 1
+    if let settings = data.globalSettings {
+        for (accountContext, _, _) in settings.accountsAndPeers where !accountContext.account.testingEnvironment {
+            luckgramAccountCount += 1
+        }
+    }
+    let luckgramMoreAccounts = max(0, LuckgramAccountsStore.maxAccounts - luckgramAccountCount)
+    items[.account]!.append(PeerInfoScreenCommentItem(id: ItemAddAccountHelp, text: luckgramMoreAccounts > 0 ? LuckgramAccountsStrings.canAddMore(luckgramMoreAccounts) : LuckgramAccountsStrings.limitReached))
     
     items[.logout]!.append(PeerInfoScreenActionItem(id: ItemLogout, text: presentationData.strings.Settings_Logout, color: .destructive, alignment: .center, action: {
         interaction.openSettings(.logout)

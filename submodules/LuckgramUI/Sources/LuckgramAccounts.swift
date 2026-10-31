@@ -19,6 +19,7 @@ public enum LuckgramAccountsStrings {
     public static func showAll(_ count: Int) -> String { LuckgramStrings.pick("显示全部 \(count) 个账号", "Show all \(count) accounts") }
     public static var showLess: String { LuckgramStrings.pick("收起", "Show less") }
     public static var manage: String { LuckgramStrings.pick("管理账号", "Manage accounts") }
+    public static func canAddMore(_ count: Int) -> String { LuckgramStrings.pick("还可以添加 \(count) 个账号", count == 1 ? "You can add 1 additional account." : "You can add \(count) additional accounts.") }
     public static var accounts: String { LuckgramStrings.pick("账号", "Accounts") }
     public static var manageInfo: String { LuckgramStrings.pick("拖动可以调整账号顺序，点按账号可以设置备注名。备注名只保存在本机，用于账号列表和通知标题。", "Drag to reorder accounts. Tap an account to set its name. Names are kept on this device only and are used in the account list and notification titles.") }
     public static var alias: String { LuckgramStrings.pick("备注名", "Name on this device") }
