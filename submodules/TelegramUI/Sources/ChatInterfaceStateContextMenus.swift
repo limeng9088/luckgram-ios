@@ -1,4 +1,5 @@
 import Foundation
+import LuckgramUI
 import UIKit
 import TelegramCore
 import AsyncDisplayKit
@@ -1502,6 +1503,19 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
                     })))
                 }
             }
+        }
+        
+        // Luckgram: "Ask AI" (feature 18) — the message goes into the AI assistant's input field; nothing is sent yet.
+        if !isCopyProtected, message.id.peerId.namespace != Namespaces.Peer.SecretChat, LuckgramAskAI.canAsk(EngineMessage(message)) {
+            actions.append(.action(ContextMenuActionItem(text: LuckgramStrings.pick("问 AI", "Ask AI"), icon: { theme in
+                return generateTintedImage(image: UIImage(systemName: "sparkles"), color: theme.actionSheet.primaryTextColor)
+            }, action: { _, f in
+                f(.default)
+                let _ = (LuckgramAskAI.prompt(context: context, messages: messages.map { EngineMessage($0) })
+                |> deliverOnMainQueue).startStandalone(next: { prompt in
+                    LuckgramAIChatController.openNew(context: context, prefill: prompt)
+                })
+            })))
         }
         
         if resourceAvailable, !message.containsSecretMedia && !isCopyProtected {

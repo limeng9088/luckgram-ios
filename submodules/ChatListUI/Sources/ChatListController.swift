@@ -1,4 +1,5 @@
 import Foundation
+import LuckgramUI
 import UIKit
 import Postbox
 import SwiftSignalKit
@@ -6973,11 +6974,17 @@ private final class ChatListLocationContext {
     var rightButton: NavigationBarComponent.Button?
     var proxyButton: NavigationBarComponent.Button?
     var storyButton: NavigationBarComponent.Button?
+    /// Luckgram: AI assistant button (feature 18).
+    var luckgramAIButton: NavigationBarComponent.Button?
+    private static let luckgramAIIcon: UIImage? = UIImage(systemName: "sparkles", withConfiguration: UIImage.SymbolConfiguration(pointSize: 19.0, weight: .medium))?.withRenderingMode(.alwaysTemplate)
     
     var rightButtons: [NavigationBarComponent.Button] {
         var result: [NavigationBarComponent.Button] = []
         if let rightButton = self.rightButton {
             result.append(rightButton)
+        }
+        if let luckgramAIButton = self.luckgramAIButton {
+            result.append(luckgramAIButton)
         }
         if let storyButton = self.storyButton {
             result.append(storyButton)
@@ -7105,7 +7112,8 @@ private final class ChatListLocationContext {
                     isReorderingTabs,
                     peerStatus,
                     parentController.updatedPresentationData.1,
-                    storyPostingAvailable
+                    // Luckgram: also re-run when a Luckgram switch changes (the AI button, feature 18)
+                    combineLatest(storyPostingAvailable, LuckgramSettings.shared.updated) |> map { value, _ -> Bool in value }
                 ).startStrict(next: { [weak self] networkState, proxy, passcode, stateAndFilterId, isReorderingTabs, peerStatus, presentationData, storyPostingAvailable in
                     guard let self else {
                         return
@@ -7431,6 +7439,19 @@ private final class ChatListLocationContext {
                             self?.parentController?.composePressed()
                         }
                     )
+                }
+                if !isReorderingTabs, LuckgramAIChatController.isEnabled, let icon = ChatListLocationContext.luckgramAIIcon {
+                    self.luckgramAIButton = NavigationBarComponent.Button(id: "luckgram_ai",
+                        content: .image(icon),
+                        action: { [weak self] _ in
+                            guard let self else {
+                                return
+                            }
+                            LuckgramAIChatController.openLatest(context: self.context)
+                        }
+                    )
+                } else {
+                    self.luckgramAIButton = nil
                 }
                 
                 if isReorderingTabs {

@@ -353,6 +353,9 @@ final class ChatListNoticeItemNode: ItemListRevealOptionsItemNode {
             case let .link(_, _, title, subtitle):
                 titleString = stringWithAppliedEntities(title.string, entities: title.entities, baseColor: item.theme.list.itemPrimaryTextColor, linkColor: item.theme.list.itemAccentColor, baseFont: titleFont, linkFont: titleFont, boldFont: titleBoldFont, italicFont: titleItalicFont, boldItalicFont: titleBoldItalicFont, fixedFont: titleFont, blockQuoteFont: titleFont, message: nil)
                 textString = stringWithAppliedEntities(subtitle.string, entities: subtitle.entities, baseColor: item.theme.list.itemPrimaryTextColor, linkColor: item.theme.list.itemAccentColor, baseFont: textFont, linkFont: textFont, boldFont: textBoldFont, italicFont: textItalicFont, boldItalicFont: textBoldItalicFont, fixedFont: textFont, blockQuoteFont: textFont, message: nil)
+            case let .luckgramAI(title, text):
+                titleString = NSAttributedString(string: title, font: titleFont, textColor: item.theme.rootController.navigationBar.primaryTextColor)
+                textString = NSAttributedString(string: text, font: smallTextFont, textColor: item.theme.rootController.navigationBar.secondaryTextColor)
             }
             
             var leftInset: CGFloat = sideInset
@@ -449,7 +452,7 @@ final class ChatListNoticeItemNode: ItemListRevealOptionsItemNode {
                     
                     let hasCloseButton: Bool
                     switch item.notice {
-                    case .xmasPremiumGift, .setupBirthday, .birthdayPremiumGift, .premiumGrace, .starsSubscriptionLowBalance, .setupPhoto, .link:
+                    case .xmasPremiumGift, .setupBirthday, .birthdayPremiumGift, .premiumGrace, .starsSubscriptionLowBalance, .setupPhoto, .link, .luckgramAI:
                         hasCloseButton = true
                     default:
                         hasCloseButton = false
