@@ -38,6 +38,7 @@ import ChatMessageItemView
 import ChatMessageBubbleItemNode
 import AdsInfoScreen
 import AdsReportScreen
+import LuckgramUI
 import WalletContext
  
 private struct MessageContextMenuData {
@@ -2135,6 +2136,20 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
                 }, action: { _, f in
                     interfaceInteraction.beginMessageSelection(selectAll ? messages.map { $0.id } : [message.id], { transition in
                         f(.custom(transition))
+                    })
+                })))
+            }
+
+            // Luckgram (spec 14): "Select All from <name>" right below "Select".
+            if LuckgramSelectAll.isEnabled, chatPresentationInterfaceState.subject == nil, let author = message.author, let chatPeerId = chatPresentationInterfaceState.chatLocation.peerId, message.id.namespace == Namespaces.Message.Cloud || chatPeerId.namespace == Namespaces.Peer.SecretChat, !message.media.contains(where: { $0 is TelegramMediaAction }), let chatController = (controllerInteraction.chatControllerNode() as? ChatControllerNode)?.luckgramController {
+                let senderId = author.id
+                actions.append(.action(ContextMenuActionItem(text: LuckgramSelectAll.menuTitle(chatPeerId: chatPeerId, author: EnginePeer(author), accountPeerId: context.account.peerId), icon: { theme in
+                    return generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/SelectAll"), color: theme.actionSheet.primaryTextColor)
+                }, action: { [weak chatController] _, f in
+                    interfaceInteraction.beginMessageSelection([message.id], { transition in
+                        f(.custom(transition))
+                        // Selection state exists now; start loading the sender's messages.
+                        chatController?.luckgramStartSelectAll(senderId: senderId)
                     })
                 })))
             }

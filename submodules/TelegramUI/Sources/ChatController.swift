@@ -327,6 +327,9 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
     var interfaceInteraction: ChatPanelInterfaceInteraction?
     
     let messageContextDisposable = MetaDisposable()
+    /// Luckgram (spec 14): "select all from sender" paging, and whether that mode is on.
+    let luckgramSelectAllDisposable = MetaDisposable()
+    var luckgramSelectAllActive = false
     let controllerNavigationDisposable = MetaDisposable()
     let sentMessageEventsDisposable = MetaDisposable()
     let failedMessageEventsDisposable = MetaDisposable()
@@ -8533,6 +8536,10 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
             f,
             completion: completion
         )
+        if self.luckgramSelectAllActive && self.presentationInterfaceState.interfaceState.selectionState == nil {
+            // Leaving multi-select cancels "select all from sender" (spec 14).
+            self.luckgramStopSelectAll()
+        }
     }
     
     func updateItemNodesSelectionStates(animated: Bool) {

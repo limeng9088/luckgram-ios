@@ -430,6 +430,7 @@ extension ChatControllerImpl {
         
         if deleteImmediately {
             let _ = self.context.engine.messages.deleteMessagesInteractively(messageIds: Array(messageIds), type: type).startStandalone()
+            self.luckgramNoteBatchedDelete(count: messageIds.count)
             return
         }
         

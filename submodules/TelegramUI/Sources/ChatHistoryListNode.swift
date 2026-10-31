@@ -4034,6 +4034,23 @@ public final class ChatHistoryListNodeImpl: ASDisplayNode, ChatHistoryNode, Chat
         return nil
     }
     
+    /// Luckgram (spec 14): every message currently loaded in the history view.
+    public func luckgramLoadedMessages() -> [EngineMessage] {
+        var result: [EngineMessage] = []
+        if let historyView = self.historyView {
+            for entry in historyView.filteredEntries {
+                if case let .MessageEntry(message, _, _, _, _, _) = entry {
+                    result.append(EngineMessage(message))
+                } else if case let .MessageGroupEntry(_, messages, _) = entry {
+                    for (message, _, _, _, _) in messages {
+                        result.append(EngineMessage(message))
+                    }
+                }
+            }
+        }
+        return result
+    }
+    
     public func messageInCurrentHistoryView(_ id: EngineMessage.Id) -> EngineMessage? {
         if let historyView = self.historyView {
             for entry in historyView.filteredEntries {
