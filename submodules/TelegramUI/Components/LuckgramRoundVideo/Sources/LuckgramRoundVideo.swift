@@ -3,29 +3,27 @@ import TelegramPresentationData
 
 /// Luckgram: send a gallery video as a round video message (spec 03-round-video).
 ///
-/// Switch key `round_video_from_gallery`, default on. Until the shared `LuckgramSettings`
-/// framework (spec 00) lands, the value is read from the standard user defaults under
-/// `luckgram.round_video_from_gallery` (device-wide), so wiring it into `LuckgramSettings`
-/// later only touches `isEnabled`.
+/// Switch key `round_video_from_gallery`, default on, stored where 00's `LuckgramSettings` keeps
+/// it: `UserDefaults(suiteName: "luckgram_settings")`, bare key (same as Android
+/// `SharedPreferences("luckgram_settings")`), so the "Luckgram Features" page controls it
+/// (specs#43). Once 00 is merged this reads `LuckgramSettings.shared.isEnabled(key)` instead.
 public enum LuckgramRoundVideo {
     public static let key = "round_video_from_gallery"
     public static let defaultValue = true
     /// Longest round video Telegram accepts, seconds.
     public static let maxDuration: Double = 60.0
 
-    private static var defaultsKey: String {
-        return "luckgram." + key
-    }
+    private static let defaults: UserDefaults = UserDefaults(suiteName: "luckgram_settings") ?? .standard
 
     public static var isEnabled: Bool {
         get {
-            if let value = UserDefaults.standard.object(forKey: defaultsKey) as? NSNumber {
+            if let value = defaults.object(forKey: key) as? NSNumber {
                 return value.boolValue
             }
             return defaultValue
         }
         set {
-            UserDefaults.standard.set(newValue, forKey: defaultsKey)
+            defaults.set(newValue, forKey: key)
         }
     }
 

@@ -9,6 +9,7 @@ import TelegramPresentationData
 import ItemListUI
 import PresentationDataUtils
 import AccountContext
+import UndoUI
 
 private final class KeywordFolderEditArguments {
     let updateName: (String) -> Void
@@ -132,9 +133,8 @@ private func keywordFolderEditEntries(strings: PresentationStrings, state: Keywo
     for i in 0 ..< state.keywords.count {
         entries.append(.keyword(i, state.keywords[i], KeywordFolderStrings.keywordHint(strings)))
     }
-    if state.keywords.count < keywordFoldersMaxKeywords {
-        entries.append(.addKeyword(KeywordFolderStrings.addKeyword(strings)))
-    }
+    // Always shown (like Android); tapping it at the limit explains the limit.
+    entries.append(.addKeyword(KeywordFolderStrings.addKeyword(strings)))
     entries.append(.keywordsInfo(KeywordFolderStrings.keywordsInfo(strings)))
     entries.append(.scopeHeader(KeywordFolderStrings.scopeHeader(strings)))
     entries.append(.scope(0, KeywordFolderStrings.scopeAll(strings), state.scope == KeywordFolder.scopeAll))
@@ -189,6 +189,7 @@ public func keywordFolderEditController(context: AccountContext, folderId: Int32
 
     var dismissImpl: (() -> Void)?
     var presentImpl: ((ViewController) -> Void)?
+    var showErrorImpl: ((String) -> Void)?
 
     if let folderId {
         let _ = (keywordFolders(context: context)
@@ -218,6 +219,11 @@ public func keywordFolderEditController(context: AccountContext, folderId: Int32
             return state
         }
     }, addKeyword: {
+        if stateValue.with({ $0.keywords.count }) >= keywordFoldersMaxKeywords {
+            let strings = context.sharedContext.currentPresentationData.with { $0 }.strings
+            showErrorImpl?(KeywordFolderStrings.keywordsLimit(strings))
+            return
+        }
         updateState { state in
             var state = state
             if state.keywords.count < keywordFoldersMaxKeywords {
@@ -249,18 +255,25 @@ public func keywordFolderEditController(context: AccountContext, folderId: Int32
     let signal = combineLatest(queue: .mainQueue(), context.sharedContext.presentationData, statePromise.get())
     |> map { presentationData, state -> (ItemListControllerState, (ItemListNodeState, Any)) in
         let strings = presentationData.strings
-        let keywords = normalizedKeywords(state.keywords)
-        let name = state.name.trimmingCharacters(in: .whitespacesAndNewlines)
-        let canSave = !name.isEmpty && !keywords.isEmpty && state.scope & KeywordFolder.scopeAll != 0
 
         let leftButton = ItemListNavigationButton(content: .text(strings.Common_Cancel), style: .regular, enabled: true, action: {
             dismissImpl?()
         })
-        let rightButton = ItemListNavigationButton(content: .text(strings.Common_Done), style: .bold, enabled: canSave, action: {
+        let rightButton = ItemListNavigationButton(content: .text(strings.Common_Done), style: .bold, enabled: true, action: {
+            // "Done" is always enabled (like Android); tapping it says what is missing.
             let current = stateValue.with { $0 }
             let keywords = normalizedKeywords(current.keywords)
             let name = current.name.trimmingCharacters(in: .whitespacesAndNewlines)
-            if name.isEmpty || keywords.isEmpty || current.scope & KeywordFolder.scopeAll == 0 {
+            if name.isEmpty {
+                showErrorImpl?(KeywordFolderStrings.errorName(strings))
+                return
+            }
+            if keywords.isEmpty {
+                showErrorImpl?(KeywordFolderStrings.errorKeywords(strings))
+                return
+            }
+            if current.scope & KeywordFolder.scopeAll == 0 {
+                showErrorImpl?(KeywordFolderStrings.errorScope(strings))
                 return
             }
             let scope = current.scope
@@ -295,6 +308,13 @@ public func keywordFolderEditController(context: AccountContext, folderId: Int32
     }
     presentImpl = { [weak controller] c in
         controller?.present(c, in: .window(.root))
+    }
+    showErrorImpl = { [weak controller] text in
+        guard let controller else {
+            return
+        }
+        let presentationData = context.sharedContext.currentPresentationData.with { $0 }
+        controller.present(UndoOverlayController(presentationData: presentationData, content: .info(title: nil, text: text, timeout: nil, customUndoText: nil), elevatedLayout: false, action: { _ in return false }), in: .current)
     }
     return controller
 }

@@ -35,13 +35,13 @@ public enum LuckgramTranslateOut {
         "uz", "vi", "cy", "xh", "yi", "yo", "zu"
     ]
 
-    private static let settingsKey = "luckgram_settings.translate_out"
-
     // MARK: - Switch
 
-    /// Device level switch shared by all accounts (written by the Luckgram settings page, feature 00).
+    /// Device level switch shared by all accounts. Same storage as feature 00's `LuckgramSettings`
+    /// (`UserDefaults(suiteName: "luckgram_settings")`, key = feature key; unset = registry default), so the
+    /// "Settings → Luckgram features" switch applies here. Android: `SharedPreferences("luckgram_settings")`.
     public static var isEnabled: Bool {
-        if let value = UserDefaults.standard.object(forKey: settingsKey) as? Bool {
+        if let value = UserDefaults(suiteName: "luckgram_settings")?.object(forKey: featureKey) as? Bool {
             return value
         }
         return featureDefault
@@ -105,7 +105,9 @@ public enum LuckgramTranslateOut {
 
     private static func chatKey(peerId: EnginePeer.Id) -> EngineDataBuffer {
         let key = EngineDataBuffer(length: 8)
-        key.setInt64(0, value: peerId.id._internalGetInt64Value())
+        // Full peer id (namespace + id), so a user and a group/channel with the same numeric id don't share a language.
+        // Same semantics as Android's dialogId key.
+        key.setInt64(0, value: peerId.toInt64())
         return key
     }
 

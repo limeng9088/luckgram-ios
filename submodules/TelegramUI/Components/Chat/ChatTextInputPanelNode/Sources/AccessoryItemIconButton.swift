@@ -175,12 +175,15 @@ final class AccessoryItemIconButton: HighlightTrackingButton, GlassBackgroundVie
             case .translate:
                 let image = generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Translate"), color: theme.chat.inputPanel.inputControlColor.withAlphaComponent(1.0))
                 return (image, nil, LuckgramTranslateOut.Strings(strings).button, 1.0, UIEdgeInsets())
+            case .quickReplies:
+                let image = UIImage(systemName: "text.bubble", withConfiguration: UIImage.SymbolConfiguration(pointSize: 19.0, weight: .regular))?.withTintColor(theme.chat.inputPanel.inputControlColor.withAlphaComponent(1.0), renderingMode: .alwaysOriginal)
+                return (image, nil, LuckgramQuickReplies.Strings(strings).title, 1.0, UIEdgeInsets())
         }
     }
     
     private static func calculateWidth(item: ChatTextInputAccessoryItem, image: UIImage?, text: String?, strings: PresentationStrings) -> CGFloat {
         switch item {
-        case .input, .botInput, .silentPost, .commands, .scheduledMessages, .gift, .suggestPost, .translate:
+        case .input, .botInput, .silentPost, .commands, .scheduledMessages, .gift, .suggestPost, .translate, .quickReplies:
             return 32.0
         case let .messageAutoremoveTimeout(timeout):
             var imageWidth = (image?.size.width ?? 0.0) + CGFloat(8.0)

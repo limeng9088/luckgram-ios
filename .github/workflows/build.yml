@@ -144,3 +144,26 @@ jobs:
             --repo "$GITHUB_REPOSITORY" \
             --title "Luckgram iOS ${APP_VERSION} (${BUILD_NUMBER})" \
             --notes "Unsigned build of ${GITHUB_SHA}. Re-sign before installing."
+
+      # S5: tell the Luckgram API about the new release (GET /v1/version).
+      # master only: workflow_dispatch on feature branches also creates releases.
+      - name: Publish version to Luckgram API
+        if: github.ref == 'refs/heads/master'
+        env:
+          TOKEN_DEV: ${{ secrets.LUCKGRAM_RELEASE_TOKEN_DEV }}
+          TOKEN_PROD: ${{ secrets.LUCKGRAM_RELEASE_TOKEN_PROD }}
+        run: |
+          TAG="ios-${APP_VERSION}-${BUILD_NUMBER}"
+          BODY=$(printf '{"platform":"%s","version":"%s","build":%s,"url":"%s","source":"%s"}' \
+            ios "$APP_VERSION" "$BUILD_NUMBER" "https://github.com/${GITHUB_REPOSITORY}/releases/tag/${TAG}" "${GITHUB_REPOSITORY}@${GITHUB_SHA} run ${GITHUB_RUN_NUMBER}")
+          # Tokens only via env -> stdin (never argv); a missing secret skips that stage.
+          set -euo pipefail
+          publish() {
+            local host=$1 token=$2
+            if [ -z "$token" ]; then echo "skip $host (no token secret)"; return 0; fi
+            printf 'Authorization: Bearer %s\n' "$token" | curl -sS --fail-with-body --retry 3 --retry-all-errors \
+              -H @- -H 'Content-Type: application/json' -X POST -d "$BODY" "https://$host/v1/internal/release"
+            echo
+          }
+          publish api-dev.luckgram.cc "${TOKEN_DEV:-}"
+          publish api.luckgram.cc "${TOKEN_PROD:-}"
