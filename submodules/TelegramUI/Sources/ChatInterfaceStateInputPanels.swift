@@ -75,6 +75,7 @@ func inputPanelForChatPresentationIntefaceState(_ chatPresentationInterfaceState
                 currentPanel.selectedMessages = selectionState.selectedIds
                 currentPanel.chatControllerInteraction = chatControllerInteraction
                 currentPanel.interfaceInteraction = interfaceInteraction
+                currentPanel.luckgramSaveSelected = luckgramSaveSelectedAction(context: context, chatPresentationInterfaceState: chatPresentationInterfaceState, chatControllerInteraction: chatControllerInteraction)
                 currentPanel.updateTheme(theme: chatPresentationInterfaceState.theme)
                 selectionPanel = currentPanel
             } else {
@@ -83,6 +84,7 @@ func inputPanelForChatPresentationIntefaceState(_ chatPresentationInterfaceState
                 panel.selectedMessages = selectionState.selectedIds
                 panel.chatControllerInteraction = chatControllerInteraction
                 panel.interfaceInteraction = interfaceInteraction
+                panel.luckgramSaveSelected = luckgramSaveSelectedAction(context: context, chatPresentationInterfaceState: chatPresentationInterfaceState, chatControllerInteraction: chatControllerInteraction)
                 selectionPanel = panel
             }
         }
@@ -130,6 +132,7 @@ func inputPanelForChatPresentationIntefaceState(_ chatPresentationInterfaceState
                 currentPanel.selectedMessages = selectionState.selectedIds
                 currentPanel.chatControllerInteraction = chatControllerInteraction
                 currentPanel.interfaceInteraction = interfaceInteraction
+                currentPanel.luckgramSaveSelected = luckgramSaveSelectedAction(context: context, chatPresentationInterfaceState: chatPresentationInterfaceState, chatControllerInteraction: chatControllerInteraction)
                 currentPanel.updateTheme(theme: chatPresentationInterfaceState.theme)
                 return (currentPanel, nil)
             } else {
@@ -138,6 +141,7 @@ func inputPanelForChatPresentationIntefaceState(_ chatPresentationInterfaceState
                 panel.selectedMessages = selectionState.selectedIds
                 panel.chatControllerInteraction = chatControllerInteraction
                 panel.interfaceInteraction = interfaceInteraction
+                panel.luckgramSaveSelected = luckgramSaveSelectedAction(context: context, chatPresentationInterfaceState: chatPresentationInterfaceState, chatControllerInteraction: chatControllerInteraction)
                 return (panel, nil)
             }
         }

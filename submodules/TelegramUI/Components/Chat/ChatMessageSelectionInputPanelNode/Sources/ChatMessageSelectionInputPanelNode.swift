@@ -184,6 +184,16 @@ public final class ChatMessageSelectionInputPanelNode: ChatInputPanelNode {
     private let shareButton: GlassButtonView
     private let tagButton: GlassButtonView
     private let tagEditButton: GlassButtonView
+    /// Luckgram (spec 15): "Save" to Saved Messages, left of Forward. Shown only when the chat
+    /// screen sets `luckgramSaveSelected` (feature on, not Saved Messages, no protected content).
+    private let luckgramSaveButton: GlassButtonView
+    public var luckgramSaveSelected: (() -> Void)? {
+        didSet {
+            if (oldValue == nil) != (self.luckgramSaveSelected == nil) {
+                self.update(transition: .immediate)
+            }
+        }
+    }
     
     private let reactionOverlayContainer: ChatMessageSelectionInputPanelNodeViewForOverlayContent
     
@@ -240,6 +250,12 @@ public final class ChatMessageSelectionInputPanelNode: ChatInputPanelNode {
         self.tagEditButton.isAccessibilityElement = true
         self.tagEditButton.accessibilityLabel = strings.VoiceOver_MessageSelectionButtonTag
         
+        self.luckgramSaveButton = GlassButtonView()
+        self.luckgramSaveButton.icon = "Instant View/Bookmark"
+        self.luckgramSaveButton.isAccessibilityElement = true
+        self.luckgramSaveButton.accessibilityLabel = strings.Conversation_SavedMessages
+        self.luckgramSaveButton.isHidden = true
+        
         self.reactionOverlayContainer = ChatMessageSelectionInputPanelNodeViewForOverlayContent()
         
         super.init()
@@ -250,6 +266,7 @@ public final class ChatMessageSelectionInputPanelNode: ChatInputPanelNode {
         self.view.addSubview(self.shareButton)
         self.view.addSubview(self.tagButton)
         self.view.addSubview(self.tagEditButton)
+        self.view.addSubview(self.luckgramSaveButton)
         
         self.viewForOverlayContent = self.reactionOverlayContainer
         
@@ -262,6 +279,7 @@ public final class ChatMessageSelectionInputPanelNode: ChatInputPanelNode {
         self.shareButton.button.addTarget(self, action: #selector(self.shareButtonPressed), for: .touchUpInside)
         self.tagButton.button.addTarget(self, action: #selector(self.tagButtonPressed), for: .touchUpInside)
         self.tagEditButton.button.addTarget(self, action: #selector(self.tagButtonPressed), for: .touchUpInside)
+        self.luckgramSaveButton.button.addTarget(self, action: #selector(self.luckgramSaveButtonPressed), for: .touchUpInside)
     }
     
     deinit {
@@ -323,6 +341,12 @@ public final class ChatMessageSelectionInputPanelNode: ChatInputPanelNode {
             self.interfaceInteraction?.displayCopyProtectionTip(self.shareButton, true)
         } else if !self.shareButton.isImplicitlyDisabled {
             self.interfaceInteraction?.shareSelectedMessages()
+        }
+    }
+    
+    @objc private func luckgramSaveButtonPressed() {
+        if !self.luckgramSaveButton.isImplicitlyDisabled {
+            self.luckgramSaveSelected?()
         }
     }
     
@@ -465,6 +489,7 @@ public final class ChatMessageSelectionInputPanelNode: ChatInputPanelNode {
             self.deleteButton.isEnabled = false
             self.reportButton.isEnabled = false
             self.forwardButton.isImplicitlyDisabled = !actions.options.contains(.forward)
+            self.luckgramSaveButton.isImplicitlyDisabled = !actions.options.contains(.forward)
             
             if self.peerMedia {
                 self.deleteButton.isEnabled = !actions.options.intersection([.deleteLocally, .deleteGlobally]).isEmpty
@@ -499,6 +524,7 @@ public final class ChatMessageSelectionInputPanelNode: ChatInputPanelNode {
             self.reportButton.isEnabled = false
             self.reportButton.isHidden = true
             self.forwardButton.isImplicitlyDisabled = true
+            self.luckgramSaveButton.isImplicitlyDisabled = true
             self.shareButton.isImplicitlyDisabled = true
             self.tagButton.isHidden = true
             self.tagEditButton.isHidden = true
@@ -526,7 +552,7 @@ public final class ChatMessageSelectionInputPanelNode: ChatInputPanelNode {
             tagButton = self.tagEditButton
         }
         
-        let buttons: [GlassButtonView]
+        var buttons: [GlassButtonView]
         if self.reportButton.isHidden {
             if let tagButton {
                 buttons = [
@@ -576,6 +602,11 @@ public final class ChatMessageSelectionInputPanelNode: ChatInputPanelNode {
                     self.forwardButton
                 ]
             }
+        }
+        
+        self.luckgramSaveButton.isHidden = self.luckgramSaveSelected == nil
+        if !self.luckgramSaveButton.isHidden {
+            buttons.insert(self.luckgramSaveButton, at: buttons.count - 1)
         }
         
         let buttonSize = CGSize(width: 40.0, height: 40.0)
