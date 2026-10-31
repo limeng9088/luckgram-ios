@@ -154,18 +154,38 @@ public func luckgramRequestEnableCallRecording(context: AccountContext, present:
         TextAlertAction(type: .defaultAction, title: S.gotIt, action: {
             LuckgramCallRecordingSettings.isEnabled = true
             completion(true)
-            // The transcript is made after the call, when no dialog can be shown, so the shared
-            // AI consent (spec 00 §18) is asked for now. Declining turns the AI transcript off.
-            if LuckgramCallRecordingSettings.isAiTranscriptEnabled, let ai = LuckgramCallRecordingAIRegistry.instance, !ai.hasConsent {
-                ai.requestConsent(context: context, completion: { agreed in
-                    if !agreed {
-                        LuckgramCallRecordingSettings.isAiTranscriptEnabled = false
-                    }
-                })
-            }
+            luckgramAskCallRecordingAiConsent(context: context)
         })
     ], dismissOnOutsideTap: false)
     present(alert)
+}
+
+/// 00's confirm-before-enable hook for the switch on the Luckgram features page (#58):
+/// done(true) only after "我知道了"; the page then writes the switch.
+public func luckgramConfirmEnableCallRecording(context: AccountContext, present: @escaping (ViewController) -> Void, done: @escaping (Bool) -> Void) {
+    typealias S = LuckgramCallRecordingStrings
+    let alert = textAlertController(context: context, title: S.legalTitle, text: S.legalText, actions: [
+        TextAlertAction(type: .genericAction, title: S.cancel, action: {
+            done(false)
+        }),
+        TextAlertAction(type: .defaultAction, title: S.gotIt, action: {
+            done(true)
+            luckgramAskCallRecordingAiConsent(context: context)
+        })
+    ], dismissOnOutsideTap: false)
+    present(alert)
+}
+
+/// The transcript is made after the call, when no dialog can be shown, so the shared AI consent
+/// (spec 00 §18) is asked when recording is switched on. Declining turns the AI transcript off.
+private func luckgramAskCallRecordingAiConsent(context: AccountContext) {
+    if LuckgramCallRecordingSettings.isAiTranscriptEnabled, let ai = LuckgramCallRecordingAIRegistry.instance, !ai.hasConsent {
+        ai.requestConsent(context: context, completion: { agreed in
+            if !agreed {
+                LuckgramCallRecordingSettings.isAiTranscriptEnabled = false
+            }
+        })
+    }
 }
 
 /// Settings → Luckgram features → Call Recording.
