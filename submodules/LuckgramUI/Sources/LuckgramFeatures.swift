@@ -35,6 +35,8 @@ public enum LuckgramFeatures {
     public static let aiAssistantRow = "ai_assistant_row"
     /// spec 22
     public static let aiAgents = "ai_agents"
+    /// spec 23
+    public static let aiImage = "ai_image"
 
     public static let all: [LuckgramFeature] = {
         var list: [LuckgramFeature] = []
@@ -79,6 +81,9 @@ public enum LuckgramFeatures {
         add(.toggle(LuckgramFeatures.aiAssistant, group: .ai, default: true,
             title: ("AI 助手", "AI assistant"),
             description: ("聊天列表顶部的「AI」按钮：提问、总结、改写、讲解、解题", "The \"AI\" button on the chat list: ask, summarize, rewrite, explain, solve")))
+        add(.toggle(LuckgramFeatures.aiImage, group: .ai, default: true,
+            title: ("AI 画图", "AI images"),
+            description: ("在 AI 助手里描述画面生成图片，可发送、保存、重画", "Describe a picture in the AI assistant; send, save or redraw it")))
         add(.toggle(LuckgramFeatures.aiAgents, group: .ai, default: true,
             title: ("AI 智能体", "AI agents"),
             description: ("AI 助手里的旅行规划师、文案写手等，也能自己创建", "Travel planner, copywriter and more in the AI assistant, or make your own")))
