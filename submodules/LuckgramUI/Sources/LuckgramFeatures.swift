@@ -42,6 +42,9 @@ public enum LuckgramFeatures {
         add(.toggle("keyword_folders", group: .profileOrganize, default: true,
             title: ("关键词文件夹", "Keyword folders"),
             description: ("按关键词自动归类聊天（只在本机）", "Group chats by keyword (this device only)")))
+        add(.toggle("profile_details", group: .profileOrganize, default: true,
+            title: ("资料详情", "Profile details"),
+            description: ("资料页显示 ID、大致注册时间，简介里的链接可以点开", "Show ID and approximate registration date; links in bios are clickable")))
 
         // ---- AI
 

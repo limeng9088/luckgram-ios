@@ -1,0 +1,47 @@
+name: Luckgram unit tests (profile details)
+
+# Foundation-only profile-details rules (spec 07), tested with SwiftPM on Linux so the single
+# xcode-27 Mac stays free for app builds. Same approach as the round-video tests.
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [master]
+    paths:
+      - 'submodules/LuckgramProfileInfo/**'
+      - 'submodules/TelegramUI/Resources/LuckgramRegistrationDates.txt'
+      - '.github/workflows/luckgram-profileinfo-unit-tests.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: false
+      - name: Swift version
+        run: swift --version
+      - name: Profile details tests
+        run: |
+          set -euo pipefail
+          C=submodules/LuckgramProfileInfo
+          P="$RUNNER_TEMP/pkg"
+          mkdir -p "$P/Sources/LuckgramProfileInfo" "$P/Tests/LuckgramProfileInfoTests"
+          # Only the Foundation-only file: UIKit / Telegram code is covered by the app build.
+          cp "$C/Sources/LuckgramProfileInfoLogic.swift" "$P/Sources/LuckgramProfileInfo/"
+          cp "$C"/Tests/*.swift "$P/Tests/LuckgramProfileInfoTests/"
+          cat > "$P/Package.swift" <<'SWIFT'
+          // swift-tools-version:5.9
+          import PackageDescription
+          let package = Package(
+              name: "LuckgramProfileInfo",
+              targets: [
+                  .target(name: "LuckgramProfileInfo"),
+                  .testTarget(name: "LuckgramProfileInfoTests", dependencies: ["LuckgramProfileInfo"]),
+              ]
+          )
+          SWIFT
+          cd "$P" && TABLE_PATH="$GITHUB_WORKSPACE/submodules/TelegramUI/Resources/LuckgramRegistrationDates.txt" swift test
