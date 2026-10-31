@@ -20,6 +20,7 @@ swift_library(
         "//submodules/Markdown:Markdown",
         "//submodules/TelegramPresentationData:TelegramPresentationData",
         "//submodules/AccountContext:AccountContext",
+        "//submodules/LuckgramUI:LuckgramUI",
         "//submodules/CountrySelectionUI:CountrySelectionUI",
         "//submodules/PhoneNumberFormat:PhoneNumberFormat",
         "//submodules/LegacyComponents:LegacyComponents",

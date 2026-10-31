@@ -46,6 +46,10 @@ public enum LuckgramFeatures {
             .confirmEnable { context, present, done in LuckgramDoubleBottom.confirmEnable(context: context, present: present, done: done) }
             .confirmDisable { context, present, done in LuckgramDoubleBottom.confirmDisable(context: context, present: present, done: done) }
             .hiddenWhen { LuckgramDoubleBottomState.shared.isActive })
+        add(.toggle(LuckgramBackup.featureKey, group: .accountPrivacy, default: true,
+            title: ("账号备份", "Account backup"),
+            description: ("把账号导出为加密文件，换手机后导入", "Export accounts to an encrypted file and import them on a new phone"))
+            .subpage { context in luckgramBackupController(context: context) })
 
         // ---- 消息与语言 / Messages & Language
         add(.toggle("select_all_from_sender", group: .messagesLanguage, default: true,
