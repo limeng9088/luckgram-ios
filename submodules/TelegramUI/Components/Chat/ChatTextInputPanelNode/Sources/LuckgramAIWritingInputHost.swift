@@ -27,7 +27,7 @@ final class LuckgramAIWritingInputHost: LuckgramAIWritingHost, LuckgramAIWriting
     }
 
     private var interfaceState: ChatPresentationInterfaceState? {
-        return self.node?.presentationInterfaceState
+        return self.node?.luckgramInterfaceState
     }
 
     var peerId: EnginePeer.Id? {

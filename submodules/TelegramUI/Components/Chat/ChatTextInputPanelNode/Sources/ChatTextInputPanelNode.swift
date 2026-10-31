@@ -6125,8 +6125,13 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
         return host
     }
 
+    /// The chat state, for the AI writing host (feature 21).
+    var luckgramInterfaceState: ChatPresentationInterfaceState? {
+        return self.presentationInterfaceState
+    }
+
     func luckgramSetGenerating(_ value: Bool) {
-        self.richTextInputNode?.alpha = value ? 0.45 : 1.0
+        self.richTextInputNode?.asNode.alpha = value ? 0.45 : 1.0
     }
 
     /// spec 21 需求 6: one panel at a time, just above the input field.
@@ -6148,7 +6153,7 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
             view.removeFromSuperview()
             container.addSubview(view)
         }
-        if let theme = self.presentationInterfaceState?.theme {
+        if let theme = self.luckgramInterfaceState?.theme {
             container.backgroundColor = theme.chat.inputPanel.panelBackgroundColor.withAlphaComponent(1.0)
         }
         container.isHidden = false
