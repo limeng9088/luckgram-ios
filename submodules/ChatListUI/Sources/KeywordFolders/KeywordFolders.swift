@@ -333,23 +333,49 @@ public func keywordFolderFilters(context: AccountContext) -> Signal<[(KeywordFol
         if folders.isEmpty || !enabled {
             return .single([])
         }
+        // Re-scan only chats whose visible messages changed (new, edited or deleted message), not
+        // on read-state or draft changes; results accumulate per chat for this folder set.
+        let recentState = Atomic<(fingerprints: [EnginePeer.Id: String], hits: [Int32: Set<EnginePeer.Id>])>(value: ([:], [:]))
         let recent: Signal<(hits: [Int32: Set<EnginePeer.Id>], scanned: Set<EnginePeer.Id>)?, NoError> = .single(nil)
         |> then(
             context.engine.messages.chatList(group: .root, count: 100)
-            |> map { chatList -> [EnginePeer.Id] in
-                return chatList.items.compactMap { item -> EnginePeer.Id? in
-                    if case let .chatList(peerId) = item.id {
-                        return peerId
+            |> map { chatList -> [(EnginePeer.Id, String)] in
+                return chatList.items.compactMap { item -> (EnginePeer.Id, String)? in
+                    guard case let .chatList(peerId) = item.id else {
+                        return nil
                     }
-                    return nil
+                    let fingerprint = item.messages.map { "\($0.id.namespace):\($0.id.id):\($0.text.hashValue)" }.joined(separator: ",")
+                    return (peerId, fingerprint)
                 }
             }
-            |> mapToSignal { peerIds -> Signal<(hits: [Int32: Set<EnginePeer.Id>], scanned: Set<EnginePeer.Id>)?, NoError> in
-                // Debounce bursts of chat list updates; a newer update cancels a pending scan.
+            |> mapToSignal { entries -> Signal<(hits: [Int32: Set<EnginePeer.Id>], scanned: Set<EnginePeer.Id>)?, NoError> in
+                let changed = recentState.with { state in
+                    return entries.filter { state.fingerprints[$0.0] != $0.1 }
+                }
+                if changed.isEmpty {
+                    return .complete()
+                }
+                // Debounce bursts; a newer update cancels a pending scan, and since fingerprints are
+                // only stored after a scan finishes, the cancelled chats are picked up again.
                 return (Signal<Void, NoError>.single(Void()) |> delay(0.3, queue: Queue.concurrentDefaultQueue()))
                 |> mapToSignal { _ in
-                    return scanKeywordFolderMatches(context: context, folders: folders, peerIds: peerIds)
-                    |> map(Optional.init)
+                    return scanKeywordFolderMatches(context: context, folders: folders, peerIds: changed.map { $0.0 })
+                }
+                |> map { result -> (hits: [Int32: Set<EnginePeer.Id>], scanned: Set<EnginePeer.Id>)? in
+                    let state = recentState.modify { state in
+                        var state = state
+                        for (peerId, fingerprint) in changed {
+                            state.fingerprints[peerId] = fingerprint
+                        }
+                        for folder in folders {
+                            var hits = state.hits[folder.id] ?? Set()
+                            hits.subtract(result.scanned)
+                            hits.formUnion(result.hits[folder.id] ?? Set())
+                            state.hits[folder.id] = hits
+                        }
+                        return state
+                    }
+                    return (state.hits, Set(state.fingerprints.keys))
                 }
             }
         )
