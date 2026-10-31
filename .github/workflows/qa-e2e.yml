@@ -129,6 +129,11 @@ jobs:
           cp -L "$IPA" "$GITHUB_WORKSPACE/app/Luckgram-sim-x86_64-$(git rev-parse --short HEAD).ipa"
 
       # 仓库 Actions 缓存接近 10 GB 上限：模拟器缓存只由 master 保存一份，分支只读，避免挤掉编译缓存
+      # luckgram-specs#57：iOS 26 以下没有 libswiftWebKit，链接了就启动闪退
+      - name: Check linked dylibs (no libswiftWebKit)
+        working-directory: ${{ env.SOURCE_DIR }}
+        run: bash ci/check_ios_links.sh "$(ls "$GITHUB_WORKSPACE"/app/*.ipa | head -1)"
+
       - name: Save bazel cache (simulator, master only)
         if: always() && github.ref == 'refs/heads/master'
         uses: actions/cache/save@v4
@@ -151,6 +156,8 @@ jobs:
     env:
       FLOWS: ${{ github.event_name == 'schedule' && 'maestro/ios/smoke maestro/ios/regression' || inputs.flows || 'maestro/ios/smoke' }}
       ACCOUNT: ${{ github.event_name == 'schedule' && 'RI' || inputs.account || 'I1' }}
+      # 正式服账号（P-*）：本仓库公开，不上传报告、不在日志里打印号码和失败详情
+      QA_PRIVATE: ${{ startsWith(inputs.account || '', 'P-') && '1' || '0' }}
       MAESTRO_ARGS: ${{ inputs.maestro_args }}
       SIM_RUNTIME: ${{ inputs.sim_runtime }}
       OUT: ${{ github.workspace }}/qa-out
@@ -188,7 +195,13 @@ jobs:
           echo "APP=$GITHUB_WORKSPACE/$IPA" >> "$GITHUB_ENV"
 
       - name: Test account
-        run: python3 qa/ci/account.py "$ACCOUNT" >> "$GITHUB_ENV"
+        run: |
+          python3 qa/ci/account.py "$ACCOUNT" > "$RUNNER_TEMP/account.env"
+          if [ "$QA_PRIVATE" = 1 ]; then
+            # mask before the values become env vars (later steps print their env)
+            while IFS='=' read -r _ v; do [ -n "$v" ] && echo "::add-mask::$v"; done < "$RUNNER_TEMP/account.env"
+          fi
+          cat "$RUNNER_TEMP/account.env" >> "$GITHUB_ENV"; rm -f "$RUNNER_TEMP/account.env"
 
       - name: Run Maestro on simulator
         # 每个 flow 最多 10 分钟，整步最多 30 分钟（脚本内预算 27 分钟，超时前停下来，保证后面能上传产物）
@@ -205,8 +218,15 @@ jobs:
             xcrun simctl shutdown "$u" 2>/dev/null; xcrun simctl delete "$u" 2>/dev/null; echo "removed $u"
           done
 
+      - name: Keep report on runner (private run)
+        if: always() && env.QA_PRIVATE == '1'
+        run: |
+          D="$HOME/luckgram-qa/private-reports/ios-${{ github.run_id }}-${{ github.run_attempt }}"
+          mkdir -p "$D" && cp -R qa-out/. "$D/" 2>/dev/null; rm -rf qa-out
+          echo "report kept on runner (not uploaded: public repo)"
+
       - name: Upload report
-        if: always()
+        if: always() && env.QA_PRIVATE != '1'
         uses: actions/upload-artifact@v4
         with:
           name: maestro-report-ios-${{ github.run_number }}-${{ github.run_attempt }}
