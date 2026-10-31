@@ -8,7 +8,7 @@ import SwiftSignalKit
 public final class LuckgramDoubleBottomState {
     public static let shared = LuckgramDoubleBottomState()
 
-    private struct Values: Codable, Equatable {
+    fileprivate struct Values: Codable, Equatable {
         var active: Bool = false
         var visible: [Int64] = []
     }
