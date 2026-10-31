@@ -14,6 +14,7 @@ swift_library(
         "//submodules/TelegramCore:TelegramCore",
         "//submodules/AccountContext:AccountContext",
         "//submodules/TelegramUIPreferences:TelegramUIPreferences",
+        "//submodules/LuckgramAccountsStore:LuckgramAccountsStore",
     ],
     visibility = [
         "//visibility:public",

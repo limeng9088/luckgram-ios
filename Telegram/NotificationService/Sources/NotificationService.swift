@@ -4,6 +4,7 @@ import UserNotifications
 import SwiftSignalKit
 import Postbox
 import TelegramCore
+import LuckgramAccountsStore
 import BuildConfig
 import OpenSSLEncryptionProvider
 import TelegramUIPreferences
@@ -938,6 +939,20 @@ private final class NotificationServiceHandler {
                 return
             }
 
+            // Luckgram 09 (more accounts): this account's notifications are switched off in
+            // Settings → Manage accounts, so nothing is shown for it.
+            let luckgramAccounts = LuckgramAccountsStore.snapshot(rootPath: rootPath)
+            if !luckgramAccounts.isNotificationsEnabled(recordId.int64) {
+                Logger.shared.log("NotificationService \(episode)", "Notifications are off for this account")
+
+                let content = NotificationContent(isLockedMessage: nil)
+                updateCurrentContent(content)
+                completed()
+
+                return
+            }
+            let luckgramAlias = luckgramAccounts.alias(recordId.int64)
+
             let _ = (standaloneStateManager(
                 accountManager: strongSelf.accountManager,
                 networkArguments: networkArguments,
@@ -984,7 +999,7 @@ private final class NotificationServiceHandler {
                 let recipientAccountName: Signal<String?, NoError>
                 if notificationsNameRecipientAccount(records: records.records) {
                     recipientAccountName = stateManager.postbox.transaction { transaction -> String? in
-                        return notificationRecipientAccountName(accountPeer: transaction.getPeer(accountPeerId).flatMap(EnginePeer.init))
+                        return notificationRecipientAccountName(accountPeer: transaction.getPeer(accountPeerId).flatMap(EnginePeer.init), alias: luckgramAlias)
                     }
                 } else {
                     recipientAccountName = .single(nil)

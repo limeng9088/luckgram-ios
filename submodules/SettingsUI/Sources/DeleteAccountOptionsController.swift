@@ -13,6 +13,7 @@ import AlertUI
 import PresentationDataUtils
 import UrlHandling
 import AccountUtils
+import LuckgramUI
 import PremiumUI
 import PasswordSetupUI
 import StorageUsageScreen
@@ -201,31 +202,16 @@ public func deleteAccountOptionsController(context: AccountContext, navigationCo
         |> take(1)
         |> deliverOnMainQueue
         ).start(next: { accountAndPeer, accountsAndPeers in
-            var maximumAvailableAccounts: Int = 3
-            if accountAndPeer?.1.isPremium == true && !context.account.testingEnvironment {
-                maximumAvailableAccounts = 4
-            }
+            // Luckgram 09 (more accounts): 20 accounts for everyone; no Premium upsell at the limit.
             var count: Int = 1
-            for (accountContext, peer, _) in accountsAndPeers {
+            for (accountContext, _, _) in accountsAndPeers {
                 if !accountContext.account.testingEnvironment {
-                    if peer.isPremium {
-                        maximumAvailableAccounts = 4
-                    }
                     count += 1
                 }
             }
 
-            if count >= maximumAvailableAccounts {
-                var replaceImpl: ((ViewController) -> Void)?
-                let controller = PremiumLimitScreen(context: context, subject: .accounts, count: Int32(count), action: {
-                    let controller = PremiumIntroScreen(context: context, source: .accounts)
-                    replaceImpl?(controller)
-                    return true
-                })
-                replaceImpl = { [weak controller] c in
-                    controller?.replace(with: c)
-                }
-                pushControllerImpl?(controller)
+            if count >= maximumNumberOfAccounts {
+                presentControllerImpl?(luckgramAccountLimitController(context: context), nil)
             } else {
                 context.sharedContext.beginNewAuth(testingEnvironment: context.account.testingEnvironment)
 

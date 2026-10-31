@@ -130,6 +130,7 @@ swift_library(
         "//submodules/TranslateUI",
         "//submodules/UndoUI",
         "//submodules/LuckgramUI",
+        "//submodules/LuckgramAccountsStore",
         "//submodules/MediaPlayer:UniversalMediaPlayer",
         "//submodules/WebUI",
         "//submodules/WalletContext",
