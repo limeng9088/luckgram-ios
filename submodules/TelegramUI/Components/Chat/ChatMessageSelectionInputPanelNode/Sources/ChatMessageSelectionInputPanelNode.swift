@@ -190,7 +190,7 @@ public final class ChatMessageSelectionInputPanelNode: ChatInputPanelNode {
     public var luckgramSaveSelected: (() -> Void)? {
         didSet {
             if (oldValue == nil) != (self.luckgramSaveSelected == nil) {
-                self.requestLayout()
+                self.update(transition: .immediate)
             }
         }
     }
@@ -347,12 +347,6 @@ public final class ChatMessageSelectionInputPanelNode: ChatInputPanelNode {
     @objc private func luckgramSaveButtonPressed() {
         if !self.luckgramSaveButton.isImplicitlyDisabled {
             self.luckgramSaveSelected?()
-        }
-    }
-    
-    private func requestLayout() {
-        if let (width, leftInset, rightInset, bottomInset, additionalSideInsets, maxHeight, maxOverlayHeight, metrics, isSecondary, isMediaInputExpanded, deviceMetrics) = self.validLayout, let interfaceState = self.presentationInterfaceState {
-            let _ = self.updateLayout(width: width, leftInset: leftInset, rightInset: rightInset, bottomInset: bottomInset, additionalSideInsets: additionalSideInsets, maxHeight: maxHeight, maxOverlayHeight: maxOverlayHeight, isSecondary: isSecondary, transition: .immediate, interfaceState: interfaceState, metrics: metrics, deviceMetrics: deviceMetrics, isMediaInputExpanded: isMediaInputExpanded)
         }
     }
     
