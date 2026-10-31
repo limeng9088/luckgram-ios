@@ -70,7 +70,7 @@ private final class LuckgramSettingsArguments {
 
 private enum LuckgramSettingsEntry: ItemListNodeEntry {
     case header(group: Int, text: String)
-    case feature(group: Int, index: Int, key: String, title: String, text: String, value: Bool, hasSubpage: Bool)
+    case feature(group: Int, index: Int, key: String, title: String, text: String, value: Bool, hasSubpage: Bool, needsConfirm: Bool)
     case placeholder(group: Int, text: String)
     case consent(title: String, label: String)
     case consentFooter(String)
@@ -84,7 +84,7 @@ private enum LuckgramSettingsEntry: ItemListNodeEntry {
 
     var section: ItemListSectionId {
         switch self {
-        case let .header(group, _), let .feature(group, _, _, _, _, _, _), let .placeholder(group, _):
+        case let .header(group, _), let .feature(group, _, _, _, _, _, _, _), let .placeholder(group, _):
             return Int32(group)
         case .consent, .consentFooter:
             return Int32(LuckgramFeature.Group.ai.rawValue)
@@ -99,7 +99,7 @@ private enum LuckgramSettingsEntry: ItemListNodeEntry {
         switch self {
         case let .header(group, _):
             return Int32(group) * 10000
-        case let .feature(group, index, _, _, _, _, _):
+        case let .feature(group, index, _, _, _, _, _, _):
             return Int32(group) * 10000 + 10 + Int32(index)
         case let .placeholder(group, _):
             return Int32(group) * 10000 + 9000
@@ -122,8 +122,8 @@ private enum LuckgramSettingsEntry: ItemListNodeEntry {
         switch (lhs, rhs) {
         case let (.header(a1, a2), .header(b1, b2)):
             return a1 == b1 && a2 == b2
-        case let (.feature(a1, a2, a3, a4, a5, a6, a7), .feature(b1, b2, b3, b4, b5, b6, b7)):
-            return a1 == b1 && a2 == b2 && a3 == b3 && a4 == b4 && a5 == b5 && a6 == b6 && a7 == b7
+        case let (.feature(a1, a2, a3, a4, a5, a6, a7, a8), .feature(b1, b2, b3, b4, b5, b6, b7, b8)):
+            return a1 == b1 && a2 == b2 && a3 == b3 && a4 == b4 && a5 == b5 && a6 == b6 && a7 == b7 && a8 == b8
         case let (.placeholder(a1, a2), .placeholder(b1, b2)):
             return a1 == b1 && a2 == b2
         case let (.consent(a1, a2), .consent(b1, b2)):
@@ -152,8 +152,10 @@ private enum LuckgramSettingsEntry: ItemListNodeEntry {
         switch self {
         case let .header(_, text):
             return ItemListSectionHeaderItem(presentationData: presentationData, text: text, sectionId: self.section)
-        case let .feature(_, _, key, title, text, value, hasSubpage):
-            return ItemListSwitchItem(presentationData: presentationData, systemStyle: .glass, title: title, text: text, value: value, sectionId: self.section, style: .blocks, updated: { value in
+        case let .feature(_, _, key, title, text, value, hasSubpage, needsConfirm):
+            // With a confirmation the switch must not flip by itself (#58): it turns on only after
+            // the user confirmed and LuckgramSettings changed.
+            return ItemListSwitchItem(presentationData: presentationData, systemStyle: .glass, title: title, text: text, value: value, enableInteractiveChanges: !(needsConfirm && !value), sectionId: self.section, style: .blocks, updated: { value in
                 arguments.toggle(key, value)
             }, action: hasSubpage ? {
                 arguments.openSubpage(key)
@@ -198,7 +200,7 @@ private func luckgramSettingsEntries() -> [LuckgramSettingsEntry] {
     func featureEntries(_ group: LuckgramFeature.Group) -> [LuckgramSettingsEntry] {
         var result: [LuckgramSettingsEntry] = []
         for (index, feature) in all.enumerated() where feature.group == group && feature.isVisible {
-            result.append(.feature(group: group.rawValue, index: index, key: feature.key, title: feature.title, text: feature.descriptionText, value: feature.isEnabled, hasSubpage: feature.subpageBuilder != nil))
+            result.append(.feature(group: group.rawValue, index: index, key: feature.key, title: feature.title, text: feature.descriptionText, value: feature.isEnabled, hasSubpage: feature.subpageBuilder != nil, needsConfirm: feature.confirmEnableHandler != nil))
         }
         return result
     }
@@ -241,7 +243,16 @@ public func luckgramSettingsController(context: AccountContext) -> ViewControlle
 
     let arguments = LuckgramSettingsArguments(
         toggle: { key, value in
-            LuckgramSettings.shared.setEnabled(key, value)
+            if value, let confirm = LuckgramFeatures.find(key)?.confirmEnableHandler {
+                // Off -> on needs confirmation (#58); the switch stays off until done(true).
+                confirm(context, { c in presentImpl?(c) }, { ok in
+                    if ok {
+                        LuckgramSettings.shared.setEnabled(key, true)
+                    }
+                })
+            } else {
+                LuckgramSettings.shared.setEnabled(key, value)
+            }
         },
         openSubpage: { key in
             if let builder = LuckgramFeatures.find(key)?.subpageBuilder {

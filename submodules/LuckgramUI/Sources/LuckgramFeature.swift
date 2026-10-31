@@ -25,6 +25,9 @@ public final class LuckgramFeature {
     /// Builds the feature's own settings page, or nil if it has none.
     public private(set) var subpageBuilder: ((AccountContext) -> ViewController)?
     public private(set) var isDebugOnly: Bool = false
+    /// Optional check before the switch goes from off to on (e.g. a legal notice), issue #58.
+    /// Call `done(true)` to switch it on, `done(false)` to leave it off. Not called when switching off.
+    public private(set) var confirmEnableHandler: ((AccountContext, @escaping (ViewController) -> Void, @escaping (Bool) -> Void) -> Void)?
 
     private init(key: String, group: Group, defaultValue: Bool, titleZh: String, titleEn: String, descriptionZh: String, descriptionEn: String) {
         self.key = key
@@ -46,6 +49,12 @@ public final class LuckgramFeature {
     @discardableResult
     public func subpage(_ subpage: @escaping (AccountContext) -> ViewController) -> LuckgramFeature {
         self.subpageBuilder = subpage
+        return self
+    }
+
+    @discardableResult
+    public func confirmEnable(_ handler: @escaping (_ context: AccountContext, _ present: @escaping (ViewController) -> Void, _ done: @escaping (Bool) -> Void) -> Void) -> LuckgramFeature {
+        self.confirmEnableHandler = handler
         return self
     }
 

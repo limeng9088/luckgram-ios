@@ -10,6 +10,12 @@ import Foundation
 ///         description: ("输入 / 选择常用回复", "Type / to pick a saved reply"))
 ///         .subpage { context in quickRepliesSettingsController(context: context) })
 ///
+/// A feature that must ask before it is switched on (e.g. a legal notice, #58):
+///
+///     add(.toggle("call_recording", group: .mediaCallsStorage, default: false, …)
+///         .subpage { context in callRecordingSettingsController(context: context) }
+///         .confirmEnable { context, present, done in luckgramRequestEnableCallRecording(context: context, present: present, completion: done) })
+///
 /// Read a switch anywhere with `LuckgramSettings.shared.isEnabled("quick_replies")`
 /// (or `isEnabledSignal(_:)` to follow changes).
 public enum LuckgramFeatures {
