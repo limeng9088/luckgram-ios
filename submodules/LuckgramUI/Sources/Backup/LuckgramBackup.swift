@@ -1,7 +1,6 @@
 import Foundation
 import CryptoKit
 import SwiftSignalKit
-import Postbox
 import TelegramCore
 import AccountContext
 import LuckgramAccountsStore
@@ -30,7 +29,7 @@ public enum LuckgramBackup {
                 guard let data = backupData(record) else {
                     continue
                 }
-                let userId = PeerId(data.peerId).id._internalGetInt64Value()
+                let userId = EnginePeer.Id(data.peerId).id._internalGetInt64Value()
                 // iOS keeps no server salt with the key; 0 means "none" and the server sends a new one.
                 result.append(LuckgramBackupFormat.Account(userId: userId, dcId: data.masterDatacenterId, authKey: data.masterDatacenterKey, serverSalt: 0, name: LuckgramAccountsStore.shared.alias(recordId.int64)))
             }
@@ -83,7 +82,7 @@ public enum LuckgramBackup {
                     result.noRoom += 1
                     continue
                 }
-                let peerId = PeerId(namespace: Namespaces.Peer.CloudUser, id: PeerId.Id._internalFromInt64Value(account.userId))
+                let peerId = EnginePeer.Id(namespace: Namespaces.Peer.CloudUser, id: EnginePeer.Id.Id._internalFromInt64Value(account.userId))
                 let data = AccountBackupData(
                     masterDatacenterId: account.dcId,
                     peerId: peerId.toInt64(),
@@ -150,7 +149,7 @@ public enum LuckgramBackup {
         var result = Set<Int64>()
         for record in records where !isLoggedOut(record) {
             if let data = backupData(record) {
-                result.insert(PeerId(data.peerId).id._internalGetInt64Value())
+                result.insert(EnginePeer.Id(data.peerId).id._internalGetInt64Value())
             }
         }
         return result
