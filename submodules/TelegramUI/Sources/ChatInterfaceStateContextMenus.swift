@@ -2141,7 +2141,7 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
             }
 
             // Luckgram (spec 14): "Select All from <name>" right below "Select".
-            if LuckgramSelectAll.isEnabled, chatPresentationInterfaceState.subject == nil, message.id.namespace == Namespaces.Message.Cloud, let author = message.author, let chatPeerId = chatPresentationInterfaceState.chatLocation.peerId, !message.media.contains(where: { $0 is TelegramMediaAction }), let chatController = (controllerInteraction.chatControllerNode() as? ChatControllerNode)?.luckgramController {
+            if LuckgramSelectAll.isEnabled, chatPresentationInterfaceState.subject == nil, let author = message.author, let chatPeerId = chatPresentationInterfaceState.chatLocation.peerId, message.id.namespace == Namespaces.Message.Cloud || chatPeerId.namespace == Namespaces.Peer.SecretChat, !message.media.contains(where: { $0 is TelegramMediaAction }), let chatController = (controllerInteraction.chatControllerNode() as? ChatControllerNode)?.luckgramController {
                 let senderId = author.id
                 actions.append(.action(ContextMenuActionItem(text: LuckgramSelectAll.menuTitle(chatPeerId: chatPeerId, author: EnginePeer(author), accountPeerId: context.account.peerId), icon: { theme in
                     return generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/SelectAll"), color: theme.actionSheet.primaryTextColor)

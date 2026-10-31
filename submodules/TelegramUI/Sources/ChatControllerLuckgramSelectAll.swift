@@ -38,6 +38,23 @@ enum LuckgramSelectAll {
     static func cantDeleteText(_ count: Int) -> String { LuckgramStrings.pick("有 \(count) 条消息你没有权限删除，已跳过", "\(count) messages can't be deleted by you and were skipped") }
     static var copyText: String { LuckgramStrings.pick("复制文字", "Copy Text") }
     static var copiedText: String { LuckgramStrings.pick("已按时间顺序复制", "Copied in chronological order") }
+
+    /// Telegram accepts at most this many ids per forward / delete request.
+    static let batchSize = 100
+    /// "正在转发 第 2/4 批" while a large forward runs.
+    static func forwardingText(done: Int, total: Int) -> String {
+        let current = min(done + 1, total)
+        return LuckgramStrings.pick("正在转发 第 \(current)/\(total) 批", "Forwarding batch \(current) of \(total)")
+    }
+    static func batchFailedText(batch: Int, total: Int) -> String {
+        return LuckgramStrings.pick("第 \(batch)/\(total) 批转发失败", "Batch \(batch) of \(total) failed to forward")
+    }
+    static var retryText: String { LuckgramStrings.pick("重试", "Retry") }
+    static func forwardedText(_ count: Int) -> String { LuckgramStrings.pick("已转发 \(count) 条", "\(count) messages forwarded") }
+    /// Large deletions: TelegramCore splits them into 100-id requests and retries failed ones itself.
+    static func deletingText(count: Int, batches: Int) -> String {
+        return LuckgramStrings.pick("正在删除 \(count) 条（分 \(batches) 批），失败的批次会自动重试", "Deleting \(count) messages in \(batches) batches; failed batches retry automatically")
+    }
 }
 
 extension ChatControllerImpl {
@@ -181,5 +198,100 @@ extension ChatControllerImpl {
                 completion(deletable)
             }
         })
+    }
+}
+
+// MARK: - Spec 14 requirement 3: batches with progress and retry (luckgram-specs#62)
+
+extension ChatControllerImpl {
+    /// More than 100 messages to one chat go out 100 at a time, one batch after another, with a
+    /// progress toast. Messages that fail in a batch can be resent from the toast; the sequence then
+    /// continues. Same behaviour as Android `BatchForward`.
+    func luckgramForwardInBatches(peerId: EnginePeer.Id, messages: [EnqueueMessage]) {
+        var batches: [[EnqueueMessage]] = []
+        var index = 0
+        while index < messages.count {
+            batches.append(Array(messages[index ..< min(messages.count, index + LuckgramSelectAll.batchSize)]))
+            index += LuckgramSelectAll.batchSize
+        }
+        self.luckgramRunForwardBatch(peerId: peerId, batches: batches, index: 0, messageCount: messages.count)
+    }
+
+    private func luckgramRunForwardBatch(peerId: EnginePeer.Id, batches: [[EnqueueMessage]], index: Int, messageCount: Int) {
+        if index >= batches.count {
+            self.luckgramPresentBatchToast(LuckgramSelectAll.forwardedText(messageCount), button: nil, action: nil)
+            return
+        }
+        self.luckgramPresentBatchToast(LuckgramSelectAll.forwardingText(done: index, total: batches.count), button: nil, action: nil)
+        let account = self.context.account
+        let engine = self.context.engine
+        let _ = (enqueueMessages(account: account, peerId: peerId, messages: batches[index])
+        |> mapToSignal { ids -> Signal<[EngineMessage.Id], NoError> in
+            // Wait until nothing in this batch is pending any more.
+            let ids = ids.compactMap { $0 }
+            if ids.isEmpty {
+                return .single([])
+            }
+            let settled: [Signal<EngineMessage.Id, NoError>] = ids.map { id in
+                return account.pendingMessageManager.pendingMessageStatus(id)
+                |> filter { status, _ in status == nil }
+                |> take(1)
+                |> map { _ in id }
+            }
+            return combineLatest(settled) |> take(1)
+        }
+        |> mapToSignal { ids -> Signal<[EngineMessage.Id], NoError> in
+            // Which of them ended up failed (the server rejected the request).
+            if ids.isEmpty {
+                return .single([])
+            }
+            return engine.data.get(EngineDataMap(ids.map(TelegramEngine.EngineData.Item.Messages.Message.init(id:))))
+            |> map { messages -> [EngineMessage.Id] in
+                return ids.filter { id in
+                    if let message = messages[id].flatMap({ $0 }) {
+                        return message.flags.contains(.Failed)
+                    }
+                    return false
+                }
+            }
+        }
+        |> deliverOnMainQueue).startStandalone(next: { [weak self] failed in
+            guard let self else {
+                return
+            }
+            if failed.isEmpty {
+                self.luckgramRunForwardBatch(peerId: peerId, batches: batches, index: index + 1, messageCount: messageCount)
+                return
+            }
+            self.luckgramPresentBatchToast(LuckgramSelectAll.batchFailedText(batch: index + 1, total: batches.count), button: LuckgramSelectAll.retryText, action: { [weak self] in
+                guard let self else {
+                    return
+                }
+                let _ = (resendMessages(account: account, messageIds: failed)
+                |> deliverOnMainQueue).startStandalone(completed: { [weak self] in
+                    self?.luckgramRunForwardBatch(peerId: peerId, batches: batches, index: index + 1, messageCount: messageCount)
+                })
+            })
+        })
+    }
+
+    /// Spec 14 requirement 3 for deletions: TelegramCore already sends 100 ids per request and keeps
+    /// retrying a failed request, so there is nothing to retry by hand; say so.
+    func luckgramNoteBatchedDelete(count: Int) {
+        if count <= LuckgramSelectAll.batchSize {
+            return
+        }
+        let batches = (count + LuckgramSelectAll.batchSize - 1) / LuckgramSelectAll.batchSize
+        self.luckgramPresentBatchToast(LuckgramSelectAll.deletingText(count: count, batches: batches), button: nil, action: nil)
+    }
+
+    private func luckgramPresentBatchToast(_ text: String, button: String?, action: (() -> Void)?) {
+        self.present(UndoOverlayController(presentationData: self.presentationData, content: .info(title: nil, text: text, timeout: button != nil ? 60.0 : nil, customUndoText: button), elevatedLayout: false, position: .top, animateInAsReplacement: true, action: { value in
+            if case .undo = value, let action {
+                action()
+                return true
+            }
+            return false
+        }), in: .current)
     }
 }
