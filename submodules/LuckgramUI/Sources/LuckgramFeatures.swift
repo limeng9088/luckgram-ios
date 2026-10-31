@@ -34,6 +34,9 @@ public enum LuckgramFeatures {
         // ---- 媒体、通话与存储 / Media, Calls & Storage
 
         // ---- 资料与整理 / Profiles & Organization
+        add(.toggle("profile_details", group: .profileOrganize, default: true,
+            title: ("资料详情", "Profile details"),
+            description: ("资料页显示 ID、大致注册时间，简介里的链接可以点开", "Show ID and approximate registration date; links in bios are clickable")))
 
         // ---- AI
 

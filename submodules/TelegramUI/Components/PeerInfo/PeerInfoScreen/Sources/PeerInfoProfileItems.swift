@@ -16,6 +16,7 @@ import WebUI
 import AvatarNode
 import PeerNameColorItem
 import BoostLevelIconComponent
+import LuckgramProfileInfo
 
 private let enabledPublicBioEntities: EnabledEntityTypes = [.allUrl, .mention, .hashtag]
 private let enabledPrivateBioEntities: EnabledEntityTypes = [.internalUrl, .mention, .hashtag]
@@ -223,6 +224,11 @@ func infoItems(
             )
         }
         
+        // Luckgram 07: ID and approximate registration date
+        if luckgramProfileDetailsAvailable(data: data) {
+            items[currentPeerInfoSection]!.append(contentsOf: luckgramProfileDetailsItems(peer: .user(user), presentationData: presentationData, interaction: interaction))
+        }
+        
         if let cachedData = data.cachedData as? CachedUserData {
             if let birthday = cachedData.birthday {
                 let isBirthdayToday = hasBirthdayToday(birthday: birthday)
@@ -306,7 +312,7 @@ func infoItems(
                     if let about = cachedData.about, !about.isEmpty {
                         label = user.botInfo == nil ? presentationData.strings.Profile_About : presentationData.strings.Profile_BotInfo
                     }
-                    items[currentPeerInfoSection]!.append(PeerInfoScreenLabeledValueItem(id: ItemAbout, label: label, text: cachedData.about ?? "", textColor: .primary, textBehavior: .multiLine(maxLines: 100, enabledEntities: user.isPremium ? enabledPublicBioEntities : enabledPrivateBioEntities), action: isMyProfile ? { node, _ in
+                    items[currentPeerInfoSection]!.append(PeerInfoScreenLabeledValueItem(id: ItemAbout, label: label, text: cachedData.about ?? "", textColor: .primary, textBehavior: .multiLine(maxLines: 100, enabledEntities: (user.isPremium || LuckgramProfileInfo.isEnabled) ? enabledPublicBioEntities : enabledPrivateBioEntities), action: isMyProfile ? { node, _ in
                         bioContextAction(node, nil, nil)
                     } : nil, linkItemAction: bioLinkAction, button: actionButton, contextAction: bioContextAction, requestLayout: { animated in
                         interaction.requestLayout(animated)
@@ -683,7 +689,7 @@ func infoItems(
                 
                 if let aboutText = aboutText {
                     var enabledEntities = enabledPublicBioEntities
-                    if case .group = channel.info {
+                    if case .group = channel.info, !LuckgramProfileInfo.isEnabled {
                         enabledEntities = enabledPrivateBioEntities
                     }
                     items[currentPeerInfoSection]!.append(PeerInfoScreenLabeledValueItem(id: ItemAbout, label: presentationData.strings.Channel_Info_Description, text: aboutText, textColor: .primary, textBehavior: .multiLine(maxLines: 100, enabledEntities: enabledEntities), action: isMyProfile ? { node, _ in
@@ -836,12 +842,22 @@ func infoItems(
             }
             
             if let aboutText = aboutText {
-                items[currentPeerInfoSection]!.append(PeerInfoScreenLabeledValueItem(id: 0, label: presentationData.strings.Channel_Info_Description, text: aboutText, textColor: .primary, textBehavior: .multiLine(maxLines: 100, enabledEntities: enabledPrivateBioEntities), action: isMyProfile ? { node, _ in
+                items[currentPeerInfoSection]!.append(PeerInfoScreenLabeledValueItem(id: 0, label: presentationData.strings.Channel_Info_Description, text: aboutText, textColor: .primary, textBehavior: .multiLine(maxLines: 100, enabledEntities: LuckgramProfileInfo.isEnabled ? enabledPublicBioEntities : enabledPrivateBioEntities), action: isMyProfile ? { node, _ in
                     bioContextAction(node, nil, nil)
                 } : nil, linkItemAction: bioLinkAction, contextAction: bioContextAction, requestLayout: { animated in
                     interaction.requestLayout(animated)
                 }))
             }
+        }
+    }
+    
+    // Luckgram 07: ID row for groups and channels
+    if let chatPeer = data.peer, luckgramProfileDetailsAvailable(data: data) {
+        switch chatPeer {
+        case .channel, .legacyGroup:
+            items[currentPeerInfoSection]!.append(contentsOf: luckgramProfileDetailsItems(peer: chatPeer, presentationData: presentationData, interaction: interaction))
+        default:
+            break
         }
     }
     
