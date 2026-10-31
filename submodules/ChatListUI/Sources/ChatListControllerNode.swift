@@ -1556,7 +1556,15 @@ final class ChatListControllerNode: ASDisplayNode, ASGestureRecognizerDelegate {
                             if entry.id == id {
                                 return nil
                             }
-                        case .filter:
+                        case let .filter(filterId, _, _):
+                            // Luckgram: local keyword folders are not Telegram folders; they are never
+                            // locked and do not count towards the Premium folder limit.
+                            if isKeywordFolderFilterId(filterId) {
+                                if entry.id == id {
+                                    return nil
+                                }
+                                continue
+                            }
                             if entry.id == id {
                                 return index
                             }
@@ -1636,10 +1644,10 @@ final class ChatListControllerNode: ASDisplayNode, ASGestureRecognizerDelegate {
                                 
                                 if isDisabled {
                                     let filtersCount = tabContainerData.0.count(where: { item in
-                                        if case .all = item {
-                                            return false
+                                        if case let .filter(filterId, _, _) = item {
+                                            return !isKeywordFolderFilterId(filterId)
                                         } else {
-                                            return true
+                                            return false
                                         }
                                     })
                                     let context = self.context

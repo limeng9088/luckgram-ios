@@ -522,10 +522,10 @@ public final class ChatListFilterTabContainerNode: ASDisplayNode {
     public var filtersCount: Int32 {
         if let (_, _, filters, _, _, _, _, _, _, _) = self.currentParams {
             let filters = filters.filter { filter in
-                if case .all = filter {
-                    return false
+                if case let .filter(id, _, _) = filter {
+                    return id < 1_000_000 // Luckgram: keyword folders are local, not limited
                 } else {
-                    return true
+                    return false
                 }
             }
             return Int32(filters.count)
@@ -805,14 +805,18 @@ public final class ChatListFilterTabContainerNode: ASDisplayNode {
                 unreadCount = count
                 unreadHasUnmuted = true
                 isNoFilter = true
-            case let .filter(_, _, unread):
+            case let .filter(filterId, _, unread):
                 unreadCount = unread.value
                 unreadHasUnmuted = unread.hasUnmuted
                 
-                if let filtersLimit = filtersLimit {
-                    isDisabled = !canReorderAllChats && folderIndex >= filtersLimit
+                // Luckgram: local keyword folders (id >= 1_000_000, see ChatListUI/KeywordFolders)
+                // are never locked and do not count towards the Premium folder limit.
+                if filterId < 1_000_000 {
+                    if let filtersLimit = filtersLimit {
+                        isDisabled = !canReorderAllChats && folderIndex >= filtersLimit
+                    }
+                    folderIndex += 1
                 }
-                folderIndex += 1
             }
             if !wasAdded && (itemNode.unreadCount != 0) != (unreadCount != 0) {
                 badgeAnimations[filter.id] = (unreadCount != 0) ? .in : .out

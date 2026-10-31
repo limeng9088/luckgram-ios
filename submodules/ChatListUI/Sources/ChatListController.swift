@@ -187,8 +187,8 @@ public class ChatListControllerImpl: TelegramBaseController, ChatListController 
             return 0
         }
         return Int32(tabContainerData.0.count(where: { entry in
-            if case .filter = entry {
-                return true
+            if case let .filter(id, _, _) = entry {
+                return !isKeywordFolderFilterId(id) // Luckgram: keyword folders are local, not limited
             } else {
                 return false
             }
@@ -4220,7 +4220,32 @@ public class ChatListControllerImpl: TelegramBaseController, ChatListController 
             if !hasAllChats {
                 availableFilters.insert(.all, at: 0)
             }
-            strongSelf.chatListDisplayNode.mainContainerNode.updateAvailableFilters(availableFilters, limit: filtersLimit)
+            // Luckgram: the container's limit is "last reachable page index". Keyword folders are
+            // never locked, so stop right before the first locked cloud folder, wherever keyword
+            // folders sit in the tab order.
+            var swipeLimit: Int32?
+            if let filtersLimit {
+                var cloudCount: Int32 = 0
+                var keywordFolderCount: Int32 = 0
+                for (index, filter) in availableFilters.enumerated() {
+                    guard case let .filter(filter) = filter else {
+                        continue
+                    }
+                    if isKeywordFolderFilterId(filter.id) {
+                        keywordFolderCount += 1
+                        continue
+                    }
+                    cloudCount += 1
+                    if cloudCount > filtersLimit {
+                        swipeLimit = Int32(index) - 1
+                        break
+                    }
+                }
+                if swipeLimit == nil {
+                    swipeLimit = filtersLimit + keywordFolderCount
+                }
+            }
+            strongSelf.chatListDisplayNode.mainContainerNode.updateAvailableFilters(availableFilters, limit: swipeLimit)
             
             if isPremium == nil && items.isEmpty {
                 strongSelf.mainReady.set(strongSelf.chatListDisplayNode.mainContainerNode.currentItemNode.ready)
