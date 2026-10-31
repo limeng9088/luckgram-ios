@@ -1954,6 +1954,16 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
                     interfaceInteraction.forwardMessages(selectAll || isImage ? messages : [message])
                     f(.dismissWithoutContent)
                 })))
+                // Luckgram (spec 15): "Save" to Saved Messages right below Forward.
+                if LuckgramSaveToSaved.isAvailable(chatPresentationInterfaceState: chatPresentationInterfaceState, accountPeerId: context.account.peerId), message.id.namespace == Namespaces.Message.Cloud, let chatController = (controllerInteraction.chatControllerNode() as? ChatControllerNode)?.luckgramController {
+                    let saveIds = (selectAll || isImage ? messages : [message]).map { $0.id }
+                    actions.append(.action(ContextMenuActionItem(text: LuckgramSaveToSaved.menuTitle, icon: { theme in
+                        return LuckgramSaveToSaved.menuIcon(color: theme.actionSheet.primaryTextColor)
+                    }, action: { [weak chatController] _, f in
+                        f(.dismissWithoutContent)
+                        chatController?.luckgramSaveToSaved(saveIds)
+                    })))
+                }
             }
         }
         
