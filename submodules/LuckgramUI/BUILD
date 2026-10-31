@@ -22,7 +22,6 @@ swift_library(
         "//submodules/AccountUtils:AccountUtils",
         "//submodules/PromptUI:PromptUI",
         "//submodules/LuckgramAccountsStore:LuckgramAccountsStore",
-        "//submodules/Postbox:Postbox",
         "//submodules/LegacyMediaPickerUI:LegacyMediaPickerUI",
         "//submodules/OverlayStatusController:OverlayStatusController",
     ],
