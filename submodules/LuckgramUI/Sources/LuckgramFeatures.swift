@@ -39,6 +39,9 @@ public enum LuckgramFeatures {
         add(.toggle("user_notes", group: .profileOrganize, default: true,
             title: ("私人备注", "Private notes"),
             description: ("给联系人、群组和频道写只有自己能看到的备注", "Notes about contacts, groups and channels that only you can see")))
+        add(.toggle("keyword_folders", group: .profileOrganize, default: true,
+            title: ("关键词文件夹", "Keyword folders"),
+            description: ("按关键词自动归类聊天（只在本机）", "Group chats by keyword (this device only)")))
 
         // ---- AI
 
