@@ -1,0 +1,46 @@
+name: Luckgram unit tests (private notes)
+
+# Foundation-only private-notes rules (spec 05), tested with SwiftPM on Linux so the single
+# xcode-27 Mac stays free for app builds. Same approach as the round-video tests.
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [master]
+    paths:
+      - 'submodules/LuckgramUserNotes/**'
+      - '.github/workflows/luckgram-notes-unit-tests.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: false
+      - name: Swift version
+        run: swift --version
+      - name: Private notes text tests
+        run: |
+          set -euo pipefail
+          C=submodules/LuckgramUserNotes
+          P="$RUNNER_TEMP/pkg"
+          mkdir -p "$P/Sources/LuckgramUserNotes" "$P/Tests/LuckgramUserNotesTests"
+          # Only the Foundation-only file: UIKit / Telegram code is covered by the app build.
+          cp "$C/Sources/LuckgramUserNotesText.swift" "$P/Sources/LuckgramUserNotes/"
+          cp "$C"/Tests/*.swift "$P/Tests/LuckgramUserNotesTests/"
+          cat > "$P/Package.swift" <<'SWIFT'
+          // swift-tools-version:5.9
+          import PackageDescription
+          let package = Package(
+              name: "LuckgramUserNotes",
+              targets: [
+                  .target(name: "LuckgramUserNotes"),
+                  .testTarget(name: "LuckgramUserNotesTests", dependencies: ["LuckgramUserNotes"]),
+              ]
+          )
+          SWIFT
+          cd "$P" && swift test

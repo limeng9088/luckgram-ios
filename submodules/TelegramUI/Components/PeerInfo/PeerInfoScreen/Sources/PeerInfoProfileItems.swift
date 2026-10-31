@@ -16,6 +16,7 @@ import WebUI
 import AvatarNode
 import PeerNameColorItem
 import BoostLevelIconComponent
+import LuckgramUserNotes
 
 private let enabledPublicBioEntities: EnabledEntityTypes = [.allUrl, .mention, .hashtag]
 private let enabledPrivateBioEntities: EnabledEntityTypes = [.internalUrl, .mention, .hashtag]
@@ -843,6 +844,21 @@ func infoItems(
                 }))
             }
         }
+    }
+    
+    // Luckgram: private notes (spec 05)
+    if !isMyProfile, data.threadData == nil, let notePeer = data.peer, let noteRow = luckgramUserNoteProfileRow(context: context, peerId: notePeer.id, strings: presentationData.strings) {
+        let notePeerId = notePeer.id
+        items[currentPeerInfoSection]!.append(PeerInfoScreenLabeledValueItem(id: AnyHashable("luckgram_user_note"), label: noteRow.label, rightLabel: noteRow.rightLabel, text: noteRow.text, textColor: noteRow.hasNote ? .primary : .accent, textBehavior: .multiLine(maxLines: 100, enabledEntities: []), action: { _, _ in
+            guard let controller = interaction.getController() else {
+                return
+            }
+            controller.push(luckgramUserNoteEditController(context: context, peerId: notePeerId, completion: {
+                interaction.requestLayout(true)
+            }))
+        }, requestLayout: { animated in
+            interaction.requestLayout(animated)
+        }))
     }
     
     if let peer = data.peer, let members = data.members, case let .shortList(_, memberList) = members {
