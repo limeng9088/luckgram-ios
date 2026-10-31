@@ -4220,14 +4220,32 @@ public class ChatListControllerImpl: TelegramBaseController, ChatListController 
             if !hasAllChats {
                 availableFilters.insert(.all, at: 0)
             }
-            // Luckgram: the swipe limit counts pages, and local keyword folders are never locked.
-            let keywordFolderCount = availableFilters.count(where: { filter in
-                if case let .filter(filter) = filter {
-                    return isKeywordFolderFilterId(filter.id)
+            // Luckgram: the container's limit is "last reachable page index". Keyword folders are
+            // never locked, so stop right before the first locked cloud folder, wherever keyword
+            // folders sit in the tab order.
+            var swipeLimit: Int32?
+            if let filtersLimit {
+                var cloudCount: Int32 = 0
+                var keywordFolderCount: Int32 = 0
+                for (index, filter) in availableFilters.enumerated() {
+                    guard case let .filter(filter) = filter else {
+                        continue
+                    }
+                    if isKeywordFolderFilterId(filter.id) {
+                        keywordFolderCount += 1
+                        continue
+                    }
+                    cloudCount += 1
+                    if cloudCount > filtersLimit {
+                        swipeLimit = Int32(index) - 1
+                        break
+                    }
                 }
-                return false
-            })
-            strongSelf.chatListDisplayNode.mainContainerNode.updateAvailableFilters(availableFilters, limit: filtersLimit.flatMap { $0 + Int32(keywordFolderCount) })
+                if swipeLimit == nil {
+                    swipeLimit = filtersLimit + keywordFolderCount
+                }
+            }
+            strongSelf.chatListDisplayNode.mainContainerNode.updateAvailableFilters(availableFilters, limit: swipeLimit)
             
             if isPremium == nil && items.isEmpty {
                 strongSelf.mainReady.set(strongSelf.chatListDisplayNode.mainContainerNode.currentItemNode.ready)
