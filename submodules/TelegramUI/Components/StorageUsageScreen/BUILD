@@ -50,6 +50,7 @@ swift_library(
         "//submodules/TelegramUI/Components/HorizontalTabsComponent",
         "//submodules/TelegramUI/Components/LiquidLens",
         "//submodules/TelegramUI/Components/EdgeEffect",
+        "//submodules/LuckgramUI:LuckgramUI",
     ],
     visibility = [
         "//visibility:public",

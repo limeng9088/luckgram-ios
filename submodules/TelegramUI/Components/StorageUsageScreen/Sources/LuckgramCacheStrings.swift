@@ -1,5 +1,6 @@
 import Foundation
 import TelegramPresentationData
+import LuckgramUI
 
 /// Luckgram 08 (cache): UI strings for the storage-usage extensions.
 ///
@@ -19,14 +20,9 @@ public enum LuckgramCacheStrings {
     /// Cache size limit options in gigabytes; `Int32.max` means no limit.
     public static let cacheLimitOptions: [Int32] = [1, 2, 5, 10, 20, 50, Int32.max]
 
+    /// Same rule as every Luckgram feature (issue #42): `LuckgramStrings.isChinese`.
     public static func isChinese(_ strings: PresentationStrings) -> Bool {
-        if strings.baseLanguageCode.lowercased().hasPrefix("zh") {
-            return true
-        }
-        if let language = Locale.preferredLanguages.first, language.lowercased().hasPrefix("zh") {
-            return true
-        }
-        return false
+        return LuckgramStrings.isChinese
     }
 
     private static func t(_ strings: PresentationStrings, _ zh: String, _ en: String) -> String {
