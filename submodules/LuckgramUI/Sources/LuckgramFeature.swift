@@ -28,6 +28,10 @@ public final class LuckgramFeature {
     /// Optional check before the switch goes from off to on (e.g. a legal notice), issue #58.
     /// Call `done(true)` to switch it on, `done(false)` to leave it off. Not called when switching off.
     public private(set) var confirmEnableHandler: ((AccountContext, @escaping (ViewController) -> Void, @escaping (Bool) -> Void) -> Void)?
+    /// Optional check before the switch goes from on to off (e.g. 11 asks for the main passcode).
+    public private(set) var confirmDisableHandler: ((AccountContext, @escaping (ViewController) -> Void, @escaping (Bool) -> Void) -> Void)?
+    /// Optional: the row is hidden while this returns true (e.g. 11 hides itself in the second space).
+    public private(set) var hiddenWhen: (() -> Bool)?
 
     private init(key: String, group: Group, defaultValue: Bool, titleZh: String, titleEn: String, descriptionZh: String, descriptionEn: String) {
         self.key = key
@@ -59,6 +63,18 @@ public final class LuckgramFeature {
     }
 
     @discardableResult
+    public func confirmDisable(_ handler: @escaping (_ context: AccountContext, _ present: @escaping (ViewController) -> Void, _ done: @escaping (Bool) -> Void) -> Void) -> LuckgramFeature {
+        self.confirmDisableHandler = handler
+        return self
+    }
+
+    @discardableResult
+    public func hiddenWhen(_ hidden: @escaping () -> Bool) -> LuckgramFeature {
+        self.hiddenWhen = hidden
+        return self
+    }
+
+    @discardableResult
     public func debugOnly(_ value: Bool = true) -> LuckgramFeature {
         self.isDebugOnly = value
         return self
@@ -77,6 +93,9 @@ public final class LuckgramFeature {
     }
 
     public var isVisible: Bool {
+        if let hiddenWhen = self.hiddenWhen, hiddenWhen() {
+            return false
+        }
         return (!self.isDebugOnly || LuckgramSettings.shared.isDebugToolsVisible) && LuckgramSettings.shared.isRemotelyAllowed(self.key)
     }
 }

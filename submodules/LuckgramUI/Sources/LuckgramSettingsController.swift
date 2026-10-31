@@ -7,6 +7,7 @@ import ItemListUI
 import PresentationDataUtils
 import AccountContext
 import UndoUI
+import LuckgramAccountsStore
 
 /// Paper-plane icon on a blue gradient tile for the Settings row (same style as Telegram's 30×30 settings icons).
 public enum LuckgramIcons {
@@ -250,6 +251,15 @@ public func luckgramSettingsController(context: AccountContext) -> ViewControlle
                         LuckgramSettings.shared.setEnabled(key, true)
                     }
                 })
+            } else if !value, let confirm = LuckgramFeatures.find(key)?.confirmDisableHandler {
+                confirm(context, { c in presentImpl?(c) }, { ok in
+                    if ok {
+                        LuckgramSettings.shared.setEnabled(key, false)
+                    } else {
+                        // Keep the switch on: re-emit so the row is rebuilt.
+                        LuckgramSettings.shared.setEnabled(key, true)
+                    }
+                })
             } else {
                 LuckgramSettings.shared.setEnabled(key, value)
             }
@@ -285,8 +295,8 @@ public func luckgramSettingsController(context: AccountContext) -> ViewControlle
         }
     )
 
-    let signal = combineLatest(queue: .mainQueue(), context.sharedContext.presentationData, LuckgramSettings.shared.updated)
-    |> map { presentationData, _ -> (ItemListControllerState, (ItemListNodeState, Any)) in
+    let signal = combineLatest(queue: .mainQueue(), context.sharedContext.presentationData, LuckgramSettings.shared.updated, LuckgramDoubleBottomState.shared.updated)
+    |> map { presentationData, _, _ -> (ItemListControllerState, (ItemListNodeState, Any)) in
         var presentationData = presentationData
         presentationData = presentationData.withUpdated(theme: presentationData.theme.withModalBlocksBackground())
         LuckgramStrings.appLanguageCode = presentationData.strings.primaryComponent.languageCode

@@ -10,6 +10,7 @@ import PresentationDataUtils
 import AvatarNode
 import TelegramStringFormatting
 import AccountContext
+import LuckgramUI
 import PeerOnlineMarkerNode
 import LocalizedPeerData
 import PeerPresenceStatusManager
@@ -708,6 +709,7 @@ enum RevealOptionKey: Int32 {
     case open
     case close
     case edit
+    case luckgramHide
 }
 
 private func canArchivePeer(id: EnginePeer.Id, accountPeerId: EnginePeer.Id) -> Bool {
@@ -801,6 +803,10 @@ private func revealOptions(strings: PresentationStrings, theme: PresentationThem
                 options.append(ItemListRevealOption(key: RevealOptionKey.unarchive.rawValue, title: strings.ChatList_UnarchiveAction, icon: unarchiveIcon, color: theme.list.itemDisclosureActions.inactive.fillColor, iconColor: theme.list.itemDisclosureActions.inactive.foregroundColor, textColor: theme.chatList.dateTextColor))
             }
         }
+    }
+    // Luckgram 12 (hidden chats): swipe to hide a chat from the list.
+    if !isEditing, case .chatList = location, peerId != accountPeerId, LuckgramHiddenChats.isEnabled {
+        options.append(ItemListRevealOption(key: RevealOptionKey.luckgramHide.rawValue, title: LuckgramHiddenChats.Strings.hide, icon: hideIcon, color: theme.list.itemDisclosureActions.inactive.fillColor, iconColor: theme.list.itemDisclosureActions.neutral1.foregroundColor, textColor: theme.chatList.dateTextColor))
     }
     return options
 }
@@ -5753,6 +5759,8 @@ public class ChatListItemNode: ItemListRevealOptionsItemNode {
             case RevealOptionKey.unhide.rawValue:
                 item.interaction.toggleArchivedFolderHiddenByDefault()
                 close = false
+            case RevealOptionKey.luckgramHide.rawValue:
+                LuckgramHiddenChats.hide(context: item.context, peerId: index.messageIndex.id.peerId)
             case RevealOptionKey.hidePsa.rawValue:
                 if let item = self.item, case let .peer(peerData) = item.content {
                     item.interaction.hidePsa(peerData.peer.peerId)

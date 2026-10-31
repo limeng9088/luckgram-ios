@@ -4,6 +4,7 @@ import UserNotifications
 import SwiftSignalKit
 import Postbox
 import TelegramCore
+import LuckgramAccountsStore
 import BuildConfig
 import OpenSSLEncryptionProvider
 import TelegramUIPreferences
@@ -938,6 +939,30 @@ private final class NotificationServiceHandler {
                 return
             }
 
+            // Luckgram 09 (more accounts): this account's notifications are switched off in
+            // Settings → Manage accounts, so nothing is shown for it.
+            let luckgramAccounts = LuckgramAccountsStore.snapshot(rootPath: rootPath)
+            if !luckgramAccounts.isNotificationsEnabled(recordId.int64) {
+                Logger.shared.log("NotificationService \(episode)", "Notifications are off for this account")
+
+                let content = NotificationContent(isLockedMessage: nil)
+                updateCurrentContent(content)
+                completed()
+
+                return
+            }
+            // Luckgram 11 (double space): nothing for an account hidden by the second space.
+            if LuckgramDoubleBottomState.snapshot(rootPath: rootPath).isHidden(recordId.int64) {
+                Logger.shared.log("NotificationService \(episode)", "Account is hidden by the second space")
+
+                let content = NotificationContent(isLockedMessage: nil)
+                updateCurrentContent(content)
+                completed()
+
+                return
+            }
+            let luckgramAlias = luckgramAccounts.alias(recordId.int64)
+
             let _ = (standaloneStateManager(
                 accountManager: strongSelf.accountManager,
                 networkArguments: networkArguments,
@@ -984,7 +1009,7 @@ private final class NotificationServiceHandler {
                 let recipientAccountName: Signal<String?, NoError>
                 if notificationsNameRecipientAccount(records: records.records) {
                     recipientAccountName = stateManager.postbox.transaction { transaction -> String? in
-                        return notificationRecipientAccountName(accountPeer: transaction.getPeer(accountPeerId).flatMap(EnginePeer.init))
+                        return notificationRecipientAccountName(accountPeer: transaction.getPeer(accountPeerId).flatMap(EnginePeer.init), alias: luckgramAlias)
                     }
                 } else {
                     recipientAccountName = .single(nil)
@@ -1221,6 +1246,16 @@ private final class NotificationServiceHandler {
                         }
                     } else {
                         if let aps = payloadJson["aps"] as? [String: Any], var peerId = peerId {
+                            // Luckgram 12 (hidden chats): nothing for a hidden chat unless the user chose otherwise.
+                            if LuckgramHiddenChatsStore.snapshot(rootPath: rootPath).suppressNotifications(accountPeerId: accountPeerId.toInt64(), peerId: peerId.toInt64()) {
+                                Logger.shared.log("NotificationService \(episode)", "Chat is hidden")
+
+                                let content = NotificationContent(isLockedMessage: nil)
+                                updateCurrentContent(content)
+                                completed()
+
+                                return
+                            }
                             var content: NotificationContent = NotificationContent(isLockedMessage: isLockedMessage)
                             content.recipientAccountName = recipientAccountName
                             if let alert = aps["alert"] as? [String: Any] {

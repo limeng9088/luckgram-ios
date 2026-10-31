@@ -1,4 +1,5 @@
 import Foundation
+import LuckgramAccountsStore
 
 /// The Luckgram feature registry. Adding a feature = adding one `add(...)` line here; the
 /// "Settings → Luckgram Features" page is generated from this list (rows keep the order of the
@@ -38,6 +39,13 @@ public enum LuckgramFeatures {
         }
 
         // ---- 账号与隐私 / Accounts & Privacy
+        add(.toggle(LuckgramDoubleBottom.featureKey, group: .accountPrivacy, default: false,
+            title: ("双重空间", "Double space"),
+            description: ("用第二个密码解锁时只显示选定的账号", "A second passcode that shows only the accounts you pick"))
+            .subpage { context in luckgramDoubleBottomController(context: context) }
+            .confirmEnable { context, present, done in LuckgramDoubleBottom.confirmEnable(context: context, present: present, done: done) }
+            .confirmDisable { context, present, done in LuckgramDoubleBottom.confirmDisable(context: context, present: present, done: done) }
+            .hiddenWhen { LuckgramDoubleBottomState.shared.isActive })
 
         // ---- 消息与语言 / Messages & Language
         add(.toggle("select_all_from_sender", group: .messagesLanguage, default: true,
@@ -69,6 +77,10 @@ public enum LuckgramFeatures {
         add(.toggle("shared_activity", group: .profileOrganize, default: true,
             title: ("共同群动态", "Activity in shared groups"),
             description: ("用户资料页显示对方最近在共同群组里发的消息", "Show a user's recent messages in your groups in common on their profile")))
+        add(.toggle(LuckgramHiddenChats.featureKey, group: .profileOrganize, default: true,
+            title: ("隐藏聊天", "Hidden chats"),
+            description: ("把聊天从列表里藏起来，下拉列表找回", "Hide chats from the list; pull down to find them"))
+            .subpage { context in luckgramHiddenChatsSettingsController(context: context) })
 
         // ---- AI
         add(.toggle(LuckgramFeatures.aiWriting, group: .ai, default: true,

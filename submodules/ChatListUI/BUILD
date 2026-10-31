@@ -27,6 +27,7 @@ swift_library(
         "//submodules/AlertUI:AlertUI",
         "//submodules/PresentationDataUtils:PresentationDataUtils",
         "//submodules/UndoUI:UndoUI",
+        "//submodules/LuckgramAccountsStore:LuckgramAccountsStore",
         "//submodules/TelegramNotices:TelegramNotices",
         "//submodules/SearchUI:SearchUI",
         "//submodules/MergeLists:MergeLists",

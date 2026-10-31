@@ -129,6 +129,7 @@ import EmojiStatusSelectionComponent
 import EntityKeyboard
 import LuckgramUI
 import LuckgramUserNotes
+import LuckgramAccountsStore
 
 private final class AccountUserInterfaceInUseContext {
     let subscribers = Bag<(Bool) -> Void>()
@@ -404,6 +405,25 @@ public final class SharedAccountContextImpl: SharedAccountContext {
             // Legal reminder before it is switched on from the Luckgram features page (spec 04 §1, #58).
             luckgramConfirmEnableCallRecording(context: context, present: present, done: done)
         }
+        // Luckgram 09: account order, local names and notification switches (shared with the notification extension)
+        LuckgramAccountsStore.shared.configure(rootPath: rootPath)
+        LuckgramDoubleBottomState.shared.configure(rootPath: rootPath)
+        LuckgramHiddenChatsStore.shared.configure(rootPath: rootPath)
+        LuckgramHiddenChats.install()
+        LuckgramDoubleBottom.install()
+        LuckgramDoubleBottom.openPasscodeSetup = { context, push in
+            let _ = passcodeOptionsAccessController(context: context, replaceController: { controller in
+                push(controller)
+            }, authorizationCompleted: { result in
+                if case let .success(session) = result {
+                    session.invalidate()
+                }
+            }).start(next: { controller in
+                if let controller {
+                    push(controller)
+                }
+            })
+        }
         self._automaticMediaDownloadSettings.set(.single(initialPresentationDataAndSettings.automaticMediaDownloadSettings)
         |> then(accountManager.sharedData(keys: [SharedDataKeys.autodownloadSettings, ApplicationSpecificSharedDataKeys.automaticMediaDownloadSettings])
             |> map { sharedData in
@@ -605,8 +625,9 @@ public final class SharedAccountContextImpl: SharedAccountContext {
         
         let differenceDisposable = MetaDisposable()
         var luckgramPreviousRecordIds: Set<AccountRecordId>?
-        let _ = (accountManager.accountRecords()
-        |> map { view -> (AccountRecordId?, [AccountRecordId: AccountAttributes], (AccountRecordId, Bool)?) in
+        // Luckgram 11: re-run when the second space opens or closes (hidden accounts are not loaded).
+        let _ = (combineLatest(accountManager.accountRecords(), LuckgramDoubleBottomState.shared.updated)
+        |> map { view, _ -> (AccountRecordId?, [AccountRecordId: AccountAttributes], (AccountRecordId, Bool)?, Set<AccountRecordId>) in
             print("SharedAccountContextImpl: records appeared in \(CFAbsoluteTimeGetCurrent() - startTime)")
             
             var result: [AccountRecordId: AccountAttributes] = [:]
@@ -652,7 +673,17 @@ public final class SharedAccountContextImpl: SharedAccountContext {
                 })
                 return (authAccount.id, isTestingEnvironment)
             })
-            return (view.currentRecord?.id, result, authRecord)
+            let luckgramAllRecordIds = Set(result.keys)
+            // Luckgram 11 (double space): accounts hidden by the second space are not loaded at all,
+            // so they appear in no list, switcher, notification or badge. If none would be left,
+            // nothing is hidden.
+            if LuckgramDoubleBottomState.shared.isActive {
+                let visible = result.filter { !LuckgramDoubleBottomState.shared.isHidden($0.key.int64) }
+                if !visible.isEmpty {
+                    result = visible
+                }
+            }
+            return (view.currentRecord?.id, result, authRecord, luckgramAllRecordIds)
         }
         |> distinctUntilChanged(isEqual: { lhs, rhs in
             if lhs.0 != rhs.0 {
@@ -667,14 +698,19 @@ public final class SharedAccountContextImpl: SharedAccountContext {
             if lhs.2?.1 != rhs.2?.1 {
                 return false
             }
+            if lhs.3 != rhs.3 {
+                return false
+            }
             return true
         })
-        |> deliverOnMainQueue).start(next: { primaryId, records, authRecord in
+        |> deliverOnMainQueue).start(next: { primaryId, records, authRecord, luckgramAllRecordIds in
             // Luckgram: drop per-account Luckgram data of removed accounts; wipe everything when none is left.
-            let luckgramRecordIds = Set(records.keys)
+            let luckgramRecordIds = luckgramAllRecordIds
             if let previous = luckgramPreviousRecordIds {
                 for removed in previous.subtracting(luckgramRecordIds) {
                     LuckgramSettings.shared.accountRemoved(accountId: removed.int64, noAccountsLeft: luckgramRecordIds.isEmpty)
+                    LuckgramAccountsStore.shared.accountRemoved(removed.int64)
+                    LuckgramDoubleBottomState.shared.accountRemoved(removed.int64)
                 }
             }
             luckgramPreviousRecordIds = luckgramRecordIds

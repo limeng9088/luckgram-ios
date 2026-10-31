@@ -8,6 +8,7 @@ import TelegramPresentationData
 import MergeLists
 import ActivityIndicator
 import AccountContext
+import LuckgramUI
 import SearchBarNode
 import SearchUI
 import ContextUI
@@ -325,6 +326,10 @@ public final class ChatListContainerNode: ASDisplayNode, ASGestureRecognizerDele
                 return
             }
             self.endedInteractiveDragging?(self.currentItemNode)
+            // Luckgram 12 (hidden chats): pulling the chat list down past a threshold opens the hidden chats.
+            if case .chatList(groupId: .root) = self.location, case let .known(offset) = self.currentItemNode.visibleContentOffset(), offset < -140.0 {
+                LuckgramHiddenChats.openFromPull(context: self.context)
+            }
         }
         itemNode.listNode.shouldStopScrolling = { [weak self] velocity in
             guard let self else {
