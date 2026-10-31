@@ -6105,6 +6105,30 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
         })
     }
 
+    // MARK: - Luckgram: quick replies (feature 02)
+
+    private func showQuickReplies() {
+        guard let context = self.context, let interfaceState = self.presentationInterfaceState else {
+            return
+        }
+        let strings = LuckgramQuickReplies.Strings(interfaceState.strings)
+        let picker = LuckgramQuickRepliesPicker(context: context, strings: strings, isDark: interfaceState.theme.overallDarkAppearance, insert: { [weak self] text in
+            self?.insertQuickReply(text)
+        }, send: { [weak self] text in
+            self?.chatControllerInteraction?.sendMessage(text, nil)
+        })
+        context.sharedContext.mainWindow?.presentNative(picker.wrappedInNavigation())
+    }
+
+    /// Puts the template into the input field at the cursor; nothing is sent.
+    private func insertQuickReply(_ text: String) {
+        self.interfaceInteraction?.updateTextInputStateAndMode { state, inputMode in
+            let range = state.selectionRange
+            return (state.replacingFlatRange(NSRange(location: range.lowerBound, length: range.upperBound - range.lowerBound), with: text), .text)
+        }
+        self.ensureFocused()
+    }
+
     @objc func accessoryItemButtonPressed(_ button: UIView) {
         for (item, currentButton) in self.accessoryItemButtons {
             if currentButton === button {
@@ -6146,6 +6170,8 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
                     self.interfaceInteraction?.openSuggestPost(nil, .default)
                 case .translate:
                     self.translateOutPressed(language: nil)
+                case .quickReplies:
+                    self.showQuickReplies()
                 }
                 break
             }

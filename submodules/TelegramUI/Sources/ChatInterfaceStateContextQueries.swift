@@ -12,6 +12,7 @@ import DeviceLocationManager
 import TelegramNotices
 import ChatPresentationInterfaceState
 import ChatContextQuery
+import ChatTextInputPanelNode
 
 func contextQueryResultStateForChatInterfacePresentationState(_ chatPresentationInterfaceState: ChatPresentationInterfaceState, context: AccountContext, currentQueryStates: inout [ChatPresentationInputQueryKind: (ChatPresentationInputQuery, Disposable)], requestBotLocationStatus: @escaping (EnginePeer.Id) -> Void) -> [ChatPresentationInputQueryKind: ChatContextQueryUpdate] {
     let inputQueries = inputContextQueriesForChatPresentationIntefaceState(chatPresentationInterfaceState).filter({ query in
@@ -249,9 +250,10 @@ private func updatedContextQueryResultStateForQuery(context: AccountContext, pee
                 shortcuts,
                 context.engine.data.subscribe(
                     TelegramEngine.EngineData.Item.Peer.Peer(id: context.account.peerId)
-                )
+                ),
+                LuckgramQuickReplies.search(context: context, query: normalizedQuery)
             )
-            |> map { commands, shortcuts, accountPeer -> (ChatPresentationInputQueryResult?) -> ChatPresentationInputQueryResult? in
+            |> map { commands, shortcuts, accountPeer, luckgramTemplates -> (ChatPresentationInputQueryResult?) -> ChatPresentationInputQueryResult? in
                 let filteredCommands = commands.commands.filter { command in
                     if command.command.text.hasPrefix(normalizedQuery) {
                         return true
@@ -263,6 +265,10 @@ private func updatedContextQueryResultStateForQuery(context: AccountContext, pee
                     for shortcut in shortcuts {
                         sortedCommands.append(.shortcut(shortcut))
                     }
+                }
+                // Luckgram: quick reply templates come after bot commands.
+                for template in luckgramTemplates {
+                    sortedCommands.append(.luckgramTemplate(template))
                 }
                 return { _ in return .commands(ChatInputQueryCommandsResult(
                     commands: sortedCommands,

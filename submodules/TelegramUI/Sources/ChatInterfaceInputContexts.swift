@@ -253,6 +253,19 @@ func inputTextPanelStateForChatPresentationInterfaceState(_ chatPresentationInte
                     accessoryItems.append(.commands)
                 }
                 
+                // Luckgram: quick reply templates button (feature 02).
+                if isTextEmpty, canSendTextMessages, !hasForward, LuckgramQuickReplies.isEnabled, chatPresentationInterfaceState.chatLocation.peerId != nil {
+                    var isRegularChat = true
+                    if case .customChatContents = chatPresentationInterfaceState.subject {
+                        isRegularChat = false
+                    } else if case .scheduledMessages = chatPresentationInterfaceState.subject {
+                        isRegularChat = false
+                    }
+                    if isRegularChat {
+                        accessoryItems.append(.quickReplies)
+                    }
+                }
+                
                 if !canSendTextMessages {
                     if stickersEnabled && !stickersAreEmoji && !hasForward {
                         accessoryItems.append(.input(isEnabled: true, inputMode: .stickers))
