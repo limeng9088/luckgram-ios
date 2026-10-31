@@ -38,6 +38,10 @@ public enum LuckgramFeatures {
         }
 
         // ---- 账号与隐私 / Accounts & Privacy
+        add(.toggle(LuckgramBackup.featureKey, group: .accountPrivacy, default: true,
+            title: ("账号备份", "Account backup"),
+            description: ("把账号导出为加密文件，换手机后导入", "Export accounts to an encrypted file and import them on a new phone"))
+            .subpage { context in luckgramBackupController(context: context) })
 
         // ---- 消息与语言 / Messages & Language
         add(.toggle("select_all_from_sender", group: .messagesLanguage, default: true,

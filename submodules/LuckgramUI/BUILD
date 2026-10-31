@@ -18,6 +18,12 @@ swift_library(
         "//submodules/AlertUI:AlertUI",
         "//submodules/PresentationDataUtils:PresentationDataUtils",
         "//submodules/UndoUI:UndoUI",
+        "//submodules/ItemListPeerItem:ItemListPeerItem",
+        "//submodules/AccountUtils:AccountUtils",
+        "//submodules/PromptUI:PromptUI",
+        "//submodules/LuckgramAccountsStore:LuckgramAccountsStore",
+        "//submodules/LegacyMediaPickerUI:LegacyMediaPickerUI",
+        "//submodules/OverlayStatusController:OverlayStatusController",
     ],
     visibility = [
         "//visibility:public",
