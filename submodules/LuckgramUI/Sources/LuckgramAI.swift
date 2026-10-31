@@ -214,16 +214,21 @@ public final class LuckgramAI {
 
     // MARK: - Public API
 
-    public func chat(context: AccountContext?, present: ((ViewController) -> Void)?, task: AITask, messages: [Message], stream: Bool) -> Signal<ChatEvent, LuckgramAIError> {
+    /// - Parameter effect: only for `.writing`: one of `polish, formal, friendly, shorter, grammar,
+    ///   dictation` (server prompts/writing-*.md), or nil for the default.
+    public func chat(context: AccountContext?, present: ((ViewController) -> Void)?, task: AITask, effect: String? = nil, messages: [Message], stream: Bool) -> Signal<ChatEvent, LuckgramAIError> {
         let chars = messages.reduce(0) { $0 + $1.content.count }
         if chars > LuckgramSettings.shared.remoteInt("ai.max_input_chars", default: 60000) {
             return .fail(LuckgramAIError(code: LuckgramAIError.inputTooLarge))
         }
-        let body: [String: Any] = [
+        var body: [String: Any] = [
             "task": task.rawValue,
             "messages": messages.map { ["role": $0.role, "content": $0.content] },
             "stream": stream
         ]
+        if let effect, task == .writing {
+            body["effect"] = effect
+        }
         guard let payload = try? JSONSerialization.data(withJSONObject: body) else {
             return .fail(LuckgramAIError(code: LuckgramAIError.invalidRequest))
         }

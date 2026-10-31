@@ -21,6 +21,7 @@ import TextFormat
 import ChatMessageForwardInfoNode
 import ChatMessageDateAndStatusNode
 import ChatMessageItemCommon
+import LuckgramUI
 import ChatMessageBubbleContentNode
 import ChatMessageReplyInfoNode
 import InstantVideoRadialStatusNode
@@ -622,7 +623,7 @@ public class ChatMessageInteractiveInstantVideoNode: ASDisplayNode {
             }
             
             let currentTime = Int32(Date().timeIntervalSince1970)
-            if transcribedText == nil, let cooldownUntilTime = item.associatedData.audioTranscriptionTrial.cooldownUntilTime, cooldownUntilTime > currentTime {
+            if transcribedText == nil, !LuckgramTranscriber.handles(isPremium: item.associatedData.isPremium), let cooldownUntilTime = item.associatedData.audioTranscriptionTrial.cooldownUntilTime, cooldownUntilTime > currentTime {
                 updatedAudioTranscriptionState = .locked
             }
             
@@ -828,7 +829,7 @@ public class ChatMessageInteractiveInstantVideoNode: ASDisplayNode {
                     var displayTranscribe = false
                     if item.message.id.peerId.namespace != Namespaces.Peer.SecretChat && statusDisplayType == .free && !isViewOnceMessage && !item.presentationData.isPreview {
                         let premiumConfiguration = PremiumConfiguration.with(appConfiguration: item.context.currentAppConfiguration.with { $0 })
-                        if item.associatedData.isPremium || item.associatedData.alwaysDisplayTranscribeButton.providedByGroupBoost {
+                        if item.associatedData.isPremium || item.associatedData.alwaysDisplayTranscribeButton.providedByGroupBoost || LuckgramTranscriber.handles(isPremium: item.associatedData.isPremium) {
                             displayTranscribe = true
                         } else if premiumConfiguration.audioTransciptionTrialCount > 0 {
                             if incoming {
@@ -1816,6 +1817,11 @@ public class ChatMessageInteractiveInstantVideoNode: ASDisplayNode {
             return
         }
         
+        if LuckgramTranscriber.handles(isPremium: item.associatedData.isPremium) {
+            self.luckgramTranscribe()
+            return
+        }
+        
         let presentationData = item.context.sharedContext.currentPresentationData.with { $0 }
         let premiumConfiguration = PremiumConfiguration.with(appConfiguration: item.context.currentAppConfiguration.with { $0 })
         
@@ -1912,6 +1918,62 @@ public class ChatMessageInteractiveInstantVideoNode: ASDisplayNode {
         }
         
         self.updateTranscriptionExpanded?(self.audioTranscriptionState)
+    }
+    
+    /// spec 17: non-Premium accounts transcribe through Luckgram instead of the trial / Premium flow.
+    private func luckgramTranscribe() {
+        guard let item = self.item else {
+            return
+        }
+        let messageId = item.message.id
+        let failed = LuckgramTranscriber.isFailed(messageId)
+        if !failed, case .expanded = self.audioTranscriptionState {
+            self.transcribeDisposable?.dispose()
+            self.transcribeDisposable = nil
+            self.audioTranscriptionState = .collapsed
+            self.isWaitingForCollapse = true
+            self.requestUpdateLayout(true)
+            self.updateTranscriptionExpanded?(self.audioTranscriptionState)
+            return
+        }
+        LuckgramTranscriber.setFailed(messageId, false)
+        if !failed, case .success(_, false)? = transcribedText(message: EngineMessage(item.message)) {
+            // cached locally: expand without a request
+            self.audioTranscriptionState = .inProgress
+            self.requestUpdateLayout(true)
+            self.updateTranscriptionExpanded?(self.audioTranscriptionState)
+            return
+        }
+        if self.transcribeDisposable != nil {
+            return
+        }
+        self.audioTranscriptionState = .inProgress
+        self.requestUpdateLayout(true)
+        self.updateTranscriptionExpanded?(self.audioTranscriptionState)
+        self.transcribeDisposable = (LuckgramTranscriber.transcribe(context: item.context, message: EngineMessage(item.message), present: { c in
+            item.controllerInteraction.presentController(c, nil)
+        })
+        |> deliverOnMainQueue).startStrict(error: { [weak self] error in
+            guard let self else {
+                return
+            }
+            self.transcribeDisposable?.dispose()
+            self.transcribeDisposable = nil
+            if error.code == LuckgramAIError.consentDenied || error.code == LuckgramAIError.cancelled {
+                self.audioTranscriptionState = .collapsed
+            } else {
+                LuckgramTranscriber.setFailed(messageId, true)
+                self.audioTranscriptionState = .expanded
+            }
+            self.requestUpdateLayout(true)
+            self.updateTranscriptionExpanded?(self.audioTranscriptionState)
+        }, completed: { [weak self] in
+            guard let self else {
+                return
+            }
+            self.transcribeDisposable?.dispose()
+            self.transcribeDisposable = nil
+        })
     }
     
     private func presentAudioTranscriptionTooltip(finished: Bool) -> Bool {

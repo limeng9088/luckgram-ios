@@ -10,6 +10,7 @@ import SwiftSignalKit
 import TextFormat
 import ChatContextQuery
 import ChatTextInputPanelNode
+import LuckgramUI
 
 func serviceTasksForChatPresentationIntefaceState(context: AccountContext, chatPresentationInterfaceState: ChatPresentationInterfaceState, updateState: @escaping ((ChatPresentationInterfaceState) -> ChatPresentationInterfaceState) -> Void) -> [AnyHashable: () -> Disposable] {
     // Read the STRUCTURAL model, not the derived `inputText`: the flat projection drops whole blocks
@@ -251,6 +252,14 @@ func inputTextPanelStateForChatPresentationInterfaceState(_ chatPresentationInte
                 
                 if isTextEmpty && chatPresentationInterfaceState.hasBots && chatPresentationInterfaceState.hasBotCommands && !hasForward {
                     accessoryItems.append(.commands)
+                }
+                
+                // Luckgram: voice input button (feature 17), also while typing: the text goes in at the cursor.
+                if canSendTextMessages, !hasForward, LuckgramSettings.shared.isEnabled(LuckgramFeatures.dictation) {
+                    if case .customChatContents = chatPresentationInterfaceState.subject {
+                    } else {
+                        accessoryItems.append(.dictation)
+                    }
                 }
                 
                 // Luckgram: quick reply templates button (feature 02).

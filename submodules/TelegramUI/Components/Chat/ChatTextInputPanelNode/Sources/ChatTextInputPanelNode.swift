@@ -1,4 +1,5 @@
 import Foundation
+import LuckgramUI
 import LottieSettings
 import UniformTypeIdentifiers
 import UIKit
@@ -6105,6 +6106,18 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
         })
     }
 
+    // MARK: - Luckgram: voice input (feature 17)
+
+    private func showDictation() {
+        guard let context = self.context, let interfaceState = self.presentationInterfaceState else {
+            return
+        }
+        LuckgramDictationController.present(context: context, isDark: interfaceState.theme.overallDarkAppearance, completion: { [weak self] text in
+            // inserted at the cursor (replacing a selection), like a quick reply; nothing is sent
+            self?.insertQuickReply(text)
+        })
+    }
+
     // MARK: - Luckgram: quick replies (feature 02)
 
     private func showQuickReplies() {
@@ -6172,6 +6185,8 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
                     self.translateOutPressed(language: nil)
                 case .quickReplies:
                     self.showQuickReplies()
+                case .dictation:
+                    self.showDictation()
                 }
                 break
             }
