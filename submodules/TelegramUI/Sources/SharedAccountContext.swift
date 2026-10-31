@@ -217,6 +217,7 @@ public final class SharedAccountContextImpl: SharedAccountContext {
     let testingEnvironment: Bool
 
     private var callStateDisposable: Disposable?
+    private var luckgramStoreRestrictionsDisposable: Disposable?
     
     private(set) var currentCallStatusBarNode: CallStatusBarNodeImpl?
     
@@ -404,6 +405,11 @@ public final class SharedAccountContextImpl: SharedAccountContext {
             // Legal reminder before it is switched on from the Luckgram features page (spec 04 §1, #58).
             luckgramConfirmEnableCallRecording(context: context, present: present, done: done)
         }
+        // Luckgram spec 13: TelegramCore reads the store-restrictions switch from LuckgramStoreRestrictions.
+        self.luckgramStoreRestrictionsDisposable = (LuckgramSettings.shared.isEnabledSignal(LuckgramStoreRestrictionsFeature.key)
+        |> deliverOnMainQueue).startStrict(next: { _ in
+            LuckgramStoreRestrictionsFeature.sync()
+        })
         self._automaticMediaDownloadSettings.set(.single(initialPresentationDataAndSettings.automaticMediaDownloadSettings)
         |> then(accountManager.sharedData(keys: [SharedDataKeys.autodownloadSettings, ApplicationSpecificSharedDataKeys.automaticMediaDownloadSettings])
             |> map { sharedData in
