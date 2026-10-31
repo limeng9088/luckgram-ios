@@ -30,7 +30,7 @@ public final class LuckgramDictationController: UIViewController {
 
     private var state: State = .recording
     private var recorder: AVAudioRecorder?
-    private var meterTimer: Timer?
+    private var meterTimer: Foundation.Timer?
     private let fileURL = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("lg_dictation_\(UInt64.random(in: 0 ... UInt64.max)).wav")
     private var audio: Data?
     private var disposable: Disposable?
@@ -167,7 +167,7 @@ public final class LuckgramDictationController: UIViewController {
                 throw NSError(domain: "LuckgramDictation", code: 1)
             }
             self.recorder = recorder
-            self.meterTimer = Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true, block: { [weak self] _ in
+            self.meterTimer = Foundation.Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true, block: { [weak self] _ in
                 guard let self, let recorder = self.recorder else {
                     return
                 }
