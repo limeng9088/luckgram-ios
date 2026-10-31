@@ -71,14 +71,19 @@ extension ChatControllerImpl {
             guard let self, self.luckgramSelectAllActive, self.presentationInterfaceState.interfaceState.selectionState != nil else {
                 return
             }
-            let ids = result.messages.compactMap { message -> EngineMessage.Id? in
+            let alreadySelected = self.presentationInterfaceState.interfaceState.selectionState?.selectedIds ?? Set()
+            var newMessages: [EngineMessage] = []
+            for message in result.messages {
                 let message = EngineMessage(message)
-                if message.media.contains(where: { $0 is TelegramMediaAction }) {
-                    return nil
+                if message.media.contains(where: { $0 is TelegramMediaAction }) || alreadySelected.contains(message.id) {
+                    continue
                 }
-                return message.id
+                newMessages.append(message)
             }
-            self.luckgramAddToSelection(ids)
+            // Search results are only rendered, not stored; forward / copy / delete look messages up
+            // in Postbox, so store the page first (same as opening a search result).
+            self.context.engine.messages.ensureMessagesAreLocallyAvailable(messages: newMessages)
+            self.luckgramAddToSelection(newMessages.map { $0.id })
             let count = self.presentationInterfaceState.interfaceState.selectionState?.selectedIds.count ?? 0
             if result.completed || result.messages.count <= loadedSoFar {
                 self.luckgramPresentToast(LuckgramSelectAll.doneText(count), withCopy: true)
