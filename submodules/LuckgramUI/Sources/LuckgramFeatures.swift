@@ -24,6 +24,8 @@ public enum LuckgramFeatures {
     public static let freeTranscribe = "free_transcribe"
     public static let dictation = "dictation"
     public static let dictationAITidy = "dictation_ai_tidy"
+    /// spec 21
+    public static let aiWriting = "ai_writing"
 
     public static let all: [LuckgramFeature] = {
         var list: [LuckgramFeature] = []
@@ -65,6 +67,9 @@ public enum LuckgramFeatures {
             description: ("用户资料页显示对方最近在共同群组里发的消息", "Show a user's recent messages in your groups in common on their profile")))
 
         // ---- AI
+        add(.toggle(LuckgramFeatures.aiWriting, group: .ai, default: true,
+            title: ("AI 写作", "AI writing"),
+            description: ("输入框里的 ✦ 按钮：润色、更正式、更友好、更简短、修正语法", "The ✦ button in the message field: polish, formal, friendly, shorter, grammar")))
         add(.toggle(LuckgramFeatures.freeTranscribe, group: .ai, default: true,
             title: ("免费语音转文字", "Free voice-to-text"),
             description: ("不需要会员，把语音消息和圆形视频转成文字", "Transcribe voice and video messages without Premium")))

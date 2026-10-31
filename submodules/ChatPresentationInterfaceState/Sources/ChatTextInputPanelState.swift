@@ -15,6 +15,7 @@ public enum ChatTextInputAccessoryItem: Equatable {
         case translate
         case quickReplies
         case dictation
+        case aiWriting
     }
     
     public enum InputMode: Hashable {
@@ -38,6 +39,8 @@ public enum ChatTextInputAccessoryItem: Equatable {
     case quickReplies
     /// Luckgram: voice input (feature 17).
     case dictation
+    /// Luckgram: AI writing ✦ menu (feature 21).
+    case aiWriting
     
     public var key: Key {
         switch self {
@@ -63,6 +66,8 @@ public enum ChatTextInputAccessoryItem: Equatable {
             return .quickReplies
         case .dictation:
             return .dictation
+        case .aiWriting:
+            return .aiWriting
         }
     }
 }
