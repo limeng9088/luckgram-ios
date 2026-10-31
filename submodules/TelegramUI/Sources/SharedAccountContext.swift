@@ -404,6 +404,7 @@ public final class SharedAccountContextImpl: SharedAccountContext {
         |> filter { $0 }
         |> deliverOnMainQueue).startStrict(next: { _ in
             LuckgramRemoteConfigFetcher.shared.refreshIfStale()
+            LuckgramAnnouncements.shared.refreshIfStale() // Luckgram: announcements (S8)
         })
         self._automaticMediaDownloadSettings.set(.single(initialPresentationDataAndSettings.automaticMediaDownloadSettings)
         |> then(accountManager.sharedData(keys: [SharedDataKeys.autodownloadSettings, ApplicationSpecificSharedDataKeys.automaticMediaDownloadSettings])

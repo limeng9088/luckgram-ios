@@ -1484,7 +1484,9 @@ final class ChatListControllerNode: ASDisplayNode, ASGestureRecognizerDelegate {
                         case .accountFreeze:
                             self.effectiveContainerNode.currentItemNode.interaction?.openAccountFreezeInfo()
                         case let .link(_, url, _, _):
-                            self.effectiveContainerNode.currentItemNode.interaction?.openUrl(url)
+                            if !url.isEmpty { // Luckgram S8: announcements may have no link
+                                self.effectiveContainerNode.currentItemNode.interaction?.openUrl(url)
+                            }
                         }
                     },
                     dismissAction: { [weak self] notice in

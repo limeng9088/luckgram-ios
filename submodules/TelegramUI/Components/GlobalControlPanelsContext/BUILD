@@ -18,6 +18,7 @@ swift_library(
         "//submodules/TelegramCallsUI",
         "//submodules/Display",
         "//submodules/UndoUI",
+        "//submodules/LuckgramUI",
     ],
     visibility = [
         "//visibility:public",

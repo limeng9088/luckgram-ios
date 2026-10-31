@@ -1,6 +1,7 @@
 import Foundation
 import UIKit
 import SwiftSignalKit
+import LuckgramUI
 import TelegramCore
 import TelegramStringFormatting
 import AccountContext
@@ -477,7 +478,26 @@ public final class GlobalControlPanelsContext {
                 }
                 |> distinctUntilChanged
                 
-                self.suggestedChatListNoticeDisposable = (suggestedChatListNoticeSignal
+                // Luckgram S8: an in-app announcement takes the notice slot, after Telegram's
+                // account-critical notices (same order as Android's DialogsActivity hint).
+                let chatListNoticeSignal: Signal<ChatListNotice?, NoError> = combineLatest(suggestedChatListNoticeSignal, LuckgramAnnouncements.shared.current)
+                |> map { telegramNotice, announcement -> ChatListNotice? in
+                    if let telegramNotice {
+                        switch telegramNotice {
+                        case .accountFreeze, .premiumGrace, .reviewLogin, .reviewBotConnection:
+                            return telegramNotice
+                        default:
+                            break
+                        }
+                    }
+                    if let announcement {
+                        return .link(id: LuckgramAnnouncements.noticeIdPrefix + announcement.id, url: announcement.url, title: ServerSuggestionInfo.Item.Text(string: announcement.title, entities: []), subtitle: ServerSuggestionInfo.Item.Text(string: announcement.body, entities: []))
+                    }
+                    return telegramNotice
+                }
+                |> distinctUntilChanged
+
+                self.suggestedChatListNoticeDisposable = (chatListNoticeSignal
                 |> deliverOn(self.queue)).startStrict(next: { [weak self] chatListNotice in
                     guard let self else {
                         return
@@ -657,7 +677,12 @@ public final class GlobalControlPanelsContext {
             case .starsSubscriptionLowBalance:
                 let _ = self.context.engine.notices.dismissServerProvidedSuggestion(suggestion: ServerProvidedSuggestion.starsSubscriptionLowBalance.id).startStandalone()
             case let .link(id, _, _, _):
-                let _ = self.context.engine.notices.dismissServerProvidedSuggestion(suggestion: id).startStandalone()
+                if id.hasPrefix(LuckgramAnnouncements.noticeIdPrefix) {
+                    // Luckgram S8: remembered on this device only, never sent to Telegram.
+                    LuckgramAnnouncements.shared.dismiss(noticeId: id)
+                } else {
+                    let _ = self.context.engine.notices.dismissServerProvidedSuggestion(suggestion: id).startStandalone()
+                }
             default:
                 break
             }

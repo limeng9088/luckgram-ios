@@ -230,6 +230,7 @@ public final class LuckgramSettings {
             self.remoteConfigValue = nil
             self.remoteConfigLock.unlock()
             LuckgramAI.shared.resetLocalState()
+            LuckgramAnnouncements.shared.clear()
         } else {
             let prefix = "acc\(accountId)."
             for key in self.defaults.dictionaryRepresentation().keys where key.hasPrefix(prefix) {
