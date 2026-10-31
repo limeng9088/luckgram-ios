@@ -30,6 +30,9 @@ public enum LuckgramFeatures {
     public static let aiReply = "ai_reply"
     /// spec 24
     public static let aiPost = "ai_post"
+    /// spec 18
+    public static let aiAssistant = "ai_assistant"
+    public static let aiAssistantRow = "ai_assistant_row"
 
     public static let all: [LuckgramFeature] = {
         var list: [LuckgramFeature] = []
@@ -71,6 +74,12 @@ public enum LuckgramFeatures {
             description: ("用户资料页显示对方最近在共同群组里发的消息", "Show a user's recent messages in your groups in common on their profile")))
 
         // ---- AI
+        add(.toggle(LuckgramFeatures.aiAssistant, group: .ai, default: true,
+            title: ("AI 助手", "AI assistant"),
+            description: ("聊天列表顶部的「AI」按钮：提问、总结、改写、讲解、解题", "The \"AI\" button on the chat list: ask, summarize, rewrite, explain, solve")))
+        add(.toggle(LuckgramFeatures.aiAssistantRow, group: .ai, default: true,
+            title: ("聊天列表置顶「Luckgram AI」", "Pin \"Luckgram AI\" in the chat list"),
+            description: ("在聊天列表顶部显示一行 AI 助手入口", "Show an AI assistant row at the top of the chat list")))
         add(.toggle(LuckgramFeatures.aiWriting, group: .ai, default: true,
             title: ("AI 写作", "AI writing"),
             description: ("输入框里的 ✦ 按钮：润色、更正式、更友好、更简短、修正语法", "The ✦ button in the message field: polish, formal, friendly, shorter, grammar")))

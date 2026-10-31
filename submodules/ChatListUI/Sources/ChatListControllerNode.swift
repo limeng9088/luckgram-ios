@@ -1,4 +1,5 @@
 import Foundation
+import LuckgramUI
 import UIKit
 import AsyncDisplayKit
 import Display
@@ -1485,6 +1486,8 @@ final class ChatListControllerNode: ASDisplayNode, ASGestureRecognizerDelegate {
                             self.effectiveContainerNode.currentItemNode.interaction?.openAccountFreezeInfo()
                         case let .link(_, url, _, _):
                             self.effectiveContainerNode.currentItemNode.interaction?.openUrl(url)
+                        case .luckgramAI:
+                            LuckgramAIChatController.openLatest(context: self.context)
                         }
                     },
                     dismissAction: { [weak self] notice in
