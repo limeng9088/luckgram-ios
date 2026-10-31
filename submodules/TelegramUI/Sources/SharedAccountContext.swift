@@ -1101,6 +1101,9 @@ public final class SharedAccountContextImpl: SharedAccountContext {
         
         self.updateNotificationTokensRegistration()
         
+        // Luckgram: legal reminder before call recording is switched on anywhere (#58).
+        luckgramInstallCallRecordingLegalGuard(sharedContext: self)
+        
         if applicationBindings.isMainApp {
             self.widgetDataContext = WidgetDataContext(basePath: self.basePath, inForeground: self.applicationBindings.applicationInForeground, activeAccounts: self.activeAccountContexts
             |> map { _, accounts, _ in

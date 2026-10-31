@@ -21,11 +21,34 @@ public enum LuckgramCallRecordingSettings {
     /// Post a transcript + summary reply via the AI gateway. Default on.
     public static let aiTranscriptKey = "call_recording_ai_transcript"
     
+    /// Set when the legal reminder was acknowledged for the current "on" period; cleared on
+    /// switch-off so every enable shows it again (spec 04 §1, #58).
+    public static let legalAckKey = "call_recording_legal_ack"
+    
     /// Local switch AND remote config (`features.call_recording`), via 00's LuckgramSettings
-    /// (limeng9088/luckgram-specs#43, #54). Default off (registry).
+    /// (limeng9088/luckgram-specs#43, #54), AND the legal reminder acknowledged — however the
+    /// switch was flipped. Default off (registry).
     public static var isEnabled: Bool {
-        get { LuckgramSettings.shared.isEnabled(enabledKey) }
-        set { LuckgramSettings.shared.setEnabled(enabledKey, newValue) }
+        get { LuckgramSettings.shared.isEnabled(enabledKey) && isLegalAcknowledged }
+        set {
+            if newValue {
+                // Acknowledge first, so the guard sees an acknowledged switch-on.
+                LuckgramSettings.shared.setBool(legalAckKey, true)
+                LuckgramSettings.shared.setEnabled(enabledKey, true)
+            } else {
+                LuckgramSettings.shared.setEnabled(enabledKey, false)
+                LuckgramSettings.shared.setBool(legalAckKey, false)
+            }
+        }
+    }
+    
+    static var isLegalAcknowledged: Bool {
+        return LuckgramSettings.shared.bool(legalAckKey, default: false)
+    }
+    
+    /// Raw switch value as written by the Luckgram features page.
+    static var isSwitchOn: Bool {
+        return LuckgramSettings.shared.bool(enabledKey, default: false)
     }
     
     public static var isAutoRecord: Bool {
