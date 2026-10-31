@@ -43,6 +43,19 @@ public final class LuckgramAIChatController: UIViewController, LuckgramAIChatHos
     }
 
     private static func present(context: AccountContext, conversation: LuckgramAIConversation, prefill: String?) {
+        // The page is a native full-screen modal: Telegram alerts shown in the window would open
+        // behind it, so the one-time AI consent (spec 00) is asked before the page opens.
+        if !LuckgramAI.shared.hasConsent {
+            let _ = (LuckgramAI.shared.requestConsent(context: context, present: { c in
+                context.sharedContext.mainWindow?.present(c, on: .root)
+            })
+            |> deliverOnMainQueue).startStandalone(next: { granted in
+                if granted {
+                    self.present(context: context, conversation: conversation, prefill: prefill)
+                }
+            })
+            return
+        }
         let controller = LuckgramAIChatController(context: context, conversation: conversation, prefill: prefill)
         let navigation = UINavigationController(rootViewController: controller)
         navigation.modalPresentationStyle = .fullScreen
