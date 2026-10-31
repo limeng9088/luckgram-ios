@@ -29,7 +29,7 @@ final class LuckgramProfileInfoLogicTests: XCTestCase {
         let t = try bundledTable()
         XCTAssertGreaterThanOrEqual(t.count, 45)
         XCTAssertEqual(t[0].monthIndex / 12, 2013)
-        XCTAssertGreaterThanOrEqual(t[t.count - 1].monthIndex / 12, 2025)
+        XCTAssertGreaterThanOrEqual(t[t.count - 1].monthIndex / 12, 2026)
         for i in 1 ..< t.count {
             XCTAssertGreaterThan(t[i].id, t[i - 1].id)
             XCTAssertLessThanOrEqual(t[i].monthIndex - t[i - 1].monthIndex, 3)
@@ -40,7 +40,7 @@ final class LuckgramProfileInfoLogicTests: XCTestCase {
         let t = try bundledTable()
         let known: [(Int64, Int, Int)] = [
             (101323197, 2015, 3), (369669043, 2017, 3), (805158066, 2019, 7), (1974255900, 2021, 10),
-            (5144324763, 2022, 4), (6872061796, 2024, 5), (8325327280, 2025, 10),
+            (5144324763, 2022, 4), (6872061796, 2024, 5), (8325327280, 2025, 10), (8559682245, 2025, 11),
         ]
         for (id, year, month) in known {
             guard case let .month(y, m)? = LuckgramProfileInfoLogic.estimate(t, userId: id) else {
