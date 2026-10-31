@@ -154,6 +154,7 @@ public enum LuckgramAIWritingFeatures {
 
         self.registerDebugDemo()
         // ---- other features register here (20 AI reply, 24 AI post) ----
+        LuckgramAIWriting.register(LuckgramAIReply.menuItem)
     }
 
     private static func effect(_ effect: String, _ title: (String, String), _ icon: String, _ order: Int, _ done: (String, String)) {
@@ -165,7 +166,7 @@ public enum LuckgramAIWritingFeatures {
     /// spec 21 验收：a test item placed first and shown only in channels, opening a test panel that
     /// writes into the field with undo. Only with the debug tools on.
     private static func registerDebugDemo() {
-        LuckgramAIWriting.register(.init(id: "debug_panel", title: ("测试面板", "Test panel"), icon: "ladybug", order: 0, allowsEmptyText: true, isVisible: { peer in
+        LuckgramAIWriting.register(.init(id: "debug_panel", title: ("测试面板", "Test panel"), icon: "ladybug", order: -1, allowsEmptyText: true, isVisible: { peer in
             return LuckgramSettings.shared.isDebugToolsVisible && LuckgramAIWriting.isBroadcastChannel(peer)
         }, action: { host in
             let panel = UIStackView()

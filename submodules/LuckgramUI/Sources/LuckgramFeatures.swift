@@ -26,6 +26,8 @@ public enum LuckgramFeatures {
     public static let dictationAITidy = "dictation_ai_tidy"
     /// spec 21
     public static let aiWriting = "ai_writing"
+    /// spec 20
+    public static let aiReply = "ai_reply"
 
     public static let all: [LuckgramFeature] = {
         var list: [LuckgramFeature] = []
@@ -70,6 +72,9 @@ public enum LuckgramFeatures {
         add(.toggle(LuckgramFeatures.aiWriting, group: .ai, default: true,
             title: ("AI 写作", "AI writing"),
             description: ("输入框里的 ✦ 按钮：润色、更正式、更友好、更简短、修正语法", "The ✦ button in the message field: polish, formal, friendly, shorter, grammar")))
+        add(.toggle(LuckgramFeatures.aiReply, group: .ai, default: true,
+            title: ("AI 回复", "AI reply"),
+            description: ("✦ 菜单里的「帮我回复」：根据对话和草稿给出 3 条候选", "\"Help me reply\" in the ✦ menu: 3 suggestions from the chat and your draft")))
         add(.toggle(LuckgramFeatures.freeTranscribe, group: .ai, default: true,
             title: ("免费语音转文字", "Free voice-to-text"),
             description: ("不需要会员，把语音消息和圆形视频转成文字", "Transcribe voice and video messages without Premium")))
