@@ -137,6 +137,8 @@ swift_library(
         "//submodules/TelegramUI/Components/AlertComponent",
         "//submodules/TelegramUI/Components/AlertComponent/AlertInputFieldComponent",
         "//submodules/TelegramUI/Components/GlassControls",
+        "//submodules/OpusBinding:OpusBinding",
+        "//submodules/LuckgramUI:LuckgramUI",
     ],
     visibility = [
         "//visibility:public",

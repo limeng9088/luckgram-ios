@@ -51,6 +51,16 @@
 
 @end
 
+/// Luckgram (call recording): receives copies of the PCM16 blocks that pass through the shared
+/// call audio device — microphone input (`isPlayout == false`) and what is about to be played
+/// (`isPlayout == true`). Invoked on the real-time audio thread, so the sink must only copy and
+/// hand off. A nil sink (the default) disables the tap.
+@interface OngoingCallAudioRecordingTap : NSObject
+
++ (void)setSink:(void (^ _Nullable)(bool isPlayout, NSData * _Nonnull pcm, int32_t sampleRate, int32_t channels))sink;
+
+@end
+
 @interface SharedCallAudioDevice : NSObject
 
 - (instancetype _Nonnull)initWithDisableRecording:(bool)disableRecording enableSystemMute:(bool)enableSystemMute;
