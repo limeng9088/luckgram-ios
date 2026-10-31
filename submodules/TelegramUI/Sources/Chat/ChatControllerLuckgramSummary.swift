@@ -5,6 +5,7 @@ import Display
 import TelegramCore
 import AccountContext
 import LuckgramUI
+import ChatControllerInteraction
 
 /// Luckgram: chat summary (feature 19) — the "N 条未读消息 · 总结" bar and the summary card.
 extension ChatControllerImpl {
