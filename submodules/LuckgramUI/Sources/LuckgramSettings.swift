@@ -215,6 +215,9 @@ public final class LuckgramSettings {
 
     /// Called when an account is removed from the device (logout or account deletion).
     public func accountRemoved(accountId: Int64, noAccountsLeft: Bool) {
+        Queue.mainQueue().async {
+            LuckgramAIStore.accountRemoved(accountId: accountId)
+        }
         if noAccountsLeft {
             for key in self.defaults.dictionaryRepresentation().keys where key != LuckgramSettings.installMarkerKey {
                 self.defaults.removeObject(forKey: key)
