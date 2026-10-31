@@ -21,34 +21,12 @@ public enum LuckgramCallRecordingSettings {
     /// Post a transcript + summary reply via the AI gateway. Default on.
     public static let aiTranscriptKey = "call_recording_ai_transcript"
     
-    /// Set when the legal reminder was acknowledged for the current "on" period; cleared on
-    /// switch-off so every enable shows it again (spec 04 §1, #58).
-    public static let legalAckKey = "call_recording_legal_ack"
-    
     /// Local switch AND remote config (`features.call_recording`), via 00's LuckgramSettings
-    /// (limeng9088/luckgram-specs#43, #54), AND the legal reminder acknowledged — however the
-    /// switch was flipped. Default off (registry).
+    /// (limeng9088/luckgram-specs#43, #54). Default off (registry). Turn it on through
+    /// `luckgramRequestEnableCallRecording` / the registry's confirmEnable so the reminder shows.
     public static var isEnabled: Bool {
-        get { LuckgramSettings.shared.isEnabled(enabledKey) && isLegalAcknowledged }
-        set {
-            if newValue {
-                // Acknowledge first, so the guard sees an acknowledged switch-on.
-                LuckgramSettings.shared.setBool(legalAckKey, true)
-                LuckgramSettings.shared.setEnabled(enabledKey, true)
-            } else {
-                LuckgramSettings.shared.setEnabled(enabledKey, false)
-                LuckgramSettings.shared.setBool(legalAckKey, false)
-            }
-        }
-    }
-    
-    static var isLegalAcknowledged: Bool {
-        return LuckgramSettings.shared.bool(legalAckKey, default: false)
-    }
-    
-    /// Raw switch value as written by the Luckgram features page.
-    static var isSwitchOn: Bool {
-        return LuckgramSettings.shared.bool(enabledKey, default: false)
+        get { LuckgramSettings.shared.isEnabled(enabledKey) }
+        set { LuckgramSettings.shared.setEnabled(enabledKey, newValue) }
     }
     
     public static var isAutoRecord: Bool {
@@ -91,7 +69,7 @@ public enum LuckgramCallRecordingSettings {
     }
 }
 
-/// Luckgram: the AI calls call recording needs (spec 04 §4: /v1/transcribe, then /v1/chat
+/// Luckgram: the AI calls call recording needs (spec 04 §4: /v1/ai/transcribe, then /v1/ai/chat
 /// task=summary). All AI traffic goes through the shared LuckgramAI client of feature 00, which
 /// registers an implementation in `LuckgramCallRecordingAIRegistry`; until it does, recordings
 /// are saved as audio only.
@@ -100,14 +78,14 @@ public protocol LuckgramCallRecordingAI: AnyObject {
     var hasConsent: Bool { get }
     /// Shows the shared consent dialog if needed; `completion(true)` when agreed. Main thread.
     func requestConsent(context: AccountContext, completion: @escaping (Bool) -> Void)
-    /// POST /v1/transcribe. The size limit is the client's business: it splits the audio by
+    /// POST /v1/ai/transcribe. The size limit is the client's business: it splits the audio by
     /// `ai.transcribe_max_mb` from /v1/config (limeng9088/luckgram-specs#53). Completion on the
     /// main thread with (text, error message); both set = partial transcript (a later segment
     /// failed, e.g. daily quota) whose finished part must be kept.
     func transcribe(audio: Data, mimeType: String, completion: @escaping (String?, String?) -> Void)
     /// `ai.max_input_chars` from /v1/config: the longest text `summarize` accepts.
     var maxSummaryInputChars: Int { get }
-    /// POST /v1/chat with task=summary. Completion on the main thread with 3–6 bullet points.
+    /// POST /v1/ai/chat with task=summary. Completion on the main thread with 3–6 bullet points.
     func summarize(transcript: String, completion: @escaping (String?, String?) -> Void)
 }
 

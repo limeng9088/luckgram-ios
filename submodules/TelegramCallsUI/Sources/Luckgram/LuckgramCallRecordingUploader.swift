@@ -186,20 +186,22 @@ final class LuckgramCallRecordingUploader {
     
     /// Same as Android's CallRecText.limit: cut to `maxChars`, at a line end or space in the last
     /// fifth when possible. `maxChars <= 0` = no limit.
+    /// The server counts ai.max_input_chars in Unicode code points, so count scalars (not
+    /// grapheme clusters, which would undercount emoji / combining marks and still get a 413).
     static func limit(_ text: String, maxChars: Int) -> String {
-        if maxChars <= 0 || text.count <= maxChars {
+        let scalars = text.unicodeScalars
+        if maxChars <= 0 || scalars.count <= maxChars {
             return text
         }
-        let end = text.index(text.startIndex, offsetBy: maxChars)
-        let floor = text.index(text.startIndex, offsetBy: maxChars - maxChars / 5)
-        let window = text[text.startIndex ..< end]
+        let end = scalars.index(scalars.startIndex, offsetBy: maxChars)
+        let floor = scalars.index(scalars.startIndex, offsetBy: maxChars - maxChars / 5)
         var cut = end
-        if let nl = window.lastIndex(of: "\n"), nl >= floor {
+        if let nl = scalars[scalars.startIndex ..< end].lastIndex(of: "\n"), nl >= floor {
             cut = nl
-        } else if let sp = window.lastIndex(of: " "), sp >= floor {
+        } else if let sp = scalars[scalars.startIndex ..< end].lastIndex(of: " "), sp >= floor {
             cut = sp
         }
-        return String(text[text.startIndex ..< cut]).trimmingCharacters(in: .whitespacesAndNewlines)
+        return String(String.UnicodeScalarView(scalars[scalars.startIndex ..< cut])).trimmingCharacters(in: .whitespacesAndNewlines)
     }
     
     private func finishAi(_ reply: String) {

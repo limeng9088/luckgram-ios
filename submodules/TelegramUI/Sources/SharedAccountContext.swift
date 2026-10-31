@@ -395,6 +395,9 @@ public final class SharedAccountContextImpl: SharedAccountContext {
         // Luckgram: the call recording settings page lives in TelegramCallsUI, which LuckgramUI can't import.
         let _ = LuckgramFeatures.find("call_recording")?.subpage { context in
             return luckgramCallRecordingSettingsController(context: context)
+        }.confirmEnable { context, present, done in
+            // Legal reminder before it is switched on from the Luckgram features page (spec 04 §1, #58).
+            luckgramConfirmEnableCallRecording(context: context, present: present, done: done)
         }
         self._automaticMediaDownloadSettings.set(.single(initialPresentationDataAndSettings.automaticMediaDownloadSettings)
         |> then(accountManager.sharedData(keys: [SharedDataKeys.autodownloadSettings, ApplicationSpecificSharedDataKeys.automaticMediaDownloadSettings])
@@ -1100,9 +1103,6 @@ public final class SharedAccountContextImpl: SharedAccountContext {
         let _ = managedCleanupAccounts(networkArguments: networkArguments, accountManager: self.accountManager, rootPath: rootPath, auxiliaryMethods: makeTelegramAccountAuxiliaryMethods(uploadInBackground: appDelegate?.uploadInBackround), encryptionParameters: encryptionParameters).start()
         
         self.updateNotificationTokensRegistration()
-        
-        // Luckgram: legal reminder before call recording is switched on anywhere (#58).
-        luckgramInstallCallRecordingLegalGuard(sharedContext: self)
         
         if applicationBindings.isMainApp {
             self.widgetDataContext = WidgetDataContext(basePath: self.basePath, inForeground: self.applicationBindings.applicationInForeground, activeAccounts: self.activeAccountContexts
