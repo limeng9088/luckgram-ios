@@ -327,7 +327,7 @@ public final class ChatListContainerNode: ASDisplayNode, ASGestureRecognizerDele
             }
             self.endedInteractiveDragging?(self.currentItemNode)
             // Luckgram 12 (hidden chats): pulling the chat list down past a threshold opens the hidden chats.
-            if case .chatList(groupId: .root) = self.location, case let .known(offset) = self.currentItemNode.listNode.visibleContentOffset(), offset < -140.0 {
+            if case .chatList(groupId: .root) = self.location, case let .known(offset) = self.currentItemNode.visibleContentOffset(), offset < -140.0 {
                 LuckgramHiddenChats.openFromPull(context: self.context)
             }
         }

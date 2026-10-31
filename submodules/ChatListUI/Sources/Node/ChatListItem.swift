@@ -804,6 +804,10 @@ private func revealOptions(strings: PresentationStrings, theme: PresentationThem
             }
         }
     }
+    // Luckgram 12 (hidden chats): swipe to hide a chat from the list.
+    if !isEditing, case .chatList = location, peerId != accountPeerId, LuckgramHiddenChats.isEnabled {
+        options.append(ItemListRevealOption(key: RevealOptionKey.luckgramHide.rawValue, title: LuckgramHiddenChats.Strings.hide, icon: hideIcon, color: theme.list.itemDisclosureActions.inactive.fillColor, iconColor: theme.list.itemDisclosureActions.neutral1.foregroundColor, textColor: theme.chatList.dateTextColor))
+    }
     return options
 }
 
@@ -815,10 +819,6 @@ private func groupReferenceRevealOptions(strings: PresentationStrings, theme: Pr
         } else {
             options.append(ItemListRevealOption(key: RevealOptionKey.hide.rawValue, title: strings.ChatList_HideAction, icon: hideIcon, color: theme.list.itemDisclosureActions.inactive.fillColor, iconColor: theme.list.itemDisclosureActions.neutral1.foregroundColor, textColor: theme.chatList.dateTextColor))
         }
-    }
-    // Luckgram 12 (hidden chats): swipe to hide a chat from the list.
-    if !isEditing, case .chatList = location, peerId != accountPeerId, LuckgramHiddenChats.isEnabled {
-        options.append(ItemListRevealOption(key: RevealOptionKey.luckgramHide.rawValue, title: LuckgramHiddenChats.Strings.hide, icon: hideIcon, color: theme.list.itemDisclosureActions.inactive.fillColor, iconColor: theme.list.itemDisclosureActions.neutral1.foregroundColor, textColor: theme.chatList.dateTextColor))
     }
     return options
 }
