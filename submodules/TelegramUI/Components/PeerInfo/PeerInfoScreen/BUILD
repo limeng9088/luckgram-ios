@@ -126,6 +126,7 @@ swift_library(
         "//submodules/TooltipUI",
         "//submodules/TranslateUI",
         "//submodules/UndoUI",
+        "//submodules/LuckgramUI",
         "//submodules/MediaPlayer:UniversalMediaPlayer",
         "//submodules/WebUI",
         "//submodules/WalletContext",
