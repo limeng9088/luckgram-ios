@@ -1,4 +1,5 @@
 import Foundation
+import LuckgramUI
 import UIKit
 import AsyncDisplayKit
 import Postbox
@@ -370,6 +371,8 @@ class ChatControllerNode: ASDisplayNode, ASScrollViewDelegate {
     var setupSendActionOnViewUpdate: (@escaping () -> Void, Int64?) -> Void = { _, _ in }
     var requestLayout: (ContainedViewLayoutTransition) -> Void = { _ in }
     private var luckgramUserNotesDisposable: Disposable?
+    /// Luckgram: chat summary (feature 19), set up by ChatController.
+    var luckgramSummary: LuckgramChatSummaryModel?
     var dismissAsOverlay: () -> Void = { }
     
     var interfaceInteraction: ChatPanelInterfaceInteraction?
@@ -1781,6 +1784,15 @@ class ChatControllerNode: ASDisplayNode, ASScrollViewDelegate {
                     }
                 )))
             )
+        }
+        
+        // Luckgram: chat summary bar / card (feature 19)
+        if !hideTopPanels, self.chatPresentationInterfaceState.search == nil, let summary = self.luckgramSummary, summary.phase != .hidden {
+            headerPanels.append(HeaderPanelContainerComponent.Panel(
+                key: "luckgramSummary",
+                orderIndex: 6,
+                component: AnyComponent(LuckgramChatSummaryPanelComponent(model: summary, theme: self.chatPresentationInterfaceState.theme))
+            ))
         }
         
         var floatingTopicsPanelInsets = UIEdgeInsets()
