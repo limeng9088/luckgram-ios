@@ -224,6 +224,7 @@ public final class LuckgramSettings {
     public func accountRemoved(accountId: Int64, noAccountsLeft: Bool) {
         // 25: delete this account's nearby card while the device token is still there.
         LuckgramNearby.onLogout(accountId: accountId)
+        LuckgramSquare.clearCache() // 26: forget the cached link state and Square profile
         Queue.mainQueue().async {
             LuckgramAIStore.accountRemoved(accountId: accountId)
         }

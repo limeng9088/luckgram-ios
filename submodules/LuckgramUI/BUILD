@@ -27,6 +27,7 @@ swift_library(
         "//submodules/LegacyMediaPickerUI:LegacyMediaPickerUI",
         "//submodules/OverlayStatusController:OverlayStatusController",
         "//submodules/ComponentFlow:ComponentFlow",
+        "//submodules/TextFormat:TextFormat",
     ],
     visibility = [
         "//visibility:public",
