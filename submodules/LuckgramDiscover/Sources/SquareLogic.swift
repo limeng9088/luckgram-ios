@@ -409,8 +409,9 @@ public enum SquareLogic {
         return j
     }
 
-    public static func uploadsBody(count: Int, contentType: String) -> [String: Any] {
-        return ["count": count, "content_type": contentType]
+    /// S11: every slot declares its byte size; the PUT's Content-Length must match (S3 checks it).
+    public static func uploadsBody(contentType: String, sizes: [Int]) -> [String: Any] {
+        return ["count": sizes.count, "content_type": contentType, "sizes": sizes]
     }
 
     private static let component: CharacterSet = {

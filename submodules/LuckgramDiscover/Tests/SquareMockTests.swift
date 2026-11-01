@@ -12,7 +12,7 @@ final class SquareMockTests: XCTestCase {
     }
 
     private func firstUpload(_ m: DiscoverMock, _ contentType: String) -> (key: String, url: String) {
-        let ups = m.handle(method: "POST", path: "/v1/square/uploads", query: "", body: b("{\"count\":1,\"content_type\":\"\(contentType)\"}"))
+        let ups = m.handle(method: "POST", path: "/v1/square/uploads", query: "", body: b("{\"count\":1,\"content_type\":\"\(contentType)\",\"sizes\":[30]}"))
         let u = (ups?.body["uploads"] as? [[String: Any]])?.first ?? [:]
         return (u["key"] as? String ?? "", u["url"] as? String ?? "")
     }
@@ -33,7 +33,7 @@ final class SquareMockTests: XCTestCase {
         m.setLinked(true)
         XCTAssertEqual(m.handle(method: "POST", path: "/v1/square/posts", query: "", body: b("{\"text\":\"hi\"}"))?.status, 403)
         XCTAssertEqual(m.handle(method: "PUT", path: "/v1/square/profile", query: "", body: b("{\"display_name\":\"Me\",\"bio\":\"\",\"username\":\"\"}"))?.status, 200)
-        let ups = m.handle(method: "POST", path: "/v1/square/uploads", query: "", body: b("{\"count\":2,\"content_type\":\"image/jpeg\"}"))
+        let ups = m.handle(method: "POST", path: "/v1/square/uploads", query: "", body: b("{\"count\":2,\"content_type\":\"image/jpeg\",\"sizes\":[10,20]}"))
         let uploads = ups?.body["uploads"] as? [[String: Any]] ?? []
         XCTAssertEqual(uploads.count, 2)
         let key = uploads[0]["key"] as? String ?? ""
@@ -51,7 +51,8 @@ final class SquareMockTests: XCTestCase {
         // a video post: one MP4 plus its cover, never together with images
         let v = firstUpload(m, "video/mp4")
         let cover = firstUpload(m, "image/jpeg")
-        XCTAssertEqual(m.handle(method: "POST", path: "/v1/square/uploads", query: "", body: b("{\"count\":1,\"content_type\":\"video/quicktime\"}"))?.status, 400)
+        XCTAssertEqual(m.handle(method: "POST", path: "/v1/square/uploads", query: "", body: b("{\"count\":1,\"content_type\":\"video/quicktime\",\"sizes\":[1]}"))?.status, 400)
+        XCTAssertEqual(m.handle(method: "POST", path: "/v1/square/uploads", query: "", body: b("{\"count\":2,\"content_type\":\"image/jpeg\",\"sizes\":[10]}"))?.status, 400) // sizes must match count
         XCTAssertTrue(v.key.hasSuffix(".mp4"))
         XCTAssertTrue(m.acceptUpload(path: DiscoverMock.uploadPrefix + v.key, body: b("mp4")))
         XCTAssertTrue(m.acceptUpload(path: DiscoverMock.uploadPrefix + cover.key, body: b("jpg")))

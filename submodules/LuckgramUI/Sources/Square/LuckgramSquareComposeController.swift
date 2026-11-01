@@ -404,10 +404,10 @@ public func luckgramSquareComposeController(context: AccountContext) -> ViewCont
         }))
     }
 
-    func requestUploads(count: Int, contentType: String, then: @escaping ([SquareLogic.Upload]) -> Void) {
-        requests.add(LuckgramAI.shared.requestJSON(method: "POST", path: "/v1/square/uploads", body: SquareLogic.uploadsBody(count: count, contentType: contentType)).start(next: { j in
+    func requestUploads(contentType: String, sizes: [Int], then: @escaping ([SquareLogic.Upload]) -> Void) {
+        requests.add(LuckgramAI.shared.requestJSON(method: "POST", path: "/v1/square/uploads", body: SquareLogic.uploadsBody(contentType: contentType, sizes: sizes)).start(next: { j in
             let uploads = SquareLogic.parseUploads(j)
-            if uploads.count < count {
+            if uploads.count < sizes.count {
                 fail(LuckgramAIError(code: LuckgramAIError.upstreamUnavailable))
                 return
             }
@@ -434,8 +434,9 @@ public func luckgramSquareComposeController(context: AccountContext) -> ViewCont
                 refresh()
                 // One slot for the MP4, one for its cover; the server only accepts a video post with both.
                 // The MP4 is streamed from disk; only the cover is held in memory.
-                requestUploads(count: 1, contentType: SquareLogic.videoContentType, then: { videoUploads in
-                    requestUploads(count: 1, contentType: SquareLogic.imageContentType, then: { coverUploads in
+                let videoBytes = ((try? FileManager.default.attributesOfItem(atPath: video.fileUrl.path))?[.size] as? NSNumber)?.intValue ?? 0
+                requestUploads(contentType: SquareLogic.videoContentType, sizes: [videoBytes], then: { videoUploads in
+                    requestUploads(contentType: SquareLogic.imageContentType, sizes: [video.coverJpeg.count], then: { coverUploads in
                         requests.add((LuckgramAI.shared.putPresigned(url: videoUploads[0].url, contentType: SquareLogic.videoContentType, fileUrl: video.fileUrl)
                         |> deliverOnMainQueue).start(error: { error in
                             fail(error)
@@ -449,7 +450,7 @@ public func luckgramSquareComposeController(context: AccountContext) -> ViewCont
             } else if state.images.isEmpty {
                 createPost(SquareLogic.postBody(text: state.text, imageKeys: []))
             } else {
-                requestUploads(count: state.images.count, contentType: SquareLogic.imageContentType, then: { uploads in
+                requestUploads(contentType: SquareLogic.imageContentType, sizes: state.images.map { $0.jpeg.count }, then: { uploads in
                     uploadAll(uploads, payloads: state.images.map { ($0.jpeg, SquareLogic.imageContentType) }, done: { keys in
                         createPost(SquareLogic.postBody(text: state.text, imageKeys: keys))
                     })
