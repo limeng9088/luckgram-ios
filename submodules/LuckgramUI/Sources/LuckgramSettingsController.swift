@@ -205,7 +205,7 @@ private enum LuckgramSettingsEntry: ItemListNodeEntry {
     }
 }
 
-private let pageGroups: [LuckgramFeature.Group] = [.accountPrivacy, .messagesLanguage, .mediaCallsStorage, .profileOrganize, .ai]
+private let pageGroups: [LuckgramFeature.Group] = [.accountPrivacy, .messagesLanguage, .mediaCallsStorage, .profileOrganize, .discover, .ai]
 
 private func luckgramSettingsEntries() -> [LuckgramSettingsEntry] {
     var entries: [LuckgramSettingsEntry] = []

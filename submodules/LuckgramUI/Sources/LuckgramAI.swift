@@ -24,6 +24,8 @@ public struct LuckgramAIError: Error, Equatable, CustomStringConvertible {
 
     public let code: String
     public let httpStatus: Int
+    /// `error.retry_after_seconds` on 429 responses (S10/S11); 0 if absent.
+    public var retryAfterSeconds: Int = 0
 
     public init(code: String, httpStatus: Int = 0) {
         self.code = code
@@ -213,6 +215,38 @@ public final class LuckgramAI {
     }
 
     // MARK: - Public API
+
+    /// Fire-and-forget request with the device token held right now (25 nearby: delete my card on
+    /// logout). Token, URL and transport are captured before returning, so a `resetLocalState()`
+    /// right after (logout of the last account) can't make it register a new device instead.
+    public func sendWithCurrentToken(method: String, path: String) {
+        let useMock = self.isUsingMock
+        var current: String?
+        self.queue.sync {
+            if let token = self.token, self.tokenIsMock == useMock {
+                current = token
+            }
+        }
+        if current == nil && !useMock {
+            current = LuckgramKeychain.get(account: LuckgramKeychain.deviceTokenAccount)
+        }
+        guard let token = current, let url = self.url(path) else {
+            return
+        }
+        var request = URLRequest(url: url)
+        request.httpMethod = method
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Accept")
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.httpCookieStorage = nil
+        configuration.urlCache = nil
+        if useMock {
+            configuration.protocolClasses = [LuckgramAIMockURLProtocol.self]
+        }
+        let session = URLSession(configuration: configuration)
+        session.dataTask(with: request).resume()
+        session.finishTasksAndInvalidate()
+    }
 
     /// - Parameter effect: only for `.writing`: one of `polish, formal, friendly, shorter, grammar,
     ///   dictation` (server prompts/writing-*.md), or nil for the default.
@@ -599,7 +633,9 @@ public final class LuckgramAI {
 
     static func error(status: Int, data: Data) -> LuckgramAIError {
         if let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any], let error = object["error"] as? [String: Any], let code = error["code"] as? String, !code.isEmpty {
-            return LuckgramAIError(code: code == "unauthorized" ? LuckgramAIError.invalidToken : code, httpStatus: status)
+            var result = LuckgramAIError(code: code == "unauthorized" ? LuckgramAIError.invalidToken : code, httpStatus: status)
+            result.retryAfterSeconds = max(0, (error["retry_after_seconds"] as? NSNumber)?.intValue ?? 0)
+            return result
         }
         let code: String
         switch status {

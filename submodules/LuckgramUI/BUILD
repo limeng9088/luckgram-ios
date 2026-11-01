@@ -22,6 +22,7 @@ swift_library(
         "//submodules/AccountUtils:AccountUtils",
         "//submodules/PromptUI:PromptUI",
         "//submodules/LuckgramAccountsStore:LuckgramAccountsStore",
+        "//submodules/LuckgramDiscover:LuckgramDiscover",
         "//submodules/PasscodeCore:PasscodeCore",
         "//submodules/LegacyMediaPickerUI:LegacyMediaPickerUI",
         "//submodules/OverlayStatusController:OverlayStatusController",

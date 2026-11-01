@@ -1,5 +1,6 @@
 import Foundation
 import LuckgramAccountsStore
+import LuckgramDiscover
 
 /// The Luckgram feature registry. Adding a feature = adding one `add(...)` line here; the
 /// "Settings → Luckgram Features" page is generated from this list (rows keep the order of the
@@ -111,6 +112,11 @@ public enum LuckgramFeatures {
             title: ("隐藏聊天", "Hidden chats"),
             description: ("把聊天从列表里藏起来，下拉列表找回", "Hide chats from the list; pull down to find them"))
             .subpage { context in luckgramHiddenChatsSettingsController(context: context) })
+
+        // ---- 发现 / Discover
+        add(.toggle(NearbyLogic.featureKey, group: .discover, default: true,
+            title: ("附近的人", "People Nearby"),
+            description: ("「联系人」顶部的入口：找到附近同样开启的 Luckgram 用户", "Entry at the top of Contacts: find Luckgram users nearby who turned it on")))
 
         // ---- AI
         add(.toggle(LuckgramFeatures.aiAssistant, group: .ai, default: true,

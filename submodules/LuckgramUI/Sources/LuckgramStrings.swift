@@ -100,6 +100,8 @@ public enum LuckgramStrings {
             return pick("媒体、通话与存储", "Media, Calls & Storage")
         case .profileOrganize:
             return pick("资料与整理", "Profiles & Organization")
+        case .discover:
+            return pick("发现", "Discover")
         case .ai:
             return "AI"
         case .debug:
