@@ -23,10 +23,9 @@ final class NearbyLogicTests: XCTestCase {
     }
 
     func testPreconditions() {
-        XCTAssertEqual(NearbyLogic.precondition(linked: false, username: "alice"), .needLink)
-        XCTAssertEqual(NearbyLogic.precondition(linked: true, username: nil), .needUsername)
-        XCTAssertEqual(NearbyLogic.precondition(linked: true, username: ""), .needUsername)
-        XCTAssertEqual(NearbyLogic.precondition(linked: true, username: "alice"), .ready)
+        XCTAssertEqual(NearbyLogic.precondition(username: nil), .needUsername)
+        XCTAssertEqual(NearbyLogic.precondition(username: ""), .needUsername)
+        XCTAssertEqual(NearbyLogic.precondition(username: "alice"), .ready)
     }
 
     func testParsesListDropsSelfAndBadItems() {
@@ -85,6 +84,19 @@ final class NearbyLogicTests: XCTestCase {
         XCTAssertEqual(en.bucket("1km"), "Within 1 km")
         XCTAssertTrue(zh.rateLimited(61).contains("2 分钟"))
         XCTAssertTrue(en.rateLimited(0).contains("1 min"))
+    }
+}
+
+final class NearbyTextsTests: XCTestCase {
+    /// Spec 25 item 2: nothing about linking an account appears in the UI.
+    func testNoLinkWording() {
+        for zh in [true, false] {
+            let tx = NearbyLogic.Texts(zh: zh)
+            let all = [tx.title, tx.needUsernameTitle, tx.needUsernameText, tx.goUsername, tx.introTitle, tx.introText, tx.visibleOffInfo, tx.connecting, tx.connectFailed, tx.banned, tx.disabled, tx.underReview, tx.empty, tx.locationFailed]
+            for v in all {
+                XCTAssertFalse(v.contains("绑定") || v.lowercased().contains("link"), v)
+            }
+        }
     }
 }
 

@@ -80,6 +80,7 @@ public enum LuckgramNearby {
     /// card now if it carries this account's username.
     public static func onLogout(accountId: Int64) {
         LuckgramBlocks.clearLocal()
+        LuckgramSilentLink.clearCache()
         guard isVisible else {
             return
         }
@@ -93,6 +94,7 @@ public enum LuckgramNearby {
     /// S6 unlink: the server deletes the card itself; only forget it here.
     public static func onUnlinked() {
         LuckgramBlocks.clearLocal()
+        LuckgramSilentLink.clearCache()
         clearLocal()
     }
 

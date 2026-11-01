@@ -104,7 +104,10 @@ public func luckgramBlockedUsersController(context: AccountContext) -> ViewContr
         if error.code == LuckgramAIError.cancelled {
             return
         }
-        toast(error.code == "not_linked" ? tx.notLinked : error.localizedMessage)
+        if error.code == "not_linked" {
+            LuckgramSilentLink.clearCache()
+        }
+        toast(error.code == "not_linked" ? tx.connectFailed : error.localizedMessage)
     }
 
     func label(_ id: String) -> String {
@@ -115,6 +118,20 @@ public func luckgramBlockedUsersController(context: AccountContext) -> ViewContr
         state.loading = true
         state.failed = false
         refresh()
+        // The list needs the silent S6 link (shared with People Nearby / Square).
+        LuckgramSilentLink.ensure(context: context, completion: { ok in
+            if ok {
+                fetch()
+            } else {
+                state.loading = false
+                state.failed = true
+                refresh()
+                toast(tx.connectFailed)
+            }
+        })
+    }
+
+    func fetch() {
         listRequest.set(LuckgramBlocks.list(cursor: state.nextCursor).start(next: { page in
             for id in page.ids where !state.ids.contains(id) {
                 state.ids.append(id)

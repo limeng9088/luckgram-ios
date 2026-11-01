@@ -52,6 +52,26 @@ public enum LuckgramAccountLogic {
     }
 
     /// Keep polling while the request is pending and the nonce has not expired.
+    /// Bot username from the `t.me/<bot>?start=<nonce>` link, or nil (silent link, 25/26).
+    public static func botUsername(_ link: String?) -> String? {
+        guard let link, let range = link.range(of: "t.me/") else {
+            return nil
+        }
+        var s = String(link[range.upperBound...])
+        if let end = s.firstIndex(where: { $0 == "?" || $0 == "/" || $0 == "#" }) {
+            s = String(s[..<end])
+        }
+        guard !s.isEmpty, s.range(of: "^[A-Za-z0-9_]{4,32}$", options: .regularExpression) != nil else {
+            return nil
+        }
+        return s
+    }
+
+    /// The message the app sends to the bot on the user's behalf.
+    public static func startCommand(_ nonce: String) -> String {
+        return "/start " + nonce
+    }
+
     public static func shouldPoll(request: String?, now: Date, expiresAt: Date) -> Bool {
         return (request == nil || request == "pending") && now < expiresAt
     }

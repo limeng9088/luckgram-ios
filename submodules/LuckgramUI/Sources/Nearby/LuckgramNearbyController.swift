@@ -104,7 +104,13 @@ private enum NearbyEntry: ItemListNodeEntry {
 }
 
 private final class NearbyState {
+    /// Own peer (username, name, photo) loaded.
+    var accountLoaded = false
+    /// Silent S6 link: nil while connecting (or not started), true once linked, false if it failed.
     var linked: Bool?
+    var connecting = false
+    /// One automatic re-link per page if the server answers not_linked.
+    var relinkTried = false
     var username: String?
     var displayName = ""
     var avatarPath: String?
@@ -118,7 +124,7 @@ private final class NearbyState {
     var avatars: [String: UIImage] = [:]
 }
 
-private let idGoLink = 1, idGoUsername = 2, idIntroOk = 3, idOpenSettings = 4, idRenew = 6, idBio = 7, idRefresh = 9, idBlocked = 10
+private let idRetryConnect = 1, idGoUsername = 2, idIntroOk = 3, idOpenSettings = 4, idRenew = 6, idBio = 7, idRefresh = 9, idBlocked = 10
 private let idVisible = 5, idPhoto = 8
 private let idPerson = 1000
 
@@ -170,14 +176,14 @@ public func luckgramNearbyController(context: AccountContext) -> ViewController 
         case "nearby_disabled":
             toast(tx.disabled)
         case "not_linked":
-            toast(tx.notLinked)
+            toast(tx.connectFailed)
         default:
             toast(error.localizedMessage)
         }
     }
 
     func precondition() -> NearbyLogic.Precondition {
-        return NearbyLogic.precondition(linked: state.linked ?? false, username: state.username)
+        return NearbyLogic.precondition(username: state.username)
     }
 
     func openUrl(_ url: String) {
@@ -214,7 +220,8 @@ public func luckgramNearbyController(context: AccountContext) -> ViewController 
             state.loadingList = false
             LuckgramNearby.onError(error)
             if error.code == "not_linked" {
-                state.linked = false
+                onNotLinked()
+                return
             }
             showError(error)
             refresh()
@@ -259,7 +266,7 @@ public func luckgramNearbyController(context: AccountContext) -> ViewController 
     }
 
     func reload() {
-        guard precondition() == .ready, LuckgramNearby.introDone else {
+        guard precondition() == .ready, LuckgramNearby.introDone, state.linked == true else {
             return
         }
         locate {
@@ -284,6 +291,7 @@ public func luckgramNearbyController(context: AccountContext) -> ViewController 
         let peerSignal = context.engine.data.get(TelegramEngine.EngineData.Item.Peer.Peer(id: context.account.peerId))
         requests.add((peerSignal |> deliverOnMainQueue).start(next: { peer in
             state.username = peer?.addressName
+            state.accountLoaded = true
             if let peer {
                 state.displayName = peer.compactDisplayTitle
                 if let rep = peer.smallProfileImage {
@@ -291,25 +299,47 @@ public func luckgramNearbyController(context: AccountContext) -> ViewController 
                 }
             }
             refresh()
+            connectIfReady()
         }))
-        requests.add(LuckgramAI.shared.requestJSON(method: "GET", path: "/v1/link").start(next: { j in
-            let linked = j["linked"] as? Bool ?? false
-            state.linked = linked
+    }
+
+    /// Username set and intro confirmed: make sure this device is linked (silently, spec 25 item 2),
+    /// then load the card state and the list. Nothing about linking is shown to the user.
+    func connectIfReady() {
+        guard LuckgramNearby.isFeatureEnabled, !state.connecting, state.linked != true, precondition() == .ready, LuckgramNearby.introDone else {
+            return
+        }
+        state.connecting = true
+        state.linked = nil
+        refresh()
+        requests.add(LuckgramSilentLink.refresh().start(next: { linked in
+            // The server lost the link (unlinked elsewhere): the card is gone, forget it here too.
             if !linked {
                 LuckgramNearby.onUnlinked()
             }
-            refresh()
-            // The username arrives on the same main-queue turn or earlier (local data).
-            Queue.mainQueue().after(0.1) {
-                if precondition() == .ready && LuckgramNearby.introDone && state.people == nil && !state.locating {
+            LuckgramSilentLink.ensure(context: context, completion: { ok in
+                state.connecting = false
+                state.linked = ok
+                refresh()
+                if ok {
                     syncMe()
                     reload()
                 }
-            }
-        }, error: { error in
-            showError(error)
-            refresh()
+            })
         }))
+    }
+
+    /// The server said not_linked: re-link once, then give up with a neutral message.
+    func onNotLinked() {
+        LuckgramSilentLink.clearCache()
+        state.linked = nil
+        if !state.relinkTried {
+            state.relinkTried = true
+            connectIfReady()
+        } else {
+            state.linked = false
+            refresh()
+        }
     }
 
     func avatarBase64() -> String? {
@@ -351,7 +381,8 @@ public func luckgramNearbyController(context: AccountContext) -> ViewController 
             state.busy = false
             LuckgramNearby.onError(error)
             if error.code == "not_linked" {
-                state.linked = false
+                onNotLinked()
+                return
             }
             showError(error)
             refresh()
@@ -441,15 +472,15 @@ public func luckgramNearbyController(context: AccountContext) -> ViewController 
             return
         }
         switch id {
-        case idGoLink:
-            pushImpl?(luckgramAccountController(context: context))
+        case idRetryConnect:
+            state.relinkTried = false
+            connectIfReady()
         case idGoUsername:
             openUrl("tg://settings/username")
         case idIntroOk:
             LuckgramNearby.introDone = true
             refresh()
-            syncMe()
-            reload()
+            connectIfReady()
         case idOpenSettings:
             if let url = URL(string: UIApplication.openSettingsURLString) {
                 context.sharedContext.applicationBindings.openUrl(url.absoluteString)
@@ -479,16 +510,11 @@ public func luckgramNearbyController(context: AccountContext) -> ViewController 
 
     let entries = updated.get() |> map { _ -> [NearbyEntry] in
         var e: [NearbyEntry] = []
-        guard state.linked != nil else {
+        guard state.accountLoaded else {
             e.append(.value(0, 0, tx.title, "", true))
             return e
         }
         switch precondition() {
-        case .needLink:
-            e.append(.header(0, 0, tx.needLinkTitle))
-            e.append(.action(0, Int32(idGoLink), tx.goLink, .generic, true))
-            e.append(.footer(0, 0, tx.needLinkText))
-            return e
         case .needUsername:
             e.append(.header(0, 0, tx.needUsernameTitle))
             e.append(.action(0, Int32(idGoUsername), tx.goUsername, .generic, true))
@@ -501,6 +527,15 @@ public func luckgramNearbyController(context: AccountContext) -> ViewController 
             e.append(.header(0, 0, tx.introTitle))
             e.append(.action(0, Int32(idIntroOk), tx.introContinue, .generic, true))
             e.append(.footer(0, 0, tx.introText))
+            return e
+        }
+        guard let linked = state.linked else {
+            e.append(.value(0, 0, tx.connecting, "", true))
+            return e
+        }
+        if !linked {
+            e.append(.action(0, Int32(idRetryConnect), tx.refresh, .generic, true))
+            e.append(.footer(0, 0, tx.connectFailed))
             return e
         }
         let visible = LuckgramNearby.isVisible
@@ -577,7 +612,7 @@ public func luckgramNearbyController(context: AccountContext) -> ViewController 
     }
     var appearedOnce = false
     controller.didAppear = { _ in
-        // Back from the account page or system settings.
+        // Back from the username page or system settings.
         if appearedOnce && (state.linked != true || precondition() != .ready || (state.permissionDenied && LuckgramNearbyLocator.isAuthorized)) {
             state.permissionDenied = false
             loadAccount()
