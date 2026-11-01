@@ -384,7 +384,7 @@ public func luckgramSquarePostController(context: AccountContext, postId: String
     dismissImpl = { [weak controller] in
         controller?.dismiss()
     }
-    let _ = LuckgramSquare.refreshLink().start()
+    LuckgramSquare.prefetchMe()
     reload()
     return controller
 }

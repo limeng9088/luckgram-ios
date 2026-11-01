@@ -370,7 +370,7 @@ public func luckgramSquareController(context: AccountContext) -> ViewController 
     requests.add(ActionDisposable {
         listRequest.dispose()
     })
-    let _ = LuckgramSquare.refreshLink().start()
+    LuckgramSquare.prefetchMe()
     load(reset: true)
     return controller
 }

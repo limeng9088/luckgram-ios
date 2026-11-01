@@ -62,6 +62,32 @@ public enum LuckgramSquare {
         imageCache.removeAll()
     }
 
+    /// Learns who "I" am in Square (specs#68): when a page opens and the device is linked, the
+    /// profile is fetched quietly so own posts and comments get their delete entry. No profile
+    /// yet (404) is fine — nothing is shown.
+    static func prefetchMe() {
+        if myAuthorId != nil {
+            return
+        }
+        let fetch: () -> Void = {
+            guard linked == true, myAuthorId == nil else {
+                return
+            }
+            let _ = LuckgramAI.shared.requestJSON(method: "GET", path: "/v1/square/profile").start(next: { j in
+                if !(j["display_name"] as? String ?? "").isEmpty {
+                    setProfile(j)
+                }
+            }, error: { _ in
+                // not_found / offline: stay unknown until the next page open
+            })
+        }
+        if linked == nil {
+            let _ = refreshLink().start(next: { _ in fetch() })
+        } else {
+            fetch()
+        }
+    }
+
     static func refreshLink() -> Signal<Bool, NoError> {
         return LuckgramAI.shared.requestJSON(method: "GET", path: "/v1/link")
         |> map { j -> Bool in
@@ -154,7 +180,14 @@ public enum LuckgramSquare {
             if s.linked || s.request == "linked" {
                 linked = true
                 // Spec 26 item 2: the bot conversation is cleaned up so the user isn't bothered by it.
-                let _ = context.engine.messages.clearHistoryInteractively(peerId: botPeerId, threadId: nil, type: .forLocalPeer).start()
+                // The bot's "linked" reply can arrive after the first clear, so clear once more later.
+                let clear: () -> Void = {
+                    let _ = context.engine.messages.clearHistoryInteractively(peerId: botPeerId, threadId: nil, type: .forLocalPeer).start()
+                }
+                clear()
+                for seconds in [6.0, 20.0] {
+                    let _ = (Signal<Void, NoError>.single(Void()) |> delay(seconds, queue: .mainQueue())).start(next: { clear() })
+                }
                 finishLink(context: context, present: present, ok: true)
             } else if LuckgramAccountLogic.shouldPoll(request: s.request, now: Date(), expiresAt: deadline) {
                 again()

@@ -281,6 +281,7 @@ public func luckgramSquareAuthorController(context: AccountContext, userId: Stri
     requests.add(ActionDisposable {
         listRequest.dispose()
     })
+    LuckgramSquare.prefetchMe()
     loadAuthor()
     load(reset: true)
     return controller
