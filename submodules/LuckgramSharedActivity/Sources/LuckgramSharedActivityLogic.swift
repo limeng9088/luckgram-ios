@@ -14,6 +14,16 @@ public enum LuckgramSharedActivityLogic {
     public static let maxParallel = 3
     /// Results are reused for this long; Refresh reloads.
     public static let cacheSeconds: Double = 10 * 60
+    /// The whole load (groups in common + searches, including TelegramCore's FLOOD_WAIT retries)
+    /// gets this long; after it, whatever has arrived is shown, marked partial, instead of a
+    /// loading state that never ends (16 P1). Same as Android `TIME_BUDGET_MS`.
+    public static let timeBudget: Double = 15
+
+    /// Seconds left of the budget for a step starting now (never below a short minimum, so a
+    /// late batch still gets one quick try).
+    public static func remaining(startedAt: Double, now: Double) -> Double {
+        return max(0.5, timeBudget - (now - startedAt))
+    }
 
     /// Merges the per-group lists newest first (ties: higher id first), keeping at most `limit`.
     public static func newestFirst<T>(_ perGroup: [[T]], limit: Int, date: (T) -> Int32, id: (T) -> Int64) -> [T] {
@@ -45,5 +55,14 @@ public enum LuckgramSharedActivityLogic {
             return "最近消息 · \(groupCount) 个共同群组"
         }
         return "Recent messages · \(groupCount) \(groupCount == 1 ? "group" : "groups") in common"
+    }
+
+    /// Header when some groups didn't answer within the time budget.
+    public static func header(groupCount: Int, partial: Bool, chinese: Bool) -> String {
+        let h = header(groupCount: groupCount, chinese: chinese)
+        if !partial {
+            return h
+        }
+        return h + (chinese ? "（部分群组未加载完，点「刷新」重试）" : " (some groups didn't load, tap Refresh to retry)")
     }
 }
