@@ -184,6 +184,8 @@ final class SquareLogicTests: XCTestCase {
         XCTAssertTrue(en.videoTooLong(60, 95).contains("1:35"))
         XCTAssertTrue(zh.attachmentsInfo(60).contains("60 秒"))
         XCTAssertEqual(zh.videoLabel(42), "视频 · 0:42")
+        XCTAssertEqual(zh.useAvatarYes, "使用 Telegram 头像")
+        XCTAssertEqual(en.useAvatarNo, "Don't use")
         for tx in [zh, en] {
             for s in [tx.connecting, tx.connectFailed, tx.needContent, tx.profileNeeded, tx.empty] {
                 XCTAssertFalse(s.contains("绑定") || s.lowercased().contains("link"), s)

@@ -275,9 +275,9 @@ public enum LuckgramSquare {
                                 done(nil)
                                 return
                             }
-                            present(textAlertController(context: context, title: tx.useTelegramAvatar, text: "", actions: [
-                                TextAlertAction(type: .genericAction, title: tx.hideUsername, action: { done("") }),
-                                TextAlertAction(type: .defaultAction, title: tx.showUsername, action: { done(avatar) })
+                            present(textAlertController(context: context, title: tx.useTelegramAvatar, text: tx.useTelegramAvatarText, actions: [
+                                TextAlertAction(type: .genericAction, title: tx.useAvatarNo, action: { done("") }),
+                                TextAlertAction(type: .defaultAction, title: tx.useAvatarYes, action: { done(avatar) })
                             ]))
                         }
                         askAvatar { avatarValue in
