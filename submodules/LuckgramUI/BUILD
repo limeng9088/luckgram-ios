@@ -23,6 +23,8 @@ swift_library(
         "//submodules/PromptUI:PromptUI",
         "//submodules/LuckgramAccountsStore:LuckgramAccountsStore",
         "//submodules/PasscodeCore:PasscodeCore",
+        "//submodules/LegacyMediaPickerUI:LegacyMediaPickerUI",
+        "//submodules/OverlayStatusController:OverlayStatusController",
     ],
     visibility = [
         "//visibility:public",

@@ -8,6 +8,7 @@ import TelegramPresentationData
 import PresentationDataUtils
 import ProgressNavigationButtonNode
 import AccountContext
+import LuckgramUI
 import CountrySelectionUI
 import PhoneNumberFormat
 import DebugSettingsUI
@@ -97,6 +98,20 @@ public final class AuthorizationSequencePhoneEntryController: ViewController, MF
         if let countriesConfiguration {
             AuthorizationSequenceCountrySelectionController.setupCountryCodes(countries: countriesConfiguration.countries, codesByPrefix: countriesConfiguration.countriesByPrefix)
         }
+        
+        // Luckgram 10: "Restore from backup" (narrow screens use this slot for "Next").
+        if LuckgramSettings.shared.isEnabled(LuckgramBackup.featureKey) {
+            LuckgramStrings.appLanguageCode = presentationData.strings.primaryComponent.languageCode
+            self.navigationItem.rightBarButtonItem = UIBarButtonItem(title: LuckgramBackupStrings.restore, style: .plain, target: self, action: #selector(self.luckgramRestorePressed))
+        }
+    }
+    
+    @objc private func luckgramRestorePressed() {
+        luckgramStartBackupRestore(sharedContext: self.sharedContext, present: { [weak self] controller in
+            self?.present(controller, in: .window(.root))
+        }, push: { [weak self] controller in
+            (self?.navigationController as? NavigationController)?.pushViewController(controller)
+        })
     }
     
     required init(coder aDecoder: NSCoder) {
