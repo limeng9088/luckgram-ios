@@ -220,6 +220,8 @@ public final class SharedAccountContextImpl: SharedAccountContext {
 
     private var callStateDisposable: Disposable?
     private var luckgramRemoteConfigDisposable: Disposable?
+    private var luckgramUpdateDisposable: Disposable?
+    private weak var luckgramForceUpdateController: LuckgramForceUpdateController?
     private var luckgramStoreRestrictionsDisposable: Disposable?
     
     private(set) var currentCallStatusBarNode: CallStatusBarNodeImpl?
@@ -438,6 +440,7 @@ public final class SharedAccountContextImpl: SharedAccountContext {
         |> deliverOnMainQueue).startStrict(next: { _ in
             LuckgramRemoteConfigFetcher.shared.refreshIfStale()
             LuckgramAnnouncements.shared.refreshIfStale() // Luckgram: announcements (S8)
+            LuckgramUpdates.shared.checkIfDue() // Luckgram: update check (S5)
         })
         // Luckgram spec 13: TelegramCore reads the store-restrictions switch from LuckgramStoreRestrictions.
         self.luckgramStoreRestrictionsDisposable = (LuckgramSettings.shared.isEnabledSignal(LuckgramStoreRestrictionsFeature.key)
@@ -454,6 +457,34 @@ public final class SharedAccountContextImpl: SharedAccountContext {
         ))
         
         self.mediaManager = MediaManagerImpl(accountManager: accountManager, inForeground: applicationBindings.applicationInForeground, presentationData: presentationData)
+        // Luckgram S5: below the minimum version a full-screen page with only the Update button.
+        // Re-checked on every foreground, so a page that could not be presented yet (window not
+        // ready at launch) or was dismissed by the system comes back.
+        self.luckgramUpdateDisposable = (combineLatest(LuckgramUpdates.shared.stateSignal, self.applicationBindings.applicationInForeground)
+        |> deliverOnMainQueue).startStrict(next: { [weak self] state, inForeground in
+            guard let self else {
+                return
+            }
+            if state.forceUpdate {
+                if !inForeground {
+                    return
+                }
+                if let current = self.luckgramForceUpdateController, current.presentingViewController == nil {
+                    self.luckgramForceUpdateController = nil
+                }
+                if self.luckgramForceUpdateController == nil {
+                    let applicationBindings = self.applicationBindings
+                    let controller = LuckgramForceUpdateController(state: state, openUrl: { url in
+                        applicationBindings.openUrl(url)
+                    })
+                    self.luckgramForceUpdateController = controller
+                    self.applicationBindings.presentNativeController(controller)
+                }
+            } else if let controller = self.luckgramForceUpdateController {
+                self.luckgramForceUpdateController = nil
+                controller.presentingViewController?.dismiss(animated: true)
+            }
+        })
         
         self.mediaManager.overlayMediaManager.updatePossibleEmbeddingItem = { [weak self] item in
             guard let strongSelf = self else {
@@ -1208,6 +1239,7 @@ public final class SharedAccountContextImpl: SharedAccountContext {
         assertionFailure("SharedAccountContextImpl is not supposed to be deallocated")
         self.registeredNotificationTokensDisposable.dispose()
         self.luckgramRemoteConfigDisposable?.dispose()
+        self.luckgramUpdateDisposable?.dispose()
         self.presentationDataDisposable.dispose()
         self.automaticMediaDownloadSettingsDisposable.dispose()
         self.currentAutodownloadSettingsDisposable.dispose()

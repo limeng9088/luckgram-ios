@@ -17,6 +17,7 @@ import LuckgramUI
 import LuckgramAccountsStore
 
 enum SettingsSection: Int, CaseIterable {
+    case luckgramUpdate
     case edit
     case phone
     case accounts
@@ -41,6 +42,16 @@ func settingsItems(data: PeerInfoScreenData?, context: AccountContext, presentat
         items[section] = []
     }
     
+    // Luckgram S5: "有新版本 x.y.z · 更新" on top of Settings, opens the download link.
+    let luckgramUpdate = LuckgramUpdates.shared.state
+    if luckgramUpdate.updateAvailable {
+        items[.luckgramUpdate]!.append(PeerInfoScreenActionItem(id: 0, text: LuckgramUpdates.rowText(luckgramUpdate), color: .accent, icon: UIImage(bundleImageName: "Chat/Context Menu/Download"), action: {
+            if luckgramUpdate.url.hasPrefix("https://") {
+                context.sharedContext.applicationBindings.openUrl(luckgramUpdate.url)
+            }
+        }))
+    }
+
     let setPhotoTitle: String
     if let peer = data.peer, !peer.profileImageRepresentations.isEmpty {
         setPhotoTitle = presentationData.strings.Settings_ChangeProfilePhoto
