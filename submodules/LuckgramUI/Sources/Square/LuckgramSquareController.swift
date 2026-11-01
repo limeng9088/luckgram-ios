@@ -18,13 +18,15 @@ import LuckgramDiscover
 final class SquareFeedArguments {
     let openAuthor: (Int) -> Void
     let openPost: (Int) -> Void
+    let openVideo: (Int) -> Void
     let more: (Int) -> Void
     let loadMore: () -> Void
     let retry: () -> Void
 
-    init(openAuthor: @escaping (Int) -> Void, openPost: @escaping (Int) -> Void, more: @escaping (Int) -> Void, loadMore: @escaping () -> Void, retry: @escaping () -> Void) {
+    init(openAuthor: @escaping (Int) -> Void, openPost: @escaping (Int) -> Void, openVideo: @escaping (Int) -> Void, more: @escaping (Int) -> Void, loadMore: @escaping () -> Void, retry: @escaping () -> Void) {
         self.openAuthor = openAuthor
         self.openPost = openPost
+        self.openVideo = openVideo
         self.more = more
         self.loadMore = loadMore
         self.retry = retry
@@ -35,16 +37,17 @@ final class SquareFeedArguments {
 /// author page and the post page.
 enum LuckgramSquarePostEntry: ItemListNodeEntry {
     case author(Int32, Int, String, String, UIImage?)
-    case rejected(Int32, Int, String)
+    case hidden(Int32, Int, String)
     case text(Int32, Int, String, Bool)
     case images(Int32, Int, [SquareLogic.Image])
+    case video(Int32, Int, SquareLogic.Video)
     case stats(Int32, Int, String, String)
     case footer(Int32, Int, String, Int)
     case action(Int32, Int, String, Int)
 
     var section: ItemListSectionId {
         switch self {
-        case let .author(s, _, _, _, _), let .rejected(s, _, _), let .text(s, _, _, _), let .images(s, _, _), let .stats(s, _, _, _), let .footer(s, _, _, _), let .action(s, _, _, _):
+        case let .author(s, _, _, _, _), let .hidden(s, _, _), let .text(s, _, _, _), let .images(s, _, _), let .video(s, _, _), let .stats(s, _, _, _), let .footer(s, _, _, _), let .action(s, _, _, _):
             return s
         }
     }
@@ -54,9 +57,10 @@ enum LuckgramSquarePostEntry: ItemListNodeEntry {
         let index: Int
         switch self {
         case let .author(_, i, _, _, _): kind = 0; index = i
-        case let .rejected(_, i, _): kind = 1; index = i
+        case let .hidden(_, i, _): kind = 1; index = i
         case let .text(_, i, _, _): kind = 2; index = i
         case let .images(_, i, _): kind = 3; index = i
+        case let .video(_, i, _): kind = 3; index = i
         case let .stats(_, i, _, _): kind = 4; index = i
         case let .footer(_, i, _, _): kind = 5; index = i
         case let .action(_, i, _, _): kind = 6; index = i
@@ -68,7 +72,9 @@ enum LuckgramSquarePostEntry: ItemListNodeEntry {
         switch (lhs, rhs) {
         case let (.author(a1, a2, a3, a4, a5), .author(b1, b2, b3, b4, b5)):
             return a1 == b1 && a2 == b2 && a3 == b3 && a4 == b4 && a5 === b5
-        case let (.rejected(a1, a2, a3), .rejected(b1, b2, b3)):
+        case let (.hidden(a1, a2, a3), .hidden(b1, b2, b3)):
+            return a1 == b1 && a2 == b2 && a3 == b3
+        case let (.video(a1, a2, a3), .video(b1, b2, b3)):
             return a1 == b1 && a2 == b2 && a3 == b3
         case let (.text(a1, a2, a3, a4), .text(b1, b2, b3, b4)):
             return a1 == b1 && a2 == b2 && a3 == b3 && a4 == b4
@@ -96,7 +102,7 @@ enum LuckgramSquarePostEntry: ItemListNodeEntry {
             return ItemListDisclosureItem(presentationData: presentationData, systemStyle: .glass, icon: avatar, title: name, label: sub, labelStyle: .detailText, sectionId: self.section, style: .blocks, disclosureStyle: .none, action: {
                 arguments.openAuthor(index)
             })
-        case let .rejected(_, _, text):
+        case let .hidden(_, _, text):
             return ItemListTextItem(presentationData: presentationData, text: .plain(text), sectionId: self.section)
         case let .text(_, index, text, full):
             return ItemListMultilineTextItem(presentationData: presentationData, text: text, enabledEntityTypes: [.allUrl, .mention, .hashtag], sectionId: self.section, style: .blocks, action: full ? nil : {
@@ -107,6 +113,10 @@ enum LuckgramSquarePostEntry: ItemListNodeEntry {
         case let .images(_, index, images):
             return LuckgramSquareImagesItem(presentationData: presentationData, images: images, sectionId: self.section, style: .blocks, action: {
                 arguments.openPost(index)
+            })
+        case let .video(_, index, video):
+            return LuckgramSquareVideoItem(presentationData: presentationData, video: video, sectionId: self.section, style: .blocks, action: {
+                arguments.openVideo(index)
             })
         case let .stats(_, index, title, label):
             return ItemListDisclosureItem(presentationData: presentationData, systemStyle: .glass, title: title, label: label, sectionId: self.section, style: .blocks, disclosureStyle: .none, action: {
@@ -130,14 +140,16 @@ enum LuckgramSquarePostEntry: ItemListNodeEntry {
         let tx = LuckgramSquare.texts
         var e: [LuckgramSquarePostEntry] = []
         e.append(.author(section, index, post.author.displayName, LuckgramSquare.timeLine(post), avatar))
-        if post.status == SquareLogic.statusRejected {
-            e.append(.rejected(section, index, tx.rejectedReason(post.rejectReason)))
+        if post.isHidden {
+            e.append(.hidden(section, index, tx.hiddenInfo(post.hiddenReason)))
         }
         if !post.text.isEmpty {
             let text = full ? post.text : String(post.text.prefix(600))
             e.append(.text(section, index, text, full))
         }
-        if !post.images.isEmpty {
+        if let video = post.video {
+            e.append(.video(section, index, video))
+        } else if !post.images.isEmpty {
             e.append(.images(section, index, post.images))
         }
         e.append(.stats(section, index, (post.liked ? "♥ " : "♡ ") + tx.likes(post.likeCount) + "   💬 " + tx.comments(post.commentCount), tx.more))
@@ -243,6 +255,11 @@ public func luckgramSquareController(context: AccountContext) -> ViewController 
             return
         }
         push(luckgramSquarePostController(context: context, post: state.posts[index]))
+    }, openVideo: { index in
+        guard index < state.posts.count, let video = state.posts[index].video else {
+            return
+        }
+        LuckgramSquareVideoPlayer.present(video, context: context, fallback: nil)
     }, more: { index in
         guard index < state.posts.count else {
             return

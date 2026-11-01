@@ -36,10 +36,12 @@ private final class SquarePostArguments {
 /// this adapter maps them onto a single post.
 final class SquareFeedArgumentsProxy {
     let openAuthor: () -> Void
+    let openVideo: () -> Void
     let more: () -> Void
 
-    init(openAuthor: @escaping () -> Void, more: @escaping () -> Void) {
+    init(openAuthor: @escaping () -> Void, openVideo: @escaping () -> Void, more: @escaping () -> Void) {
         self.openAuthor = openAuthor
+        self.openVideo = openVideo
         self.more = more
     }
 }
@@ -97,7 +99,7 @@ private enum SquarePostEntry: ItemListNodeEntry {
         let arguments = arguments as! SquarePostArguments
         switch self {
         case let .post(e):
-            let feedArguments = SquareFeedArguments(openAuthor: { _ in arguments.post.openAuthor() }, openPost: { _ in }, more: { _ in arguments.post.more() }, loadMore: {}, retry: {})
+            let feedArguments = SquareFeedArguments(openAuthor: { _ in arguments.post.openAuthor() }, openPost: { _ in }, openVideo: { _ in arguments.post.openVideo() }, more: { _ in arguments.post.more() }, loadMore: {}, retry: {})
             return e.item(presentationData: presentationData, arguments: feedArguments)
         case let .header(text):
             return ItemListSectionHeaderItem(presentationData: presentationData, text: text.uppercased(), sectionId: self.section)
@@ -274,6 +276,10 @@ public func luckgramSquarePostController(context: AccountContext, postId: String
         if let p = state.post {
             push(luckgramSquareAuthorController(context: context, author: p.author))
         }
+    }, openVideo: {
+        if let video = state.post?.video {
+            LuckgramSquareVideoPlayer.present(video, context: context, fallback: nil)
+        }
     }, more: {
         guard let p = state.post else {
             return
@@ -348,14 +354,10 @@ public func luckgramSquarePostController(context: AccountContext, postId: String
         } else {
             for (i, c) in state.threaded.enumerated() {
                 var label = (c.depth > 0 ? "↳ " : "") + c.author.displayName + "  ·  " + tx.timeAgo(c.createdAt, now: Date())
-                if c.status == SquareLogic.statusPending {
-                    label += "  ·  " + tx.pending
+                if c.status == SquareLogic.statusHidden {
+                    label += "  ·  " + tx.hidden
                 }
-                var text = c.text
-                if c.status == SquareLogic.statusRejected {
-                    text = tx.rejectedReason(c.rejectReason) + "\n" + text
-                }
-                e.append(.comment(i, label, text, c.depth > 0))
+                e.append(.comment(i, label, c.text, c.depth > 0))
             }
         }
         if let r = state.replyTo {

@@ -166,6 +166,11 @@ public func luckgramSquareAuthorController(context: AccountContext, userId: Stri
             return
         }
         push(luckgramSquarePostController(context: context, post: state.posts[index]))
+    }, openVideo: { index in
+        guard index < state.posts.count, let video = state.posts[index].video else {
+            return
+        }
+        LuckgramSquareVideoPlayer.present(video, context: context, fallback: nil)
     }, more: { index in
         guard index < state.posts.count else {
             return
