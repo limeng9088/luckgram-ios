@@ -37,17 +37,12 @@ public enum LuckgramSquare {
 
     // MARK: - link (S6, silent)
 
-    static var linked: Bool?
     static var profile: [String: Any]?
     /// Author id of this device's user in Square (from the profile response), if known.
     public static var myAuthorId: String?
     /// Bumped whenever a page changed something the feed should reload (post, delete, block).
     public static let changed = ValuePromise<Int>(0, ignoreRepeated: false)
     private static var changeCounter = 0
-    private static var linking = false
-    private static var waitingForLink: [() -> Void] = []
-    /// How long the silent link may take before giving up (nonce TTL is 10 minutes; be quicker).
-    private static let linkTimeout: TimeInterval = 90
 
     public static func markChanged() {
         changeCounter += 1
@@ -56,7 +51,7 @@ public enum LuckgramSquare {
 
     /// Forget cached state (unlink, logout, "delete my Square data").
     public static func clearCache() {
-        linked = nil
+        LuckgramSilentLink.clearCache()
         profile = nil
         myAuthorId = nil
         imageCache.removeAll()
@@ -70,7 +65,7 @@ public enum LuckgramSquare {
             return
         }
         let fetch: () -> Void = {
-            guard linked == true, myAuthorId == nil else {
+            guard LuckgramSilentLink.cached == true, myAuthorId == nil else {
                 return
             }
             let _ = LuckgramAI.shared.requestJSON(method: "GET", path: "/v1/square/profile").start(next: { j in
@@ -81,135 +76,59 @@ public enum LuckgramSquare {
                 // not_found / offline: stay unknown until the next page open
             })
         }
-        if linked == nil {
+        if LuckgramSilentLink.cached == nil {
             let _ = refreshLink().start(next: { _ in fetch() })
         } else {
             fetch()
         }
     }
 
+    /// `GET /v1/link` through the shared `LuckgramSilentLink`; an unlinked answer also drops the
+    /// cached profile. A network error keeps the last known state. Main queue.
     static func refreshLink() -> Signal<Bool, NoError> {
-        return LuckgramAI.shared.requestJSON(method: "GET", path: "/v1/link")
-        |> map { j -> Bool in
-            let value = (j["linked"] as? Bool) ?? ((j["linked"] as? NSNumber)?.boolValue ?? false)
-            linked = value
-            if !value {
+        return LuckgramSilentLink.refresh()
+        |> map { value -> Bool in
+            if value == false {
                 profile = nil
                 myAuthorId = nil
             }
-            return value
-        }
-        |> `catch` { _ -> Signal<Bool, NoError> in
-            return .single(linked ?? false)
+            return value ?? (LuckgramSilentLink.cached ?? false)
         }
     }
 
     /// Runs `then` once this device is linked to the current Telegram account (S6). If it is not
-    /// yet, the link is made in the background: `POST /v1/link/start` → the app sends
-    /// `/start <nonce>` to the bot from the current account → poll until the server has it → the
-    /// bot chat is cleared locally. The user only sees a short "connecting" notice.
+    /// yet, the link is made in the background by the shared `LuckgramSilentLink` (also used by
+    /// People Nearby): `POST /v1/link/start` → the app sends `/start <nonce>` to the bot from the
+    /// current account → poll until the server has it → the bot dialog is deleted locally. The
+    /// user only sees a short "connecting" notice.
     static func requireLink(context: AccountContext, present: @escaping (ViewController) -> Void, push: @escaping (ViewController) -> Void, then: @escaping () -> Void) -> Disposable {
-        if linked == true {
+        if LuckgramSilentLink.cached == true {
             then()
             return EmptyDisposable
         }
-        return refreshLink().start(next: { ok in
-            if ok {
-                then()
-            } else {
-                autoLink(context: context, present: present, then: then)
-            }
-        })
+        if LuckgramSilentLink.cached == nil {
+            return refreshLink().start(next: { ok in
+                if ok {
+                    then()
+                } else {
+                    autoLink(context: context, present: present, then: then)
+                }
+            })
+        }
+        autoLink(context: context, present: present, then: then)
+        return EmptyDisposable
     }
 
     private static func autoLink(context: AccountContext, present: @escaping (ViewController) -> Void, then: @escaping () -> Void) {
-        waitingForLink.append(then)
-        if linking {
-            return
-        }
-        linking = true
         let tx = texts
         toast(context: context, tx.connecting, present: present)
-        let _ = LuckgramAI.shared.requestJSON(method: "POST", path: "/v1/link/start").start(next: { j in
-            let st = LuckgramAccountLogic.parseStart(j)
-            guard let bot = SquareLogic.botUsername(st.url), !st.nonce.isEmpty else {
-                finishLink(context: context, present: present, ok: false)
-                return
-            }
-            let deadline = min(st.expiresAt ?? Date.distantFuture, Date().addingTimeInterval(linkTimeout))
-            let _ = (context.engine.peers.resolvePeerByName(name: bot, referrer: nil)
-            |> mapToSignal { result -> Signal<EnginePeer?, NoError> in
-                if case let .result(peer) = result {
-                    return .single(peer)
-                }
-                return .complete()
-            }
-            |> take(1)
-            |> deliverOnMainQueue).start(next: { peer in
-                guard let peer else {
-                    finishLink(context: context, present: present, ok: false)
-                    return
-                }
-                let _ = enqueueMessages(account: context.account, peerId: peer.id, messages: [.message(text: SquareLogic.startCommand(st.nonce), attributes: [], inlineStickers: [:], mediaReference: nil, threadId: nil, replyToMessageId: nil, replyToStoryId: nil, localGroupingKey: nil, correlationId: nil, bubbleUpEmojiOrStickersets: [])]).start()
-                pollLink(context: context, present: present, nonce: st.nonce, botPeerId: peer.id, deadline: deadline)
-            }, completed: {
-                // resolvePeerByName completed without a result
-            })
-        }, error: { error in
-            if error.code == "already_linked" {
-                linked = true
-                finishLink(context: context, present: present, ok: true)
+        LuckgramSilentLink.ensure(context: context, completion: { ok in
+            if ok {
+                then()
             } else {
-                finishLink(context: context, present: present, ok: false)
+                toast(context: context, tx.connectFailed, present: present)
             }
         })
-    }
-
-    private static func pollLink(context: AccountContext, present: @escaping (ViewController) -> Void, nonce: String, botPeerId: EnginePeer.Id, deadline: Date) {
-        guard LuckgramAccountLogic.shouldPoll(request: nil, now: Date(), expiresAt: deadline) else {
-            finishLink(context: context, present: present, ok: false)
-            return
-        }
-        let again: () -> Void = {
-            let _ = (Signal<Void, NoError>.single(Void()) |> delay(LuckgramAccountLogic.pollInterval, queue: .mainQueue())).start(next: {
-                pollLink(context: context, present: present, nonce: nonce, botPeerId: botPeerId, deadline: deadline)
-            })
-        }
-        let _ = LuckgramAI.shared.requestJSON(method: "GET", path: "/v1/link?nonce=\(nonce)").start(next: { j in
-            let s = LuckgramAccountLogic.parseLink(j)
-            if s.linked || s.request == "linked" {
-                linked = true
-                // Spec 26 item 2: the bot conversation is cleaned up so the user isn't bothered by it.
-                // The bot's "linked" reply can arrive after the first clear, so clear once more later.
-                let clear: () -> Void = {
-                    let _ = context.engine.messages.clearHistoryInteractively(peerId: botPeerId, threadId: nil, type: .forLocalPeer).start()
-                }
-                clear()
-                for seconds in [6.0, 20.0] {
-                    let _ = (Signal<Void, NoError>.single(Void()) |> delay(seconds, queue: .mainQueue())).start(next: { clear() })
-                }
-                finishLink(context: context, present: present, ok: true)
-            } else if LuckgramAccountLogic.shouldPoll(request: s.request, now: Date(), expiresAt: deadline) {
-                again()
-            } else {
-                finishLink(context: context, present: present, ok: false)
-            }
-        }, error: { _ in
-            again() // offline for a moment: keep trying until the deadline
-        })
-    }
-
-    private static func finishLink(context: AccountContext, present: @escaping (ViewController) -> Void, ok: Bool) {
-        linking = false
-        let waiting = waitingForLink
-        waitingForLink = []
-        if ok {
-            for w in waiting {
-                w()
-            }
-        } else {
-            toast(context: context, texts.connectFailed, present: present)
-        }
     }
 
     // MARK: - profile
@@ -339,7 +258,7 @@ public enum LuckgramSquare {
         }
         if error.code == "not_linked" {
             // The server lost the link (e.g. unlinked elsewhere): make it again silently next time.
-            linked = false
+            LuckgramSilentLink.clearCache()
         }
         if error.code == "profile_required" {
             profile = nil
