@@ -165,6 +165,8 @@ final class SquareLogicTests: XCTestCase {
         XCTAssertEqual(zh.title, "广场")
         XCTAssertEqual(en.title, "Square")
         XCTAssertTrue(zh.hiddenInfo("x").contains("原因：x"))
+        XCTAssertTrue(zh.hiddenInfo("spam").contains("垃圾广告"))
+        XCTAssertTrue(en.hiddenInfo("hate").contains("Hate speech"))
         XCTAssertTrue(en.hiddenInfo(nil).hasPrefix("This post has been hidden"))
         XCTAssertTrue(zh.waitSeconds(30).contains("30 秒"))
         XCTAssertTrue(en.waitSeconds(90).contains("2 min"))

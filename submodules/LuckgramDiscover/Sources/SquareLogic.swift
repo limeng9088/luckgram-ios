@@ -527,12 +527,14 @@ public enum SquareLogic {
         public var refresh: String { t("刷新", "Refresh") }
 
         public var hidden: String { t("已隐藏", "Hidden") }
+        /// `reason` is a report reason code (S11: the most reported one) or free text.
         public func hiddenInfo(_ reason: String?) -> String {
             let base = t("这条动态已被隐藏，只有你自己能看到。", "This post has been hidden and is visible only to you.")
             guard let reason, !reason.isEmpty else {
                 return base
             }
-            return base + " " + t("原因：", "Reason: ") + reason
+            let shown = SquareLogic.reportReasons.contains(reason) ? reportReason(reason) : reason
+            return base + " " + t("原因：", "Reason: ") + shown
         }
         public func likes(_ n: Int) -> String { t("赞 \(n)", n == 1 ? "1 like" : "\(n) likes") }
         public func comments(_ n: Int) -> String { t("评论 \(n)", n == 1 ? "1 comment" : "\(n) comments") }

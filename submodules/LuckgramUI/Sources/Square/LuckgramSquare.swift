@@ -327,6 +327,9 @@ public enum LuckgramSquare {
         if error.code == "square_disabled" {
             return tx.squareDisabled
         }
+        if error.code == "rate_limit_unavailable" {
+            return tx.waitSeconds(error.retryAfterSeconds) // 503: try again shortly
+        }
         return error.localizedMessage
     }
 
