@@ -16,6 +16,7 @@ swift_library(
         "//submodules/AccountContext:AccountContext",
         "//submodules/TelegramPresentationData:TelegramPresentationData",
         "//submodules/PresentationDataUtils:PresentationDataUtils",
+        "//submodules/LuckgramUI:LuckgramUI",
     ],
     visibility = [
         "//visibility:public",

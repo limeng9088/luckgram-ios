@@ -127,6 +127,7 @@ import TextProcessingScreen
 import CreateBotScreen
 import EmojiStatusSelectionComponent
 import EntityKeyboard
+import ChatTextInputPanelNode
 import LuckgramUI
 import LuckgramUserNotes
 import LuckgramAccountsStore
@@ -218,6 +219,7 @@ public final class SharedAccountContextImpl: SharedAccountContext {
     let testingEnvironment: Bool
 
     private var callStateDisposable: Disposable?
+    private var luckgramRemoteConfigDisposable: Disposable?
     
     private(set) var currentCallStatusBarNode: CallStatusBarNodeImpl?
     
@@ -392,6 +394,10 @@ public final class SharedAccountContextImpl: SharedAccountContext {
             updatedPresentationData(accountManager: self.accountManager, applicationInForeground: self.applicationBindings.applicationInForeground, systemUserInterfaceStyle: mainWindow?.systemUserInterfaceStyle ?? .single(.light))
         )
         self._presentationData.set(presentationData)
+        // Luckgram: the quick replies manage page lives in ChatTextInputPanelNode, which LuckgramUI can't import.
+        let _ = LuckgramFeatures.find(LuckgramQuickReplies.featureKey)?.subpage { context in
+            return luckgramQuickRepliesSettingsController(context: context)
+        }
         // Luckgram: one language rule for every Luckgram string (LuckgramStrings.isChinese).
         LuckgramStrings.appLanguageCode = initialPresentationDataAndSettings.presentationData.strings.primaryComponent.languageCode
         // Luckgram 05: "Private notes" opens "All notes" (registered here to avoid a LuckgramUI → LuckgramUserNotes cycle).
@@ -424,6 +430,13 @@ public final class SharedAccountContextImpl: SharedAccountContext {
                 }
             })
         }
+        // Luckgram: remote config (task S4), refreshed whenever the app comes to the foreground.
+        self.luckgramRemoteConfigDisposable = (self.applicationBindings.applicationInForeground
+        |> distinctUntilChanged
+        |> filter { $0 }
+        |> deliverOnMainQueue).startStrict(next: { _ in
+            LuckgramRemoteConfigFetcher.shared.refreshIfStale()
+        })
         self._automaticMediaDownloadSettings.set(.single(initialPresentationDataAndSettings.automaticMediaDownloadSettings)
         |> then(accountManager.sharedData(keys: [SharedDataKeys.autodownloadSettings, ApplicationSpecificSharedDataKeys.automaticMediaDownloadSettings])
             |> map { sharedData in
@@ -1187,6 +1200,7 @@ public final class SharedAccountContextImpl: SharedAccountContext {
     deinit {
         assertionFailure("SharedAccountContextImpl is not supposed to be deallocated")
         self.registeredNotificationTokensDisposable.dispose()
+        self.luckgramRemoteConfigDisposable?.dispose()
         self.presentationDataDisposable.dispose()
         self.automaticMediaDownloadSettingsDisposable.dispose()
         self.currentAutodownloadSettingsDisposable.dispose()

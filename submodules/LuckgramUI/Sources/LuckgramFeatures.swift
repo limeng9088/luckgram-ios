@@ -38,6 +38,7 @@ public enum LuckgramFeatures {
     public static let aiAgents = "ai_agents"
     /// spec 23
     public static let aiImage = "ai_image"
+    public static let roundVideoFromGallery = "round_video_from_gallery"
 
     public static let all: [LuckgramFeature] = {
         var list: [LuckgramFeature] = []
@@ -61,6 +62,14 @@ public enum LuckgramFeatures {
         add(.toggle("save_to_saved", group: .messagesLanguage, default: true,
             title: ("一键收藏", "Save in one tap"),
             description: ("消息菜单里一点就存到收藏夹", "Save a message to Saved Messages straight from its menu")))
+        add(.toggle("translate_out", group: .messagesLanguage, default: true,
+            title: ("发送前翻译", "Translate before sending"),
+            description: ("在输入框里先翻译成对方的语言再发送", "Translate your message into the other person's language before sending")))
+        // Quick replies "Manage" subpage is attached by TelegramUI at startup (it lives in
+        // ChatTextInputPanelNode, which depends on LuckgramUI).
+        add(.toggle("quick_replies", group: .messagesLanguage, default: true,
+            title: ("快捷回复", "Quick replies"),
+            description: ("把常用回复存成模板，输入框里一点就填入", "Save frequent replies as templates and insert them with one tap")))
 
         // ---- 媒体、通话与存储 / Media, Calls & Storage
         // Settings page is attached by TelegramUI at startup (it lives in TelegramCallsUI,
@@ -68,6 +77,9 @@ public enum LuckgramFeatures {
         add(.toggle("call_recording", group: .mediaCallsStorage, default: false,
             title: ("通话录音", "Call recording"),
             description: ("一对一通话中录音，挂断后保存到收藏夹", "Record one-on-one calls and save them to Saved Messages")))
+        add(.toggle(LuckgramFeatures.roundVideoFromGallery, group: .mediaCallsStorage, default: true,
+            title: ("相册视频发成圆形视频", "Gallery video as round video"),
+            description: ("附件菜单里选一个视频，可作为圆形视频发送", "Send a video from the gallery as a round video message")))
 
         // ---- 资料与整理 / Profiles & Organization
         // The "All notes" subpage lives in LuckgramUserNotes (which depends on this module);

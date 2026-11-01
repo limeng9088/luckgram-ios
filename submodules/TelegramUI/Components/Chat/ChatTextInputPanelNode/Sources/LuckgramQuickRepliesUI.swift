@@ -4,6 +4,8 @@
 import Foundation
 import UIKit
 import SwiftSignalKit
+import AsyncDisplayKit
+import Display
 import AccountContext
 
 final class LuckgramQuickRepliesPicker: UITableViewController {
@@ -153,6 +155,8 @@ final class LuckgramQuickRepliesManageController: UITableViewController {
     private var disposable: Disposable?
     private let cellIdentifier = "template"
     private var pendingEditor: Int??
+    /// Set when hosted as the settings subpage: shows a back button that pops the host.
+    var onBack: (() -> Void)?
     private var loaded = false
     private var appeared = false
 
@@ -173,6 +177,11 @@ final class LuckgramQuickRepliesManageController: UITableViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
         self.title = self.strings.title
+        if self.onBack != nil {
+            let back = UIBarButtonItem(image: UIImage(systemName: "chevron.backward"), style: .plain, target: self, action: #selector(self.backPressed))
+            back.accessibilityLabel = self.strings.back
+            self.navigationItem.leftBarButtonItem = back
+        }
         self.tableView.register(UITableViewCell.self, forCellReuseIdentifier: self.cellIdentifier)
         self.tableView.allowsSelectionDuringEditing = true
         self.updateBarButtons()
@@ -218,6 +227,10 @@ final class LuckgramQuickRepliesManageController: UITableViewController {
     @objc private func toggleEditing() {
         self.setEditing(!self.isEditing, animated: true)
         self.updateBarButtons()
+    }
+
+    @objc private func backPressed() {
+        self.onBack?()
     }
 
     @objc private func addPressed() {
@@ -413,5 +426,46 @@ private final class LuckgramQuickReplyEditor: UIViewController, UITextViewDelega
         self.dismiss(animated: true, completion: {
             completion(text)
         })
+    }
+}
+
+/// "Settings -> Luckgram features -> Quick replies" subpage (registered by TelegramUI at startup, since
+/// LuckgramUI can't import this module).
+public func luckgramQuickRepliesSettingsController(context: AccountContext) -> ViewController {
+    let presentationData = context.sharedContext.currentPresentationData.with { $0 }
+    let manage = LuckgramQuickRepliesManageController(context: context, strings: LuckgramQuickReplies.Strings(presentationData.strings))
+    let host = LuckgramHostedUIKitController(root: manage, isDark: presentationData.theme.overallDarkAppearance)
+    manage.onBack = { [weak host] in
+        _ = host?.navigationController?.popViewController(animated: true)
+    }
+    return host
+}
+
+/// Hosts a UIKit screen (with its own UINavigationController bar) inside Telegram's navigation stack.
+final class LuckgramHostedUIKitController: ViewController {
+    private let child: UINavigationController
+
+    init(root: UIViewController, isDark: Bool) {
+        self.child = UINavigationController(rootViewController: root)
+        self.child.overrideUserInterfaceStyle = isDark ? .dark : .light
+        super.init(navigationBarPresentationData: nil)
+    }
+
+    required init(coder aDecoder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        self.addChild(self.child)
+        self.child.view.frame = self.view.bounds
+        self.child.view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        self.view.addSubview(self.child.view)
+        self.child.didMove(toParent: self)
+    }
+
+    override func containerLayoutUpdated(_ layout: ContainerViewLayout, transition: ContainedViewLayoutTransition) {
+        super.containerLayoutUpdated(layout, transition: transition)
+        self.child.view.frame = CGRect(origin: CGPoint(), size: layout.size)
     }
 }
