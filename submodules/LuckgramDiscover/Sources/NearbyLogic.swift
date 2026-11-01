@@ -170,7 +170,6 @@ public enum NearbyLogic {
 
     // MARK: - expiry
 
-    /// When to show the "expires in 1 hour" reminder, or nil if it is already too late.
     /// Oldest location fix accepted (CLLocationManager may hand back a cached one).
     public static let fixMaxAge: TimeInterval = 30 * 60
 
@@ -179,6 +178,7 @@ public enum NearbyLogic {
         return age <= fixMaxAge && age >= -60
     }
 
+    /// When to show the "expires in 1 hour" reminder, or nil if it is already too late.
     public static func reminderAt(expiresAt: Date, now: Date) -> Date? {
         let at = expiresAt.addingTimeInterval(-remindBefore)
         return at > now ? at : nil

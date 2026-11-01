@@ -313,8 +313,9 @@ public func luckgramNearbyController(context: AccountContext) -> ViewController 
         state.linked = nil
         refresh()
         requests.add(LuckgramSilentLink.refresh().start(next: { linked in
-            // The server lost the link (unlinked elsewhere): the card is gone, forget it here too.
-            if !linked {
+            // The server says the link is gone (unlinked elsewhere): the card is gone, forget it
+            // here too. nil (offline, server error) changes nothing (review P2).
+            if linked == false {
                 LuckgramNearby.onUnlinked()
             }
             LuckgramSilentLink.ensure(context: context, completion: { ok in
