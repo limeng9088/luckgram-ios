@@ -136,3 +136,35 @@ final class DiscoverMockTests: XCTestCase {
         XCTAssertEqual(DiscoverMock.decimals("1e-05"), 99)
     }
 }
+
+final class BlockLogicTests: XCTestCase {
+    func testParseIdsDedupesAndToleratesObjects() {
+        let json: [String: Any] = ["items": [["user": "a"], ["user": ["id": "b"]], ["user": "a"], ["user": ""], [:]], "next_cursor": "c1"]
+        XCTAssertEqual(BlockLogic.parseIds(json), ["a", "b"])
+        XCTAssertEqual(BlockLogic.nextCursor(json), "c1")
+        XCTAssertNil(BlockLogic.nextCursor(["items": []]))
+        XCTAssertNil(BlockLogic.nextCursor(["next_cursor": NSNull()]))
+        XCTAssertEqual(BlockLogic.parseIds(nil), [])
+    }
+
+    func testPaths() {
+        XCTAssertEqual(BlockLogic.listPath(cursor: nil), "/v1/blocks")
+        XCTAssertEqual(BlockLogic.listPath(cursor: "a+b="), "/v1/blocks?cursor=a%2Bb%3D")
+        XCTAssertEqual(BlockLogic.deletePath("u/1"), "/v1/blocks/u%2F1")
+        XCTAssertEqual(BlockLogic.blockBody("u1")["user"] as? String, "u1")
+    }
+
+    func testNameCache() {
+        var c = BlockLogic.putName([:], id: "a", name: " Alice ")
+        c = BlockLogic.putName(c, id: "b", name: "Bob")
+        XCTAssertEqual(c["a"], "Alice")
+        c = BlockLogic.putName(c, id: "a", name: nil)
+        XCTAssertNil(c["a"])
+        XCTAssertNil(BlockLogic.putName(c, id: "b", name: "  ")["b"])
+    }
+
+    func testTextsBothLanguages() {
+        XCTAssertEqual(BlockLogic.Texts(zh: true).title, "已拉黑的人")
+        XCTAssertEqual(BlockLogic.Texts(zh: false).title, "Blocked People")
+    }
+}

@@ -118,7 +118,7 @@ private final class NearbyState {
     var avatars: [String: UIImage] = [:]
 }
 
-private let idGoLink = 1, idGoUsername = 2, idIntroOk = 3, idOpenSettings = 4, idRenew = 6, idBio = 7, idRefresh = 9
+private let idGoLink = 1, idGoUsername = 2, idIntroOk = 3, idOpenSettings = 4, idRenew = 6, idBio = 7, idRefresh = 9, idBlocked = 10
 private let idVisible = 5, idPhoto = 8
 private let idPerson = 1000
 
@@ -399,7 +399,7 @@ public func luckgramNearbyController(context: AccountContext) -> ViewController 
                 presentImpl?(textAlertController(context: context, title: tx.hide, text: tx.hideConfirm(p.displayName), actions: [
                     TextAlertAction(type: .genericAction, title: tx.cancel, action: {}),
                     TextAlertAction(type: .destructiveAction, title: tx.hide, action: {
-                        requests.add(LuckgramAI.shared.requestJSON(method: "POST", path: "/v1/blocks", body: ["user": p.id]).start(next: { _ in
+                        requests.add(LuckgramBlocks.block(userId: p.id, displayName: p.displayName).start(next: { _ in
                             state.people = state.people?.filter { $0.id != p.id }
                             refresh()
                             toast(tx.hidden)
@@ -454,6 +454,8 @@ public func luckgramNearbyController(context: AccountContext) -> ViewController 
             editBio()
         case idRefresh:
             reload()
+        case idBlocked:
+            pushImpl?(luckgramBlockedUsersController(context: context))
         default:
             break
         }
@@ -505,6 +507,7 @@ public func luckgramNearbyController(context: AccountContext) -> ViewController 
         let bio = LuckgramNearby.bio
         e.append(.value(0, Int32(idBio), tx.bio, bio.isEmpty ? tx.bioEmpty : bio, false))
         e.append(.toggle(0, Int32(idPhoto), tx.showPhoto, LuckgramNearby.showPhoto, true))
+        e.append(.value(0, Int32(idBlocked), LuckgramBlocks.texts.title, "", false))
         if visible, let exp = LuckgramNearby.expiresAt {
             let f = DateFormatter()
             f.dateStyle = .short

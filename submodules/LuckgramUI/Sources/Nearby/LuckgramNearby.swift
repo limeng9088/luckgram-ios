@@ -74,6 +74,7 @@ public enum LuckgramNearby {
     /// An account was logged out / removed (called before the device token is reset): delete the
     /// card now if it carries this account's username.
     public static func onLogout(accountId: Int64) {
+        LuckgramBlocks.clearLocal()
         guard isVisible else {
             return
         }
@@ -86,6 +87,7 @@ public enum LuckgramNearby {
 
     /// S6 unlink: the server deletes the card itself; only forget it here.
     public static func onUnlinked() {
+        LuckgramBlocks.clearLocal()
         clearLocal()
     }
 

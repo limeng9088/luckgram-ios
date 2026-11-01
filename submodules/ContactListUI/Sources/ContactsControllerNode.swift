@@ -1,6 +1,5 @@
 import Display
 import LuckgramUI
-import LuckgramDiscover
 import UIKit
 import AsyncDisplayKit
 import UIKit
@@ -99,18 +98,20 @@ final class ContactsControllerNode: ASDisplayNode, ASGestureRecognizerDelegate {
         self.stringsPromise.set(.single(self.presentationData.strings))
         
         var inviteImpl: (() -> Void)?
-        var luckgramNearbyImpl: (() -> Void)?
+        var luckgramOpenImpl: ((LuckgramDiscoverEntry) -> Void)?
         
-        let presentation = combineLatest(sortOrder, self.stringsPromise.get(), LuckgramSettings.shared.isEnabledSignal(NearbyLogic.featureKey))
-        |> map { sortOrder, strings, nearbyEnabled -> ContactListPresentation in
+        let presentation = combineLatest(sortOrder, self.stringsPromise.get(), LuckgramDiscoverEntries.enabled())
+        |> map { sortOrder, strings, discoverEntries -> ContactListPresentation in
             var options = [ContactListAdditionalOption(title: strings.Contacts_InviteFriends, icon: .generic(UIImage(bundleImageName: "Contact List/AddMemberIcon")!), action: {
                 inviteImpl?()
             })]
-            // Luckgram 25: People Nearby (shown while its switch is on)
-            if nearbyEnabled, let icon = UIImage(bundleImageName: "Chat/Attach Menu/Location") {
-                options.append(ContactListAdditionalOption(title: NearbyLogic.Texts(zh: LuckgramStrings.isChinese).title, icon: .generic(icon), action: {
-                    luckgramNearbyImpl?()
-                }))
+            // Luckgram "Discover" entries (25 People Nearby, 26 Square), each shown while its switch is on
+            for entry in discoverEntries {
+                if let icon = UIImage(bundleImageName: entry.iconName) {
+                    options.append(ContactListAdditionalOption(title: entry.title(), icon: .generic(icon), action: {
+                        luckgramOpenImpl?(entry)
+                    }))
+                }
             }
             switch sortOrder {
                 case .presence:
@@ -162,11 +163,11 @@ final class ContactsControllerNode: ASDisplayNode, ASGestureRecognizerDelegate {
                 strongSelf.openInvite?()
             }
         }
-        luckgramNearbyImpl = { [weak self] in
-            guard let self, LuckgramNearby.isFeatureEnabled else {
+        luckgramOpenImpl = { [weak self] entry in
+            guard let self, entry.isEnabled() else {
                 return
             }
-            (self.controller?.navigationController as? NavigationController)?.pushViewController(luckgramNearbyController(context: self.context))
+            (self.controller?.navigationController as? NavigationController)?.pushViewController(entry.make(self.context))
         }
         
         contextAction = { [weak self] peer, node, gesture, location, isStories in
