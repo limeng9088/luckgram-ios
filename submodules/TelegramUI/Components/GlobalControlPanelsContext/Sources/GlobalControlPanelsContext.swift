@@ -1,4 +1,5 @@
 import Foundation
+import LuckgramUI
 import UIKit
 import SwiftSignalKit
 import TelegramCore
@@ -83,6 +84,8 @@ public final class GlobalControlPanelsContext {
         case setupPhoto(EnginePeer)
         case accountFreeze
         case link(id: String, url: String, title: ServerSuggestionInfo.Item.Text, subtitle: ServerSuggestionInfo.Item.Text)
+        /// Luckgram: pinned "Luckgram AI" row (feature 18), shown when no Telegram notice is.
+        case luckgramAI(title: String, text: String)
     }
     
     public final class GroupCall: Equatable {
@@ -472,7 +475,14 @@ public final class GlobalControlPanelsContext {
                     } else if case let .link(id, url, title, subtitle) = suggestions.first(where: { if case .link = $0 { return true } else { return false} }) {
                         return .single(.link(id: id, url: url, title: title, subtitle: subtitle))
                     } else {
-                        return .single(nil)
+                        // Luckgram: pinned AI assistant row (feature 18); follows the switches.
+                        return LuckgramSettings.shared.updated
+                        |> map { _ -> ChatListNotice? in
+                            if LuckgramSettings.shared.isEnabled(LuckgramFeatures.aiAssistant) && LuckgramSettings.shared.isEnabled(LuckgramFeatures.aiAssistantRow) {
+                                return .luckgramAI(title: "Luckgram AI", text: LuckgramStrings.pick("AI 助手 · 提问、总结、改写、讲解、解题", "AI assistant · ask, summarize, rewrite, explain, solve"))
+                            }
+                            return nil
+                        }
                     }
                 }
                 |> distinctUntilChanged
@@ -658,6 +668,9 @@ public final class GlobalControlPanelsContext {
                 let _ = self.context.engine.notices.dismissServerProvidedSuggestion(suggestion: ServerProvidedSuggestion.starsSubscriptionLowBalance.id).startStandalone()
             case let .link(id, _, _, _):
                 let _ = self.context.engine.notices.dismissServerProvidedSuggestion(suggestion: id).startStandalone()
+            case .luckgramAI:
+                // Closing the row turns it off; it can be turned on again in Luckgram Features.
+                LuckgramSettings.shared.setEnabled(LuckgramFeatures.aiAssistantRow, false)
             default:
                 break
             }
