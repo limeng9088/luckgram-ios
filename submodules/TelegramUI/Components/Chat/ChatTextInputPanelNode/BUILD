@@ -19,7 +19,6 @@ swift_library(
         "-warnings-as-errors",
     ],
     deps = [
-        "//submodules/LuckgramUI:LuckgramUI",
         "//submodules/Display",
         "//submodules/LottieSettings:LottieSettings",
         "//submodules/AsyncDisplayKit",
