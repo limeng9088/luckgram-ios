@@ -31,6 +31,10 @@ public enum LuckgramSquare {
         return max(1, LuckgramSettings.shared.remoteInt("square.max_video_seconds", default: SquareLogic.defaultMaxVideoSeconds))
     }
 
+    public static var maxVideoMb: Int {
+        return max(1, LuckgramSettings.shared.remoteInt("square.max_video_mb", default: SquareLogic.defaultMaxVideoMb))
+    }
+
     // MARK: - link (S6, silent)
 
     static var linked: Bool?
@@ -260,6 +264,12 @@ public enum LuckgramSquare {
         }
         if error.code == "not_linked" {
             return tx.connectFailed
+        }
+        if error.code == "invalid_video" {
+            return tx.videoRejected
+        }
+        if error.code == "square_disabled" {
+            return tx.squareDisabled
         }
         return error.localizedMessage
     }

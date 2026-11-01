@@ -325,18 +325,18 @@ public final class DiscoverMock {
                 images.append(["url": "https://\(DiscoverMock.mockHost)\(DiscoverMock.imagePrefix)\(k)", "width": 1, "height": 1])
             }
             var video: [String: Any]?
-            if let v = r["video"] as? [String: Any] {
+            let vk = r["video_key"] as? String ?? ""
+            let ck = r["cover_key"] as? String ?? ""
+            if !vk.isEmpty || !ck.isEmpty {
                 if !keys.isEmpty {
                     return DiscoverMock.error(400, "invalid_request") // attachments are exclusive
                 }
-                let vk = v["key"] as? String ?? ""
-                let ck = v["cover_key"] as? String ?? ""
-                let dur = (v["duration_seconds"] as? NSNumber)?.intValue ?? 0
-                if !self.uploaded.contains(vk) || !self.uploaded.contains(ck) || dur <= 0 || dur > 60 {
-                    return DiscoverMock.error(400, "invalid_request")
+                if !self.uploaded.contains(vk) || !self.uploaded.contains(ck) || !vk.hasSuffix(".mp4") {
+                    return DiscoverMock.error(400, "invalid_video")
                 }
+                // The real server reads these from the file; the mock has no decoder.
                 video = ["url": "https://\(DiscoverMock.mockHost)/mock-video/\(vk)", "cover_url": "https://\(DiscoverMock.mockHost)\(DiscoverMock.imagePrefix)\(ck)",
-                         "width": (v["width"] as? NSNumber)?.intValue ?? 0, "height": (v["height"] as? NSNumber)?.intValue ?? 0, "duration_seconds": dur]
+                         "width": 1280, "height": 720, "duration_seconds": 15, "size": 1]
             }
             if let lim = self.limited(&self.myPostTimes, window: 24 * 3600, max: 10) {
                 return lim

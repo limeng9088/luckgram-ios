@@ -17,9 +17,10 @@ public enum SquareLogic {
     public static let defaultMaxPostsPerDay = 10
     /// Built-in default for `square.max_video_seconds`; the remote config value wins (spec 26 item 3).
     public static let defaultMaxVideoSeconds = 60
-    /// Short video after client-side transcoding: long edge ≤ 1280 px, ≤ 50 MB, H.264/AAC MP4.
+    /// Short video after client-side transcoding: long edge ≤ 1280 px, H.264/AAC MP4, ≤ `square.max_video_mb` (default 50).
     public static let videoMaxEdge = 1280
-    public static let videoMaxBytes = 50 * 1024 * 1024
+    public static let defaultMaxVideoMb = 50
+    public static let videoMaxBytes = defaultMaxVideoMb * 1024 * 1024
     public static let imageContentType = "image/jpeg"
     public static let videoContentType = "video/mp4"
 
@@ -395,12 +396,9 @@ public enum SquareLogic {
         return ["text": (text ?? "").trimmingCharacters(in: .whitespacesAndNewlines), "image_keys": imageKeys]
     }
 
-    public static func postBody(text: String?, videoKey: String, coverKey: String, width: Int, height: Int, durationSeconds: Int) -> [String: Any] {
-        return [
-            "text": (text ?? "").trimmingCharacters(in: .whitespacesAndNewlines),
-            "image_keys": [String](),
-            "video": ["key": videoKey, "cover_key": coverKey, "width": width, "height": height, "duration_seconds": durationSeconds]
-        ]
+    /// S11: `{text, video_key, cover_key}`; the server reads size, duration and format from the file.
+    public static func postBody(text: String?, videoKey: String, coverKey: String) -> [String: Any] {
+        return ["text": (text ?? "").trimmingCharacters(in: .whitespacesAndNewlines), "video_key": videoKey, "cover_key": coverKey]
     }
 
     public static func commentBody(text: String?, parentId: String?) -> [String: Any] {
@@ -583,7 +581,9 @@ public enum SquareLogic {
         public var preparingImages: String { t("正在处理图片…", "Preparing photos…") }
         public var preparingVideo: String { t("正在处理视频…", "Preparing video…") }
         public var videoFailed: String { t("视频无法处理，请换一段试试", "The video couldn't be processed. Please try another.") }
-        public var videoTooBig: String { t("转码后仍超过 50 MB，请选一段更短的视频", "The video is still over 50 MB after compression. Please pick a shorter one.") }
+        public func videoTooBig(_ maxMb: Int) -> String { t("转码后仍超过 \(maxMb) MB，请选一段更短的视频", "The video is still over \(maxMb) MB after compression. Please pick a shorter one.") }
+        public var videoRejected: String { t("视频不符合要求（时长、大小或格式），请换一段试试", "The video doesn't meet the requirements (length, size or format). Please try another.") }
+        public var squareDisabled: String { t("广场暂时不可用，请稍后再试", "Square is temporarily unavailable. Please try again later.") }
         public var videoTooLongTitle: String { t("视频超过时长限制", "Video is too long") }
         public func videoTooLong(_ maxSeconds: Int, _ actualSeconds: Int) -> String {
             return t("广场视频最长 \(maxSeconds) 秒，这段视频有 " + SquareLogic.formatDuration(actualSeconds) + "。可以只保留开头 \(maxSeconds) 秒继续发布。",

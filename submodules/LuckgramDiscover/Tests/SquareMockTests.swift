@@ -55,11 +55,12 @@ final class SquareMockTests: XCTestCase {
         XCTAssertTrue(v.key.hasSuffix(".mp4"))
         XCTAssertTrue(m.acceptUpload(path: DiscoverMock.uploadPrefix + v.key, body: b("mp4")))
         XCTAssertTrue(m.acceptUpload(path: DiscoverMock.uploadPrefix + cover.key, body: b("jpg")))
-        let videoBody = "{\"text\":\"v\",\"video\":{\"key\":\"\(v.key)\",\"cover_key\":\"\(cover.key)\",\"width\":1280,\"height\":720,\"duration_seconds\":42}}"
+        let videoBody = "{\"text\":\"v\",\"video_key\":\"\(v.key)\",\"cover_key\":\"\(cover.key)\"}"
         XCTAssertEqual(m.handle(method: "POST", path: "/v1/square/posts", query: "", body: b(videoBody.replacingOccurrences(of: "\"text\":\"v\"", with: "\"text\":\"v\",\"image_keys\":[\"\(key)\"]")))?.status, 400)
         let vposted = m.handle(method: "POST", path: "/v1/square/posts", query: "", body: b(videoBody))
         XCTAssertEqual(vposted?.status, 200)
-        XCTAssertEqual((vposted?.body["video"] as? [String: Any])?["duration_seconds"] as? Int, 42)
+        XCTAssertTrue(((vposted?.body["video"] as? [String: Any])?["duration_seconds"] as? Int ?? 0) > 0)
+        XCTAssertEqual(m.handle(method: "POST", path: "/v1/square/posts", query: "", body: b("{\"text\":\"v\",\"video_key\":\"\(cover.key)\",\"cover_key\":\"\(cover.key)\"}"))?.status, 400)
         XCTAssertTrue(((vposted?.body["video"] as? [String: Any])?["cover_url"] as? String ?? "").contains("/mock-image/"))
 
         XCTAssertEqual(m.handle(method: "POST", path: "/v1/square/posts/\(id)/like", query: "", body: Data())?.body["like_count"] as? Int, 1)

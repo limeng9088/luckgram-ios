@@ -230,7 +230,7 @@ enum LuckgramSquareVideos {
                     completion(.failure(export.status == .cancelled ? .unreadable : .unreadable))
                     return
                 }
-                if bytes.intValue > SquareLogic.videoMaxBytes {
+                if bytes.intValue > LuckgramSquare.maxVideoMb * 1024 * 1024 {
                     try? FileManager.default.removeItem(at: output)
                     completion(.failure(.tooBig))
                     return
@@ -440,7 +440,7 @@ public func luckgramSquareComposeController(context: AccountContext) -> ViewCont
                 requestUploads(count: 1, contentType: SquareLogic.videoContentType, then: { videoUploads in
                     requestUploads(count: 1, contentType: SquareLogic.imageContentType, then: { coverUploads in
                         uploadAll([videoUploads[0], coverUploads[0]], payloads: [(mp4, SquareLogic.videoContentType), (video.coverJpeg, SquareLogic.imageContentType)], done: { keys in
-                            createPost(SquareLogic.postBody(text: state.text, videoKey: keys[0], coverKey: keys[1], width: video.width, height: video.height, durationSeconds: video.durationSeconds))
+                            createPost(SquareLogic.postBody(text: state.text, videoKey: keys[0], coverKey: keys[1]))
                         })
                     })
                 })
@@ -502,7 +502,7 @@ public func luckgramSquareComposeController(context: AccountContext) -> ViewCont
                 state.video?.delete()
                 state.video = video
             case let .failure(reason):
-                LuckgramSquare.toast(context: context, reason == .tooBig ? tx.videoTooBig : tx.videoFailed, present: present)
+                LuckgramSquare.toast(context: context, reason == .tooBig ? tx.videoTooBig(LuckgramSquare.maxVideoMb) : tx.videoFailed, present: present)
             }
             refresh()
         })
