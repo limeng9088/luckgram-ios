@@ -13,6 +13,8 @@ public final class LuckgramFeature {
         case ai
         /// Only shown when `LuckgramSettings.shared.isDebugToolsVisible`.
         case debug
+        /// 25 nearby, 26 square (appended so existing raw values stay the same)
+        case discover
     }
 
     public let key: String

@@ -222,6 +222,8 @@ public final class LuckgramSettings {
 
     /// Called when an account is removed from the device (logout or account deletion).
     public func accountRemoved(accountId: Int64, noAccountsLeft: Bool) {
+        // 25: delete this account's nearby card while the device token is still there.
+        LuckgramNearby.onLogout(accountId: accountId)
         Queue.mainQueue().async {
             LuckgramAIStore.accountRemoved(accountId: accountId)
         }

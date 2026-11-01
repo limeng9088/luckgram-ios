@@ -212,6 +212,7 @@ public func luckgramAccountController(context: AccountContext) -> ViewController
                     state.busy = true
                     requests.add(LuckgramAI.shared.requestJSON(method: "DELETE", path: "/v1/link").start(next: { _ in
                         state.busy = false
+                        LuckgramNearby.onUnlinked() // 25: the server deleted the nearby card
                         luckgramToast(context, tx.unlinkedNow, present: presentImpl)
                         load()
                     }, error: { error in

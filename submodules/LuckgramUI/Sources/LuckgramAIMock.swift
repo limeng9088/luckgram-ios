@@ -1,4 +1,5 @@
 import Foundation
+import LuckgramDiscover
 
 /// In-app mock of the Luckgram API server (same paths, bodies and error format as
 /// docs/api-server.md). Plugged into URLSession as a URLProtocol, so the real client code
@@ -40,6 +41,9 @@ public final class LuckgramAIMock {
     }
 
     /// Next request (other than registration) fails with this error code.
+    /// 25/26 endpoints (state in memory).
+    public let discover = DiscoverMock()
+
     public func failNext(_ code: String) {
         self.lock.lock()
         self.forcedError = code
@@ -161,6 +165,10 @@ public final class LuckgramAIMock {
                 "transcribe_minutes": ["used": 0, "limit": 30]
             ]])
         default:
+            // 25/26: nearby, square, blocks and the S6 link status
+            if let reply = self.discover.handle(method: method, path: path, query: query, body: body) {
+                return .json(reply.status, reply.body)
+            }
             return LuckgramAIMock.error(404, "not_found")
         }
     }
