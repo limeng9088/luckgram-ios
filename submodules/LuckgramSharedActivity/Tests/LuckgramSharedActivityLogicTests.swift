@@ -50,4 +50,16 @@ final class LuckgramSharedActivityLogicTests: XCTestCase {
         XCTAssertEqual(LuckgramSharedActivityLogic.header(groupCount: 3, chinese: false), "Recent messages · 3 groups in common")
         XCTAssertEqual(LuckgramSharedActivityLogic.header(groupCount: 1, chinese: false), "Recent messages · 1 group in common")
     }
+
+    func testTimeBudget() {
+        XCTAssertEqual(LuckgramSharedActivityLogic.remaining(startedAt: 100, now: 100), LuckgramSharedActivityLogic.timeBudget)
+        XCTAssertEqual(LuckgramSharedActivityLogic.remaining(startedAt: 100, now: 110), LuckgramSharedActivityLogic.timeBudget - 10)
+        XCTAssertEqual(LuckgramSharedActivityLogic.remaining(startedAt: 100, now: 200), 0.5)
+    }
+
+    func testPartialHeader() {
+        XCTAssertEqual(LuckgramSharedActivityLogic.header(groupCount: 3, partial: false, chinese: true), "最近消息 · 3 个共同群组")
+        XCTAssertEqual(LuckgramSharedActivityLogic.header(groupCount: 3, partial: true, chinese: true), "最近消息 · 3 个共同群组（部分群组未加载完，点「刷新」重试）")
+        XCTAssertEqual(LuckgramSharedActivityLogic.header(groupCount: 1, partial: true, chinese: false), "Recent messages · 1 group in common (some groups didn't load, tap Refresh to retry)")
+    }
 }

@@ -1,7 +1,8 @@
 // Luckgram — "Activity" pane on user profiles (spec 16): what this user recently wrote in the
 // groups you share with them. Telegram only: groups in common (all pages, groups you are in),
 // then messages.search(from_id) with 20 per group, at most 3 searches at a time (TelegramCore's
-// network layer sits out FLOOD_WAIT and retries). Merged newest first, at most 100, cached 10
+// network layer sits out FLOOD_WAIT and retries; the whole load is capped at 15 s, then shown as
+// partial). Merged newest first, at most 100, cached 10
 // minutes per user. Same rules and wording as Android `SharedActivityLoader`.
 
 import Foundation
@@ -33,13 +34,15 @@ enum LuckgramActivityPane {
     static var emptyNoMessages: String { LuckgramStrings.pick("最近没有在共同群组里发过消息", "No recent messages in your groups in common") }
     static var mediaText: String { LuckgramStrings.pick("[媒体]", "[Media]") }
 
-    static func header(groupCount: Int) -> String {
-        return LuckgramSharedActivityLogic.header(groupCount: groupCount, chinese: LuckgramStrings.isChinese)
+    static func header(groupCount: Int, partial: Bool) -> String {
+        return LuckgramSharedActivityLogic.header(groupCount: groupCount, partial: partial, chinese: LuckgramStrings.isChinese)
     }
 
     struct Result {
         let messages: [EngineMessage]
         let groupCount: Int
+        /// Some groups (or the group list) didn't answer within the time budget.
+        let partial: Bool
         let loadedAt: Double
     }
 
@@ -58,6 +61,10 @@ enum LuckgramActivityPane {
     }
 
     static func store(_ result: Result, context: AccountContext, userId: EnginePeer.Id) {
+        // A partial result is shown but not reused: the next open tries again.
+        guard !result.partial else {
+            return
+        }
         cache[cacheKey(context: context, userId: userId)] = result
     }
 
@@ -115,8 +122,18 @@ enum LuckgramActivityPane {
     }
 
     static func load(context: AccountContext, userId: EnginePeer.Id) -> Signal<Result, NoError> {
-        return commonGroups(context: context, userId: userId)
-        |> mapToSignal { groups -> Signal<Result, NoError> in
+        let startedAt = CFAbsoluteTimeGetCurrent()
+        let left: () -> Double = {
+            return LuckgramSharedActivityLogic.remaining(startedAt: startedAt, now: CFAbsoluteTimeGetCurrent())
+        }
+        // nil = didn't answer within the time budget (16 P1): the list is shown as partial.
+        return (commonGroups(context: context, userId: userId)
+        |> map { groups -> [EnginePeer]? in return groups }
+        |> timeout(LuckgramSharedActivityLogic.timeBudget, queue: Queue.mainQueue(), alternate: .single(nil)))
+        |> mapToSignal { groupsOrNil -> Signal<Result, NoError> in
+            guard let groups = groupsOrNil else {
+                return .single(Result(messages: [], groupCount: 0, partial: true, loadedAt: CFAbsoluteTimeGetCurrent()))
+            }
             // Batches of at most `maxParallel` searches, one batch after another.
             var batches: [[EnginePeer]] = []
             var index = 0
@@ -124,19 +141,26 @@ enum LuckgramActivityPane {
                 batches.append(Array(groups[index ..< min(groups.count, index + LuckgramSharedActivityLogic.maxParallel)]))
                 index += LuckgramSharedActivityLogic.maxParallel
             }
-            var signal: Signal<[[EngineMessage]], NoError> = .single([])
+            var signal: Signal<[[EngineMessage]?], NoError> = .single([])
             for batch in batches {
                 signal = signal
-                |> mapToSignal { collected -> Signal<[[EngineMessage]], NoError> in
-                    return combineLatest(batch.map { recentMessages(context: context, groupId: $0.id, userId: userId) })
+                |> mapToSignal { collected -> Signal<[[EngineMessage]?], NoError> in
+                    // Each batch gets what is left of the budget (TelegramCore would otherwise
+                    // sit out FLOOD_WAITs for as long as the server asks).
+                    let wait = left()
+                    return combineLatest(batch.map { group -> Signal<[EngineMessage]?, NoError> in
+                        return recentMessages(context: context, groupId: group.id, userId: userId)
+                        |> map { messages -> [EngineMessage]? in return messages }
+                        |> timeout(wait, queue: Queue.mainQueue(), alternate: .single(nil))
+                    })
                     |> take(1)
                     |> map { collected + $0 }
                 }
             }
             return signal
             |> map { perGroup -> Result in
-                let merged = LuckgramSharedActivityLogic.newestFirst(perGroup, limit: LuckgramSharedActivityLogic.maxItems, date: { $0.timestamp }, id: { Int64($0.id.id) })
-                return Result(messages: merged, groupCount: groups.count, loadedAt: CFAbsoluteTimeGetCurrent())
+                let merged = LuckgramSharedActivityLogic.newestFirst(perGroup.compactMap { $0 }, limit: LuckgramSharedActivityLogic.maxItems, date: { $0.timestamp }, id: { Int64($0.id.id) })
+                return Result(messages: merged, groupCount: groups.count, partial: perGroup.contains(where: { $0 == nil }), loadedAt: CFAbsoluteTimeGetCurrent())
             }
         }
         |> deliverOnMainQueue
@@ -294,18 +318,18 @@ final class PeerInfoLuckgramActivityPaneNode: ASDisplayNode, PeerInfoPaneNode {
 
     private func updateEntries() {
         if let result = self.result {
-            self.statusPromise.set(.single(PeerInfoStatusData(text: LuckgramActivityPane.header(groupCount: result.groupCount), isActivity: false, key: .luckgramActivity)))
+            self.statusPromise.set(.single(PeerInfoStatusData(text: LuckgramActivityPane.header(groupCount: result.groupCount, partial: result.partial), isActivity: false, key: .luckgramActivity)))
         }
         guard let (_, _, presentationData) = self.currentParams else {
             return
         }
         var entries: [LuckgramActivityEntry] = []
-        entries.append(.header(title: LuckgramActivityPane.header(groupCount: self.result?.groupCount ?? 0), canRefresh: !self.isLoading))
+        entries.append(.header(title: LuckgramActivityPane.header(groupCount: self.result?.groupCount ?? 0, partial: self.result?.partial ?? false), canRefresh: !self.isLoading))
         if self.isLoading && self.result == nil {
             entries.append(.status(LuckgramActivityPane.loadingText))
         } else if let result = self.result {
             if result.messages.isEmpty {
-                entries.append(.status(result.groupCount == 0 ? LuckgramActivityPane.emptyNoGroups : LuckgramActivityPane.emptyNoMessages))
+                entries.append(.status(result.groupCount == 0 && !result.partial ? LuckgramActivityPane.emptyNoGroups : LuckgramActivityPane.emptyNoMessages))
             }
             let formatter = DateFormatter()
             formatter.dateStyle = .short
