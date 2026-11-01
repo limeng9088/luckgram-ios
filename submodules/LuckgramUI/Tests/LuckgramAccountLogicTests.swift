@@ -25,7 +25,7 @@ final class LuckgramAccountLogicTests: XCTestCase {
         let st = LuckgramAccountLogic.parseStart(["nonce": "abc", "url": "https://t.me/LuckgramBot?start=abc", "expires_at": "2026-11-01T00:10:00Z"])
         XCTAssertEqual(st.expiresAt?.timeIntervalSince1970, 1793491800)
         XCTAssertTrue(LuckgramAccountLogic.isTelegramLink(st.url))
-        XCTAssertFalse(LuckgramAccountLogic.isTelegramLink("https://evil.example/t.me/x"))
+        XCTAssertFalse(LuckgramAccountLogic.isTelegramLink("https://evil.example.com/t.me/x"))
         XCTAssertFalse(LuckgramAccountLogic.isTelegramLink("https://t.me/"))
         XCTAssertEqual(LuckgramAccountLogic.parseTime("2026-11-01T08:10:00+08:00"), st.expiresAt)
         XCTAssertEqual(LuckgramAccountLogic.parseTime("2026-11-01T00:10:00.123Z")?.timeIntervalSince1970 ?? 0, 1793491800.123, accuracy: 0.001)
