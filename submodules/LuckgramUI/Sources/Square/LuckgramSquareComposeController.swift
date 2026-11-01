@@ -432,16 +432,18 @@ public func luckgramSquareComposeController(context: AccountContext) -> ViewCont
             if let video = state.video {
                 state.progressText = tx.uploadingVideo
                 refresh()
-                guard let mp4 = try? Data(contentsOf: video.fileUrl) else {
-                    fail(LuckgramAIError(code: LuckgramAIError.invalidRequest))
-                    return
-                }
                 // One slot for the MP4, one for its cover; the server only accepts a video post with both.
+                // The MP4 is streamed from disk; only the cover is held in memory.
                 requestUploads(count: 1, contentType: SquareLogic.videoContentType, then: { videoUploads in
                     requestUploads(count: 1, contentType: SquareLogic.imageContentType, then: { coverUploads in
-                        uploadAll([videoUploads[0], coverUploads[0]], payloads: [(mp4, SquareLogic.videoContentType), (video.coverJpeg, SquareLogic.imageContentType)], done: { keys in
-                            createPost(SquareLogic.postBody(text: state.text, videoKey: keys[0], coverKey: keys[1]))
-                        })
+                        requests.add((LuckgramAI.shared.putPresigned(url: videoUploads[0].url, contentType: SquareLogic.videoContentType, fileUrl: video.fileUrl)
+                        |> deliverOnMainQueue).start(error: { error in
+                            fail(error)
+                        }, completed: {
+                            uploadAll([coverUploads[0]], payloads: [(video.coverJpeg, SquareLogic.imageContentType)], done: { keys in
+                                createPost(SquareLogic.postBody(text: state.text, videoKey: videoUploads[0].key, coverKey: keys[0]))
+                            })
+                        }))
                     })
                 })
             } else if state.images.isEmpty {

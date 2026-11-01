@@ -255,6 +255,13 @@ public enum LuckgramSquare {
         let _ = (context.engine.data.get(TelegramEngine.EngineData.Item.Peer.Peer(id: context.account.peerId))
         |> deliverOnMainQueue).start(next: { peer in
             let myUsername = peer?.addressName ?? ""
+            // The account's small profile photo (already downloaded) as base64 JPEG, same limit as 25.
+            var avatar: String?
+            if let rep = peer?.smallProfileImage, let path = context.engine.resources.completedResourcePath(id: EngineMediaResource.Id(rep.resource.id)),
+               let data = try? Data(contentsOf: URL(fileURLWithPath: path)), !data.isEmpty,
+               let image = UIImage(data: data), let jpeg = image.jpegData(compressionQuality: 0.85), jpeg.count <= NearbyLogic.avatarMaxBytes * 3 / 4 {
+                avatar = jpeg.base64EncodedString()
+            }
             let defaultName = current?["display_name"] as? String ?? (peer?.displayTitle(strings: context.sharedContext.currentPresentationData.with { $0 }.strings, displayOrder: .firstLast) ?? "")
             present(promptController(context: context, text: current == nil ? tx.profileTitle + "\n" + tx.profileNeeded : tx.editProfile, subtitle: tx.displayName, value: defaultName, placeholder: tx.displayName, characterLimit: 64, apply: { name in
                 guard let name = name?.trimmingCharacters(in: .whitespacesAndNewlines), !name.isEmpty else {
@@ -263,7 +270,22 @@ public enum LuckgramSquare {
                 present(promptController(context: context, text: tx.bio, value: current?["bio"] as? String ?? "", placeholder: tx.bio, characterLimit: SquareLogic.profileBioMax, apply: { bio in
                     let bioText = (bio ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
                     let save: (String) -> Void = { username in
-                        let body: [String: Any] = ["display_name": name, "bio": bioText, "username": username]
+                        let askAvatar: (@escaping (String?) -> Void) -> Void = { done in
+                            guard let avatar else {
+                                done(nil)
+                                return
+                            }
+                            present(textAlertController(context: context, title: tx.useTelegramAvatar, text: "", actions: [
+                                TextAlertAction(type: .genericAction, title: tx.hideUsername, action: { done("") }),
+                                TextAlertAction(type: .defaultAction, title: tx.showUsername, action: { done(avatar) })
+                            ]))
+                        }
+                        askAvatar { avatarValue in
+                        var body: [String: Any] = ["display_name": name, "bio": bioText, "username": username]
+                        // S11: avatar is base64 JPEG; omitted = keep, "" = remove.
+                        if let avatarValue {
+                            body["avatar"] = avatarValue
+                        }
                         let _ = LuckgramAI.shared.requestJSON(method: "PUT", path: "/v1/square/profile", body: body).start(next: { j in
                             setProfile((j["display_name"] as? String ?? "").isEmpty ? body : j)
                             toast(context: context, tx.saved, present: present)
@@ -271,6 +293,7 @@ public enum LuckgramSquare {
                         }, error: { error in
                             showError(error, context: context, present: present, push: { _ in })
                         })
+                        }
                     }
                     if myUsername.isEmpty {
                         save("")

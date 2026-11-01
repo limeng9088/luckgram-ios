@@ -343,6 +343,32 @@ public final class LuckgramAI {
         |> take(1)
     }
 
+    /// Like `putPresigned(url:contentType:body:)` but streams a file from disk (26 square videos,
+    /// up to 50 MB) instead of holding it in memory.
+    public func putPresigned(url: String, contentType: String, fileUrl: URL) -> Signal<Void, LuckgramAIError> {
+        guard url.hasPrefix("https://"), let target = URL(string: url) else {
+            return .fail(LuckgramAIError(code: LuckgramAIError.invalidRequest))
+        }
+        var request = URLRequest(url: target)
+        request.httpMethod = "PUT"
+        request.setValue(contentType, forHTTPHeaderField: "Content-Type")
+        return Signal { subscriber in
+            let handler = LuckgramHTTPTaskHandler(subscriber: subscriber)
+            let session = self.session(delegate: handler)
+            let task = session.uploadTask(with: request, fromFile: fileUrl)
+            task.resume()
+            session.finishTasksAndInvalidate()
+            return ActionDisposable {
+                task.cancel()
+            }
+        }
+        |> map { _ -> Void in
+            return Void()
+        }
+        |> then(.single(Void()))
+        |> take(1)
+    }
+
     private func download(_ url: String) -> Signal<Data, LuckgramAIError> {
         let signal: Signal<HTTPEvent, LuckgramAIError>
         if self.isAPIHost(url) {
