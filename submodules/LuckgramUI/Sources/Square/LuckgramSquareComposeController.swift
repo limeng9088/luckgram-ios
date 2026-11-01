@@ -179,7 +179,7 @@ enum LuckgramSquareImages {
 }
 
 enum LuckgramSquareVideos {
-    enum Failure {
+    enum Failure: Error {
         case unreadable
         case tooBig
     }
