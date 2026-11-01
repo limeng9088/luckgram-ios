@@ -604,6 +604,9 @@ public enum SquareLogic {
         public func useMyUsername(_ u: String) -> String { t("在广场显示 @" + u + "，其他人可以通过它给你发消息", "Show @" + u + " in Square so others can message you") }
         public var showUsername: String { t("显示", "Show") }
         public var useTelegramAvatar: String { t("在广场使用我的 Telegram 头像？", "Use your Telegram photo in Square?") }
+        public var useTelegramAvatarText: String { t("其他人会在你的动态和名片上看到这张头像。", "Others will see this photo on your posts and profile.") }
+        public var useAvatarYes: String { t("使用 Telegram 头像", "Use Telegram photo") }
+        public var useAvatarNo: String { t("不使用", "Don't use") }
         public var hideUsername: String { t("不显示", "Don't show") }
         public var save: String { t("保存", "Save") }
         public var saved: String { t("已保存", "Saved") }
