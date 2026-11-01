@@ -1,17 +1,12 @@
 import Foundation
-import TelegramPresentationData
+import LuckgramUI
 
-/// Luckgram: call recording UI strings in Chinese and English (Telegram has no official Chinese
-/// language pack). Chinese is used when the in-app language or the system language is Chinese.
+/// Luckgram: call recording UI strings in Chinese and English. Chinese or English is decided by
+/// `LuckgramStrings.isChinese`, like all Luckgram strings.
 enum LuckgramCallRecordingStrings {
-    static func isChinese(_ strings: PresentationStrings? = nil) -> Bool {
-        if let strings, strings.primaryComponent.languageCode.lowercased().hasPrefix("zh") {
-            return true
-        }
-        if let preferred = Locale.preferredLanguages.first, preferred.lowercased().hasPrefix("zh") {
-            return true
-        }
-        return false
+    /// Same rule as every Luckgram string (00 `LuckgramStrings.isChinese`, specs #42).
+    static func isChinese() -> Bool {
+        return LuckgramStrings.isChinese
     }
     
     private static func s(_ zh: String, _ en: String) -> String {
