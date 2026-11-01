@@ -127,11 +127,14 @@ public enum LuckgramSilentLink {
         })
     }
 
-    /// Clears the bot chat now and again a little later: the server records the link before the
-    /// bot sends its reply, so the reply may land after the first clear (review P2).
+    /// Removes the bot conversation from the chat list so no trace of the link is left (spec 26
+    /// item 2): the whole dialog is deleted locally, not just its history, which would leave a
+    /// "History was cleared" row at the top (acceptance P1). Done now and again a little later:
+    /// the server records the link before the bot sends its reply, so the reply may land after
+    /// the first delete (review P2).
     private static func clearBotChat(context: AccountContext, botPeerId: EnginePeer.Id) {
         let clear: () -> Void = {
-            let _ = context.engine.messages.clearHistoryInteractively(peerId: botPeerId, threadId: nil, type: .forLocalPeer).start()
+            let _ = context.engine.peers.removePeerChat(peerId: botPeerId, reportChatSpam: false, deleteGloballyIfPossible: false).start()
         }
         clear()
         for d in LuckgramAccountLogic.botCleanupDelays {

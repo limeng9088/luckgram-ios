@@ -344,8 +344,9 @@ public final class LuckgramAI {
     }
 
     /// Like `putPresigned(url:contentType:body:)` but streams a file from disk (26 square videos,
-    /// up to 50 MB) instead of holding it in memory.
-    public func putPresigned(url: String, contentType: String, fileUrl: URL) -> Signal<Void, LuckgramAIError> {
+    /// up to 50 MB) instead of holding it in memory. `progress` gets the sent fraction (0…1) on an
+    /// arbitrary queue.
+    public func putPresigned(url: String, contentType: String, fileUrl: URL, progress: ((Double) -> Void)? = nil) -> Signal<Void, LuckgramAIError> {
         guard url.hasPrefix("https://"), let target = URL(string: url) else {
             return .fail(LuckgramAIError(code: LuckgramAIError.invalidRequest))
         }
@@ -356,9 +357,17 @@ public final class LuckgramAI {
             let handler = LuckgramHTTPTaskHandler(subscriber: subscriber)
             let session = self.session(delegate: handler)
             let task = session.uploadTask(with: request, fromFile: fileUrl)
+            var observation: NSKeyValueObservation?
+            if let progress = progress {
+                observation = task.progress.observe(\.fractionCompleted, options: [.new]) { p, _ in
+                    progress(p.fractionCompleted)
+                }
+            }
             task.resume()
             session.finishTasksAndInvalidate()
             return ActionDisposable {
+                observation?.invalidate()
+                observation = nil
                 task.cancel()
             }
         }
