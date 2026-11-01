@@ -199,11 +199,11 @@ enum LuckgramSquareVideos {
     /// the metadata filtered out (location included); the first frame becomes the cover.
     static func prepare(_ url: URL, keepSeconds: Int, progress: @escaping (Float) -> Void, completion: @escaping (Result<LuckgramSquarePreparedVideo, Failure>) -> Void) -> () -> Void {
         let asset = AVURLAsset(url: url)
-        guard let probe = probe(url) else {
+        guard let source = probe(url) else {
             completion(.failure(.unreadable))
             return {}
         }
-        let size = SquareLogic.videoSize(width: probe.width, height: probe.height)
+        let size = SquareLogic.videoSize(width: source.width, height: source.height)
         let preset = max(size.width, size.height) > 960 ? AVAssetExportPreset1280x720 : AVAssetExportPreset960x540
         guard let export = AVAssetExportSession(asset: asset, presetName: preset) else {
             completion(.failure(.unreadable))
@@ -249,7 +249,7 @@ enum LuckgramSquareVideos {
                     completion(.failure(.unreadable))
                     return
                 }
-                let finalSize = probe(output) ?? (min(keepSeconds, probe.seconds), size.width, size.height)
+                let finalSize = probe(output) ?? (min(keepSeconds, source.seconds), size.width, size.height)
                 completion(.success(LuckgramSquarePreparedVideo(fileUrl: output, coverJpeg: coverJpeg, thumbnail: LuckgramSquareImages.thumbnail(of: cover), width: finalSize.width, height: finalSize.height, durationSeconds: min(keepSeconds, finalSize.seconds))))
             }
         }
