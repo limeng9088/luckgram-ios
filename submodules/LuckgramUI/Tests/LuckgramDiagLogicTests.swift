@@ -34,8 +34,8 @@ final class LuckgramDiagLogicTests: XCTestCase {
     }
 
     func testRouteKeepsOnlyHostAndPathOfOtherUrls() {
-        let r = LuckgramDiagLog.route("https://bucket.s3.amazonaws.com/square/p/ab/1.jpg?X-Amz-Signature=deadbeef&X-Amz-Credential=AKIA", apiHost: api)
-        XCTAssertEqual(r, "bucket.s3.amazonaws.com/square/p/ab/1.jpg")
+        let r = LuckgramDiagLog.route("https://media.luckgram.cc/square/p/ab/1.jpg?X-Amz-Signature=deadbeef&X-Amz-Credential=AKIA", apiHost: api)
+        XCTAssertEqual(r, "media.luckgram.cc/square/p/ab/1.jpg")
         XCTAssertFalse(r.contains("Signature"))
         XCTAssertEqual(LuckgramDiagLog.route("https://user:pass@host.example", apiHost: api), "host.example/")
     }
