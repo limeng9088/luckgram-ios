@@ -95,6 +95,9 @@ private final class ContextControllerContentSourceImpl: ContextControllerContent
 }
 
 public class ChatListControllerImpl: TelegramBaseController, ChatListController {
+    /// Luckgram: follows LuckgramSettings changes (features 18, 22).
+    private var luckgramSettingsDisposable: Disposable?
+
     /// iPhone Duo: this screen lays out its own side column, back button included.
     override public var placesNavigationButtonInSideColumn: Bool {
         return false
@@ -804,6 +807,7 @@ public class ChatListControllerImpl: TelegramBaseController, ChatListController 
     }
     
     deinit {
+        self.luckgramSettingsDisposable?.dispose()
         self.openMessageFromSearchDisposable.dispose()
         self.badgeDisposable?.dispose()
         self.badgeIconDisposable?.dispose()
@@ -2465,6 +2469,10 @@ public class ChatListControllerImpl: TelegramBaseController, ChatListController 
     }
     
     public override func displayNodeDidLoad() {
+        // Luckgram: re-layout when Luckgram switches or pinned agents change (features 18, 22)
+        self.luckgramSettingsDisposable = (LuckgramSettings.shared.changes |> deliverOnMainQueue).startStrict(next: { [weak self] _ in
+            self?.requestLayout(transition: .immediate)
+        })
         super.displayNodeDidLoad()
         
         Queue.mainQueue().after(1.0) {
