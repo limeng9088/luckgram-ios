@@ -296,7 +296,8 @@ public final class DiscoverMock {
             let count = (r["count"] as? NSNumber)?.intValue ?? 0
             let ct = r["content_type"] as? String ?? ""
             let video = ct == "video/mp4"
-            if count < 1 || count > 9 || !(ct == "image/jpeg" || video) {
+            let sizes = (r["sizes"] as? [NSNumber])?.map { $0.intValue } ?? []
+            if count < 1 || count > 9 || !(ct == "image/jpeg" || video) || sizes.count != count || sizes.contains(where: { $0 <= 0 }) {
                 return DiscoverMock.error(400, "invalid_request")
             }
             var ups: [[String: Any]] = []

@@ -409,8 +409,9 @@ public enum SquareLogic {
         return j
     }
 
-    public static func uploadsBody(count: Int, contentType: String) -> [String: Any] {
-        return ["count": count, "content_type": contentType]
+    /// S11: every slot declares its byte size; the PUT's Content-Length must match (S3 checks it).
+    public static func uploadsBody(contentType: String, sizes: [Int]) -> [String: Any] {
+        return ["count": sizes.count, "content_type": contentType, "sizes": sizes]
     }
 
     private static let component: CharacterSet = {
@@ -526,12 +527,14 @@ public enum SquareLogic {
         public var refresh: String { t("刷新", "Refresh") }
 
         public var hidden: String { t("已隐藏", "Hidden") }
+        /// `reason` is a report reason code (S11: the most reported one) or free text.
         public func hiddenInfo(_ reason: String?) -> String {
             let base = t("这条动态已被隐藏，只有你自己能看到。", "This post has been hidden and is visible only to you.")
             guard let reason, !reason.isEmpty else {
                 return base
             }
-            return base + " " + t("原因：", "Reason: ") + reason
+            let shown = SquareLogic.reportReasons.contains(reason) ? reportReason(reason) : reason
+            return base + " " + t("原因：", "Reason: ") + shown
         }
         public func likes(_ n: Int) -> String { t("赞 \(n)", n == 1 ? "1 like" : "\(n) likes") }
         public func comments(_ n: Int) -> String { t("评论 \(n)", n == 1 ? "1 comment" : "\(n) comments") }
@@ -600,6 +603,7 @@ public enum SquareLogic {
         public var publicUsername: String { t("公开用户名", "Public username") }
         public func useMyUsername(_ u: String) -> String { t("在广场显示 @" + u + "，其他人可以通过它给你发消息", "Show @" + u + " in Square so others can message you") }
         public var showUsername: String { t("显示", "Show") }
+        public var useTelegramAvatar: String { t("在广场使用我的 Telegram 头像？", "Use your Telegram photo in Square?") }
         public var hideUsername: String { t("不显示", "Don't show") }
         public var save: String { t("保存", "Save") }
         public var saved: String { t("已保存", "Saved") }
