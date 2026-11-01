@@ -1,5 +1,6 @@
 import UIKit
 import SwiftSignalKit
+import LuckgramUI
 import Display
 import TelegramCore
 import UserNotifications
@@ -3050,6 +3051,21 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
     }
     
     func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse, withCompletionHandler completionHandler: @escaping () -> Void) {
+        if LuckgramNearby.isReminderNotification(identifier: response.notification.request.identifier) {
+            // Luckgram 25: the "Visible nearby" expiry reminder opens People Nearby.
+            if response.actionIdentifier == UNNotificationDefaultActionIdentifier {
+                let _ = (self.authorizedContext()
+                |> take(1)
+                |> deliverOnMainQueue).start(next: { context in
+                    guard LuckgramNearby.isFeatureEnabled else {
+                        return
+                    }
+                    context.rootController.pushViewController(luckgramNearbyController(context: context.context))
+                })
+            }
+            completionHandler()
+            return
+        }
         let _ = (accountIdFromNotification(response.notification, sharedContext: self.sharedContextPromise.get())
         |> deliverOnMainQueue).start(next: { accountId in
             if response.actionIdentifier == UNNotificationDefaultActionIdentifier {

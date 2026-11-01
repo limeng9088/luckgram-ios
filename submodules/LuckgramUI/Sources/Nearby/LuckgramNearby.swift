@@ -16,6 +16,11 @@ public enum LuckgramNearby {
     private static let accountKey = "nearby.account"
     static let reminderId = "luckgram.nearby.reminder"
 
+    /// True for the "Visible nearby" expiry reminder (AppDelegate opens People Nearby on tap).
+    public static func isReminderNotification(identifier: String) -> Bool {
+        return identifier == reminderId
+    }
+
     public static var isFeatureEnabled: Bool {
         return LuckgramSettings.shared.isEnabled(NearbyLogic.featureKey)
     }
@@ -75,6 +80,7 @@ public enum LuckgramNearby {
     /// card now if it carries this account's username.
     public static func onLogout(accountId: Int64) {
         LuckgramBlocks.clearLocal()
+        LuckgramSilentLink.clearCache()
         guard isVisible else {
             return
         }
@@ -88,6 +94,7 @@ public enum LuckgramNearby {
     /// S6 unlink: the server deletes the card itself; only forget it here.
     public static func onUnlinked() {
         LuckgramBlocks.clearLocal()
+        LuckgramSilentLink.clearCache()
         clearLocal()
     }
 
@@ -191,8 +198,14 @@ final class LuckgramNearbyLocator: NSObject, CLLocationManagerDelegate {
     }
 
     func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
-        if let c = locations.last?.coordinate, self.completion != nil {
-            self.finish(.location(c))
+        guard self.completion != nil, let last = locations.last else {
+            return
+        }
+        // Review P2: a stale cached fix is a failure, not a location.
+        if NearbyLogic.isFreshFix(last.timestamp, now: Date()) {
+            self.finish(.location(last.coordinate))
+        } else {
+            self.finish(.failed)
         }
     }
 

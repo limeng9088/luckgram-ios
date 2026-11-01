@@ -56,3 +56,14 @@ final class LuckgramAccountLogicTests: XCTestCase {
         XCTAssertEqual(zh.proUntil("2026-12-01"), "Pro，到期 2026-12-01")
     }
 }
+
+final class LuckgramSilentLinkLogicTests: XCTestCase {
+    func testBotUsernameAndStartCommand() {
+        XCTAssertEqual(LuckgramAccountLogic.botUsername("https://t.me/LuckgramBot?start=abc"), "LuckgramBot")
+        XCTAssertEqual(LuckgramAccountLogic.botUsername("t.me/luck_bot"), "luck_bot")
+        XCTAssertNil(LuckgramAccountLogic.botUsername("https://example.com/x"))
+        XCTAssertNil(LuckgramAccountLogic.botUsername("https://t.me/ab?start=1"))
+        XCTAssertNil(LuckgramAccountLogic.botUsername(nil))
+        XCTAssertEqual(LuckgramAccountLogic.startCommand("n1"), "/start n1")
+    }
+}
