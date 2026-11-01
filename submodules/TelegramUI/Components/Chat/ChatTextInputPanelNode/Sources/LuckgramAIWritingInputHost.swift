@@ -8,6 +8,7 @@ import AccountContext
 import ChatPresentationInterfaceState
 import UndoUI
 import LuckgramUI
+import TextFormat
 import ChatControllerInteraction
 
 /// spec 21: the message field as seen by AI writing and the features that extend it (20, 24): the
@@ -132,6 +133,38 @@ final class LuckgramAIWritingInputHost: LuckgramAIWritingHost, LuckgramAIWriting
         self.context.sharedContext.mainWindow?.presentNative(menu)
     }
 
+    // MARK: - Formatting
+
+    /// Attributes the field keeps across a rewrite (spec 21 review P2): style, mentions by name, links, custom emoji.
+    private static let keptAttributes: [NSAttributedString.Key] = [
+        ChatTextInputAttributes.bold, ChatTextInputAttributes.italic, ChatTextInputAttributes.monospace,
+        ChatTextInputAttributes.strikethrough, ChatTextInputAttributes.underline, ChatTextInputAttributes.spoiler,
+        ChatTextInputAttributes.textMention, ChatTextInputAttributes.textUrl, ChatTextInputAttributes.customEmoji
+    ]
+
+    /// The AI works on plain text; puts the original's formatting back where its text survived.
+    static func withFormatting(_ before: NSAttributedString, result: String) -> NSAttributedString {
+        var runs: [(key: NSAttributedString.Key, value: Any, range: NSRange)] = []
+        for key in keptAttributes {
+            before.enumerateAttribute(key, in: NSRange(location: 0, length: before.length), options: []) { value, range, _ in
+                if let value {
+                    runs.append((key, value, range))
+                }
+            }
+        }
+        let out = NSMutableAttributedString(string: result)
+        if runs.isEmpty {
+            return out
+        }
+        let starts = LuckgramAIWritingEntities.relocate(original: before.string, ranges: runs.map { $0.range }, result: result)
+        for (i, run) in runs.enumerated() {
+            if let start = starts[i] {
+                out.addAttribute(run.key, value: run.value, range: NSRange(location: start, length: run.range.length))
+            }
+        }
+        return out
+    }
+
     // MARK: - Effects
 
     func runWritingEffect(_ effect: String, done: String) {
@@ -174,7 +207,10 @@ final class LuckgramAIWritingInputHost: LuckgramAIWritingHost, LuckgramAIWriting
                     }
                     return
                 }
-                self.replaceText(result)
+                let formatted = LuckgramAIWritingInputHost.withFormatting(before.inputText, result: result)
+                self.node?.interfaceInteraction?.updateTextInputStateAndMode { _, inputMode in
+                    return (ChatTextInputState(inputText: formatted), inputMode)
+                }
                 self.undoState = before
                 self.present(UndoOverlayController(presentationData: presentationData, content: .info(title: nil, text: done, timeout: 8.0, customUndoText: LuckgramStrings.pick("撤销", "Undo")), elevatedLayout: false, action: { [weak self] action in
                     if case .undo = action {

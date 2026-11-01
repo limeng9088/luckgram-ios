@@ -35,6 +35,7 @@ jobs:
           LuckgramRoundVideo|submodules/TelegramUI/Components/LuckgramRoundVideo/Sources/LuckgramRoundVideoGeometry.swift|submodules/TelegramUI/Components/LuckgramRoundVideo/Tests/LuckgramRoundVideoGeometryTests.swift
           LuckgramUI|submodules/LuckgramUI/Sources/LuckgramRemoteConfigLogic.swift|submodules/LuckgramUI/Tests/LuckgramRemoteConfigLogicTests.swift
           TelegramCore|submodules/TelegramCore/Sources/Luckgram/LuckgramStoreRestrictions.swift|submodules/TelegramCore/Tests/Luckgram/LuckgramStoreRestrictionsTests.swift
+          LuckgramUI|submodules/LuckgramUI/Sources/Writing/LuckgramAIWritingEntities.swift|submodules/LuckgramUI/Tests/LuckgramAIWritingEntitiesTests.swift
           "
           ran=0
           for line in $SUITES; do
