@@ -442,6 +442,21 @@ public final class SharedAccountContextImpl: SharedAccountContext {
             LuckgramAnnouncements.shared.refreshIfStale() // Luckgram: announcements (S8)
             LuckgramUpdates.shared.checkIfDue() // Luckgram: update check (S5)
         })
+        // Luckgram spec 13: TelegramCore reads the store-restrictions switch from LuckgramStoreRestrictions.
+        self.luckgramStoreRestrictionsDisposable = (LuckgramSettings.shared.isEnabledSignal(LuckgramStoreRestrictionsFeature.key)
+        |> deliverOnMainQueue).startStrict(next: { _ in
+            LuckgramStoreRestrictionsFeature.sync()
+        })
+        self._automaticMediaDownloadSettings.set(.single(initialPresentationDataAndSettings.automaticMediaDownloadSettings)
+        |> then(accountManager.sharedData(keys: [SharedDataKeys.autodownloadSettings, ApplicationSpecificSharedDataKeys.automaticMediaDownloadSettings])
+            |> map { sharedData in
+                let autodownloadSettings: AutodownloadSettings = sharedData.entries[SharedDataKeys.autodownloadSettings]?.get(AutodownloadSettings.self) ?? .defaultSettings
+                let automaticDownloadSettings: MediaAutoDownloadSettings = sharedData.entries[ApplicationSpecificSharedDataKeys.automaticMediaDownloadSettings]?.get(MediaAutoDownloadSettings.self) ?? .defaultSettings
+                return automaticDownloadSettings.updatedWithAutodownloadSettings(autodownloadSettings)
+            }
+        ))
+        
+        self.mediaManager = MediaManagerImpl(accountManager: accountManager, inForeground: applicationBindings.applicationInForeground, presentationData: presentationData)
         // Luckgram S5: below the minimum version a full-screen page with only the Update button.
         // Re-checked on every foreground, so a page that could not be presented yet (window not
         // ready at launch) or was dismissed by the system comes back.
@@ -470,21 +485,6 @@ public final class SharedAccountContextImpl: SharedAccountContext {
                 controller.presentingViewController?.dismiss(animated: true)
             }
         })
-        // Luckgram spec 13: TelegramCore reads the store-restrictions switch from LuckgramStoreRestrictions.
-        self.luckgramStoreRestrictionsDisposable = (LuckgramSettings.shared.isEnabledSignal(LuckgramStoreRestrictionsFeature.key)
-        |> deliverOnMainQueue).startStrict(next: { _ in
-            LuckgramStoreRestrictionsFeature.sync()
-        })
-        self._automaticMediaDownloadSettings.set(.single(initialPresentationDataAndSettings.automaticMediaDownloadSettings)
-        |> then(accountManager.sharedData(keys: [SharedDataKeys.autodownloadSettings, ApplicationSpecificSharedDataKeys.automaticMediaDownloadSettings])
-            |> map { sharedData in
-                let autodownloadSettings: AutodownloadSettings = sharedData.entries[SharedDataKeys.autodownloadSettings]?.get(AutodownloadSettings.self) ?? .defaultSettings
-                let automaticDownloadSettings: MediaAutoDownloadSettings = sharedData.entries[ApplicationSpecificSharedDataKeys.automaticMediaDownloadSettings]?.get(MediaAutoDownloadSettings.self) ?? .defaultSettings
-                return automaticDownloadSettings.updatedWithAutodownloadSettings(autodownloadSettings)
-            }
-        ))
-        
-        self.mediaManager = MediaManagerImpl(accountManager: accountManager, inForeground: applicationBindings.applicationInForeground, presentationData: presentationData)
         
         self.mediaManager.overlayMediaManager.updatePossibleEmbeddingItem = { [weak self] item in
             guard let strongSelf = self else {
