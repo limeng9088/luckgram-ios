@@ -11,10 +11,9 @@ import UndoUI
 import PromptUI
 import LuckgramDiscover
 
-/// Shared pieces of the Square pages (spec 26): link / profile checks before writes, error
-/// messages, report and block, the like toggle and a small image cache. Same rules as
-/// `SquareUi` on Android. Network calls go through `LuckgramAI`; nothing is sent while the
-/// `square` switch is off because the entry is hidden then.
+/// Shared pieces of the Square pages (spec 26): the silent S6 link before the first write, the
+/// profile check, error messages, report and block, the like toggle and a small image cache.
+/// Same rules as `SquareUi` on Android. Nothing about "linking an account" is ever shown.
 public enum LuckgramSquare {
     public static var isFeatureEnabled: Bool {
         return LuckgramSettings.shared.isEnabled(SquareLogic.featureKey)
@@ -28,7 +27,11 @@ public enum LuckgramSquare {
         return LuckgramSettings.shared.remoteInt("square.max_posts_per_day", default: SquareLogic.defaultMaxPostsPerDay)
     }
 
-    // MARK: - link / profile state
+    public static var maxVideoSeconds: Int {
+        return max(1, LuckgramSettings.shared.remoteInt("square.max_video_seconds", default: SquareLogic.defaultMaxVideoSeconds))
+    }
+
+    // MARK: - link (S6, silent)
 
     static var linked: Bool?
     static var profile: [String: Any]?
@@ -37,6 +40,10 @@ public enum LuckgramSquare {
     /// Bumped whenever a page changed something the feed should reload (post, delete, block).
     public static let changed = ValuePromise<Int>(0, ignoreRepeated: false)
     private static var changeCounter = 0
+    private static var linking = false
+    private static var waitingForLink: [() -> Void] = []
+    /// How long the silent link may take before giving up (nonce TTL is 10 minutes; be quicker).
+    private static let linkTimeout: TimeInterval = 90
 
     public static func markChanged() {
         changeCounter += 1
@@ -67,7 +74,10 @@ public enum LuckgramSquare {
         }
     }
 
-    /// Runs `then` if this device is linked (S6); otherwise shows the link prompt.
+    /// Runs `then` once this device is linked to the current Telegram account (S6). If it is not
+    /// yet, the link is made in the background: `POST /v1/link/start` → the app sends
+    /// `/start <nonce>` to the bot from the current account → poll until the server has it → the
+    /// bot chat is cleared locally. The user only sees a short "connecting" notice.
     static func requireLink(context: AccountContext, present: @escaping (ViewController) -> Void, push: @escaping (ViewController) -> Void, then: @escaping () -> Void) -> Disposable {
         if linked == true {
             then()
@@ -77,20 +87,95 @@ public enum LuckgramSquare {
             if ok {
                 then()
             } else {
-                showLinkPrompt(context: context, present: present, push: push)
+                autoLink(context: context, present: present, then: then)
             }
         })
     }
 
-    static func showLinkPrompt(context: AccountContext, present: @escaping (ViewController) -> Void, push: @escaping (ViewController) -> Void) {
+    private static func autoLink(context: AccountContext, present: @escaping (ViewController) -> Void, then: @escaping () -> Void) {
+        waitingForLink.append(then)
+        if linking {
+            return
+        }
+        linking = true
         let tx = texts
-        present(textAlertController(context: context, title: tx.needLinkTitle, text: tx.needLinkText, actions: [
-            TextAlertAction(type: .genericAction, title: tx.cancel, action: {}),
-            TextAlertAction(type: .defaultAction, title: tx.goLink, action: {
-                push(luckgramAccountController(context: context))
+        toast(context: context, tx.connecting, present: present)
+        let _ = LuckgramAI.shared.requestJSON(method: "POST", path: "/v1/link/start").start(next: { j in
+            let st = LuckgramAccountLogic.parseStart(j)
+            guard let bot = SquareLogic.botUsername(st.url), !st.nonce.isEmpty else {
+                finishLink(context: context, present: present, ok: false)
+                return
+            }
+            let deadline = min(st.expiresAt ?? Date.distantFuture, Date().addingTimeInterval(linkTimeout))
+            let _ = (context.engine.peers.resolvePeerByName(name: bot, referrer: nil)
+            |> mapToSignal { result -> Signal<EnginePeer?, NoError> in
+                if case let .result(peer) = result {
+                    return .single(peer)
+                }
+                return .complete()
+            }
+            |> take(1)
+            |> deliverOnMainQueue).start(next: { peer in
+                guard let peer else {
+                    finishLink(context: context, present: present, ok: false)
+                    return
+                }
+                let _ = enqueueMessages(account: context.account, peerId: peer.id, messages: [.message(text: SquareLogic.startCommand(st.nonce), attributes: [], inlineStickers: [:], mediaReference: nil, threadId: nil, replyToMessageId: nil, replyToStoryId: nil, localGroupingKey: nil, correlationId: nil, bubbleUpEmojiOrStickersets: [])]).start()
+                pollLink(context: context, present: present, nonce: st.nonce, botPeerId: peer.id, deadline: deadline)
+            }, completed: {
+                // resolvePeerByName completed without a result
             })
-        ]))
+        }, error: { error in
+            if error.code == "already_linked" {
+                linked = true
+                finishLink(context: context, present: present, ok: true)
+            } else {
+                finishLink(context: context, present: present, ok: false)
+            }
+        })
     }
+
+    private static func pollLink(context: AccountContext, present: @escaping (ViewController) -> Void, nonce: String, botPeerId: EnginePeer.Id, deadline: Date) {
+        guard LuckgramAccountLogic.shouldPoll(request: nil, now: Date(), expiresAt: deadline) else {
+            finishLink(context: context, present: present, ok: false)
+            return
+        }
+        let again: () -> Void = {
+            let _ = (Signal<Void, NoError>.single(Void()) |> delay(LuckgramAccountLogic.pollInterval, queue: .mainQueue())).start(next: {
+                pollLink(context: context, present: present, nonce: nonce, botPeerId: botPeerId, deadline: deadline)
+            })
+        }
+        let _ = LuckgramAI.shared.requestJSON(method: "GET", path: "/v1/link?nonce=\(nonce)").start(next: { j in
+            let s = LuckgramAccountLogic.parseLink(j)
+            if s.linked || s.request == "linked" {
+                linked = true
+                // Spec 26 item 2: the bot conversation is cleaned up so the user isn't bothered by it.
+                let _ = context.engine.messages.clearHistoryInteractively(peerId: botPeerId, threadId: nil, type: .forLocalPeer).start()
+                finishLink(context: context, present: present, ok: true)
+            } else if LuckgramAccountLogic.shouldPoll(request: s.request, now: Date(), expiresAt: deadline) {
+                again()
+            } else {
+                finishLink(context: context, present: present, ok: false)
+            }
+        }, error: { _ in
+            again() // offline for a moment: keep trying until the deadline
+        })
+    }
+
+    private static func finishLink(context: AccountContext, present: @escaping (ViewController) -> Void, ok: Bool) {
+        linking = false
+        let waiting = waitingForLink
+        waitingForLink = []
+        if ok {
+            for w in waiting {
+                w()
+            }
+        } else {
+            toast(context: context, texts.connectFailed, present: present)
+        }
+    }
+
+    // MARK: - profile
 
     private static func setProfile(_ p: [String: Any]) {
         profile = p
@@ -99,7 +184,7 @@ public enum LuckgramSquare {
         }
     }
 
-    /// Linked and has a Square profile: then `then`; otherwise asks for whatever is missing.
+    /// Linked and has a Square profile: then `then`; otherwise fills in whatever is missing first.
     static func requireProfile(context: AccountContext, present: @escaping (ViewController) -> Void, push: @escaping (ViewController) -> Void, then: @escaping () -> Void) -> Disposable {
         let disposable = MetaDisposable()
         disposable.set(requireLink(context: context, present: present, push: push, then: {
@@ -154,8 +239,8 @@ public enum LuckgramSquare {
                         save("")
                     } else {
                         present(textAlertController(context: context, title: tx.publicUsername, text: tx.useMyUsername(myUsername), actions: [
-                            TextAlertAction(type: .genericAction, title: LuckgramStrings.pick("不显示", "Don't show"), action: { save("") }),
-                            TextAlertAction(type: .defaultAction, title: LuckgramStrings.pick("显示", "Show"), action: { save(myUsername) })
+                            TextAlertAction(type: .genericAction, title: tx.hideUsername, action: { save("") }),
+                            TextAlertAction(type: .defaultAction, title: tx.showUsername, action: { save(myUsername) })
                         ]))
                     }
                 }))
@@ -173,6 +258,9 @@ public enum LuckgramSquare {
         if error.code == "banned" {
             return tx.banned
         }
+        if error.code == "not_linked" {
+            return tx.connectFailed
+        }
         return error.localizedMessage
     }
 
@@ -181,9 +269,8 @@ public enum LuckgramSquare {
             return
         }
         if error.code == "not_linked" {
+            // The server lost the link (e.g. unlinked elsewhere): make it again silently next time.
             linked = false
-            showLinkPrompt(context: context, present: present, push: push)
-            return
         }
         if error.code == "profile_required" {
             profile = nil
@@ -363,8 +450,8 @@ public enum LuckgramSquare {
     static func timeLine(_ post: SquareLogic.Post) -> String {
         let tx = texts
         var s = tx.timeAgo(post.createdAt, now: Date())
-        if post.status == SquareLogic.statusPending {
-            s += (s.isEmpty ? "" : " · ") + tx.pending
+        if post.isHidden {
+            s += (s.isEmpty ? "" : " · ") + tx.hidden
         }
         return s
     }

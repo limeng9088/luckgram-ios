@@ -11,6 +11,12 @@ final class SquareMockTests: XCTestCase {
         return r?.body["items"] as? [[String: Any]] ?? []
     }
 
+    private func firstUpload(_ m: DiscoverMock, _ contentType: String) -> (key: String, url: String) {
+        let ups = m.handle(method: "POST", path: "/v1/square/uploads", query: "", body: b("{\"count\":1,\"content_type\":\"\(contentType)\"}"))
+        let u = (ups?.body["uploads"] as? [[String: Any]])?.first ?? [:]
+        return (u["key"] as? String ?? "", u["url"] as? String ?? "")
+    }
+
     func testSquareRoundTrip() {
         let m = DiscoverMock()
         m.setLinked(false)
@@ -38,14 +44,29 @@ final class SquareMockTests: XCTestCase {
         XCTAssertFalse(m.acceptUpload(path: DiscoverMock.uploadPrefix + "other/x.jpg", body: b("jpeg")))
         let posted = m.handle(method: "POST", path: "/v1/square/posts", query: "", body: b("{\"text\":\"hi\",\"image_keys\":[\"\(key)\"]}"))
         XCTAssertEqual(posted?.status, 200)
-        XCTAssertEqual(posted?.body["status"] as? String, "pending")
+        XCTAssertEqual(posted?.body["status"] as? String, "published") // public at once, no review
         let id = posted?.body["id"] as? String ?? ""
-        XCTAssertEqual(m.handle(method: "GET", path: "/v1/square/posts/\(id)", query: "", body: Data())?.body["status"] as? String, "pending")
+        XCTAssertEqual(items(m.handle(method: "GET", path: "/v1/square/feed", query: "tab=latest", body: Data())).first?["id"] as? String, id)
+
+        // a video post: one MP4 plus its cover, never together with images
+        let v = firstUpload(m, "video/mp4")
+        let cover = firstUpload(m, "image/jpeg")
+        XCTAssertEqual(m.handle(method: "POST", path: "/v1/square/uploads", query: "", body: b("{\"count\":1,\"content_type\":\"video/quicktime\"}"))?.status, 400)
+        XCTAssertTrue(v.key.hasSuffix(".mp4"))
+        XCTAssertTrue(m.acceptUpload(path: DiscoverMock.uploadPrefix + v.key, body: b("mp4")))
+        XCTAssertTrue(m.acceptUpload(path: DiscoverMock.uploadPrefix + cover.key, body: b("jpg")))
+        let videoBody = "{\"text\":\"v\",\"video\":{\"key\":\"\(v.key)\",\"cover_key\":\"\(cover.key)\",\"width\":1280,\"height\":720,\"duration_seconds\":42}}"
+        XCTAssertEqual(m.handle(method: "POST", path: "/v1/square/posts", query: "", body: b(videoBody.replacingOccurrences(of: "\"text\":\"v\"", with: "\"text\":\"v\",\"image_keys\":[\"\(key)\"]")))?.status, 400)
+        let vposted = m.handle(method: "POST", path: "/v1/square/posts", query: "", body: b(videoBody))
+        XCTAssertEqual(vposted?.status, 200)
+        XCTAssertEqual((vposted?.body["video"] as? [String: Any])?["duration_seconds"] as? Int, 42)
+        XCTAssertTrue(((vposted?.body["video"] as? [String: Any])?["cover_url"] as? String ?? "").contains("/mock-image/"))
 
         XCTAssertEqual(m.handle(method: "POST", path: "/v1/square/posts/\(id)/like", query: "", body: Data())?.body["like_count"] as? Int, 1)
         XCTAssertEqual(m.handle(method: "DELETE", path: "/v1/square/posts/\(id)/like", query: "", body: Data())?.body["like_count"] as? Int, 0)
         let c = m.handle(method: "POST", path: "/v1/square/posts/\(id)/comments", query: "", body: b("{\"text\":\"nice\"}"))?.body ?? [:]
         let cid = c["id"] as? String ?? ""
+        XCTAssertEqual(c["status"] as? String, "published")
         let r = m.handle(method: "POST", path: "/v1/square/posts/\(id)/comments", query: "", body: b("{\"text\":\"re\",\"parent_id\":\"\(cid)\"}"))?.body ?? [:]
         XCTAssertEqual(r["parent_id"] as? String, cid)
         XCTAssertEqual(items(m.handle(method: "GET", path: "/v1/square/posts/\(id)/comments", query: "", body: Data())).count, 2)
@@ -60,6 +81,15 @@ final class SquareMockTests: XCTestCase {
         let limited = m.handle(method: "POST", path: "/v1/square/posts/\(id)/comments", query: "", body: b("{\"text\":\"x\"}"))
         XCTAssertEqual(limited?.status, 429)
         XCTAssertTrue(((limited?.body["error"] as? [String: Any])?["retry_after_seconds"] as? Int ?? 0) > 0)
+
+        // three reports hide a post; its author still sees it, marked hidden, with the reason
+        for _ in 0 ..< 3 {
+            let _ = m.handle(method: "POST", path: "/v1/square/report", query: "", body: b("{\"target\":\"post\",\"id\":\"\(id)\",\"reason\":\"spam\"}"))
+        }
+        let hidden = m.handle(method: "GET", path: "/v1/square/posts/\(id)", query: "", body: Data())?.body ?? [:]
+        XCTAssertEqual(hidden["status"] as? String, "hidden")
+        XCTAssertNotNil(hidden["hidden_reason"])
+        XCTAssertTrue(items(m.handle(method: "GET", path: "/v1/square/feed", query: "tab=latest", body: Data())).contains(where: { ($0["id"] as? String) == id }))
 
         XCTAssertEqual(m.handle(method: "POST", path: "/v1/blocks", query: "", body: b("{\"user\":\"m1\"}"))?.status, 200)
         for p in items(m.handle(method: "GET", path: "/v1/square/feed", query: "tab=hot", body: Data())) {

@@ -24,13 +24,30 @@ final class SquareLogicTests: XCTestCase {
         XCTAssertEqual(p.author.displayName, "Alice")
         XCTAssertNil(p.author.avatarUrl)
         XCTAssertEqual(p.images.count, 1)
+        XCTAssertNil(p.video)
         XCTAssertEqual(p.likeCount, 3)
         XCTAssertEqual(p.commentCount, 0)
         XCTAssertTrue(p.liked)
-        XCTAssertEqual(p.status, SquareLogic.statusApproved)
+        XCTAssertEqual(p.status, SquareLogic.statusPublished)
+        XCTAssertFalse(p.isHidden)
         XCTAssertNotNil(p.createdAt)
         XCTAssertNil(SquareLogic.parsePosts(["items": []]).nextCursor)
         XCTAssertNotNil(SquareLogic.parseTime("2026-11-01T10:00:00.123Z"))
+    }
+
+    func testParsesHiddenAndVideo() {
+        let p = SquareLogic.parsePost(["id": "p2", "status": "hidden", "hidden_reason": "spam",
+                                       "images": [["url": "https://cdn/x.jpg"]],
+                                       "video": ["url": "https://cdn/v.mp4", "cover_url": "https://cdn/c.jpg", "width": 1280, "height": 720, "duration_seconds": 42]])
+        XCTAssertTrue(p.isHidden)
+        XCTAssertEqual(p.hiddenReason, "spam")
+        XCTAssertEqual(p.video?.durationSeconds, 42)
+        XCTAssertEqual(p.video?.coverUrl, "https://cdn/c.jpg")
+        XCTAssertTrue(p.images.isEmpty)
+        XCTAssertNil(SquareLogic.parseVideo(["url": "http://plain/v.mp4"]))
+        let c = SquareLogic.parseComment(["id": "c1", "status": "hidden", "reason": "x"])
+        XCTAssertEqual(c.status, SquareLogic.statusHidden)
+        XCTAssertEqual(c.hiddenReason, "x")
     }
 
     func testParsesUploads() {
@@ -83,19 +100,31 @@ final class SquareLogicTests: XCTestCase {
         XCTAssertFalse(SquareLogic.isValidPost(text: long1000 + "x", images: 0))
         XCTAssertFalse(SquareLogic.isValidPost(text: "   ", images: 0))
         XCTAssertTrue(SquareLogic.isValidPost(text: "", images: 1))
+        XCTAssertTrue(SquareLogic.isValidPost(text: "", images: 0, hasVideo: true))
         XCTAssertFalse(SquareLogic.isValidPost(text: "", images: 10))
+        XCTAssertFalse(SquareLogic.isValidPost(text: "x", images: 1, hasVideo: true))
         XCTAssertTrue(SquareLogic.isValidComment(" ok "))
         XCTAssertFalse(SquareLogic.isValidComment(""))
         XCTAssertFalse(SquareLogic.isValidComment(String(repeating: "a", count: 301)))
         XCTAssertEqual(SquareLogic.length("😀😀"), 2)
     }
 
-    func testImageSizing() {
+    func testImageAndVideoSizing() {
         XCTAssertTrue(SquareLogic.scaledSize(width: 4096, height: 3072) == (2048, 1536))
         XCTAssertTrue(SquareLogic.scaledSize(width: 3072, height: 4096) == (1536, 2048))
         XCTAssertTrue(SquareLogic.scaledSize(width: 800, height: 600) == (800, 600))
         XCTAssertTrue(SquareLogic.scaledSize(width: 100000, height: 10) == (2048, 1))
         XCTAssertTrue(SquareLogic.scaledSize(width: 0, height: 10) == (0, 0))
+        XCTAssertTrue(SquareLogic.videoSize(width: 1920, height: 1080) == (1280, 720))
+        XCTAssertTrue(SquareLogic.videoSize(width: 1080, height: 1920) == (720, 1280))
+        XCTAssertTrue(SquareLogic.videoSize(width: 640, height: 480) == (640, 480))
+        XCTAssertTrue(SquareLogic.videoSize(width: 1921, height: 1079) == (1280, 718))
+        XCTAssertEqual(SquareLogic.videoBitrate(width: 1280, height: 720, sourceBitrate: 0), 2_500_000)
+        XCTAssertEqual(SquareLogic.videoBitrate(width: 1280, height: 720, sourceBitrate: 1_000_000), 1_000_000)
+        XCTAssertEqual(SquareLogic.videoBitrate(width: 160, height: 120, sourceBitrate: 0), 600_000)
+        XCTAssertEqual(SquareLogic.formatDuration(7), "0:07")
+        XCTAssertEqual(SquareLogic.formatDuration(60), "1:00")
+        XCTAssertEqual(SquareLogic.formatDuration(754), "12:34")
     }
 
     func testPathsAndBodies() {
@@ -107,11 +136,24 @@ final class SquareLogicTests: XCTestCase {
         let body = SquareLogic.postBody(text: "  hi ", imageKeys: ["k1", "k2"])
         XCTAssertEqual(body["text"] as? String, "hi")
         XCTAssertEqual((body["image_keys"] as? [String])?.count, 2)
+        let vb = SquareLogic.postBody(text: "v", videoKey: "square/v.mp4", coverKey: "square/c.jpg", width: 1280, height: 720, durationSeconds: 42)
+        XCTAssertEqual((vb["video"] as? [String: Any])?["key"] as? String, "square/v.mp4")
+        XCTAssertEqual((vb["video"] as? [String: Any])?["duration_seconds"] as? Int, 42)
+        XCTAssertEqual((vb["image_keys"] as? [String])?.count, 0)
+        XCTAssertEqual(SquareLogic.uploadsBody(count: 1, contentType: SquareLogic.videoContentType)["content_type"] as? String, "video/mp4")
         XCTAssertNil(SquareLogic.commentBody(text: "x", parentId: nil)["parent_id"])
         XCTAssertEqual(SquareLogic.commentBody(text: "x", parentId: "c1")["parent_id"] as? String, "c1")
         XCTAssertEqual(SquareLogic.reportBody(target: "post", id: "p1", reason: "spam")["target"] as? String, "post")
         XCTAssertEqual(SquareLogic.reportReasons.count, 7)
-        XCTAssertEqual(SquareLogic.uploadsBody(count: 2, contentType: "image/jpeg")["count"] as? Int, 2)
+    }
+
+    func testSilentLinkHelpers() {
+        XCTAssertEqual(SquareLogic.botUsername("https://t.me/LuckgramBot?start=abc"), "LuckgramBot")
+        XCTAssertEqual(SquareLogic.botUsername("t.me/lg_bot/"), "lg_bot")
+        XCTAssertNil(SquareLogic.botUsername("https://example.com/LuckgramBot?start=abc"))
+        XCTAssertNil(SquareLogic.botUsername("https://t.me/?start=abc"))
+        XCTAssertNil(SquareLogic.botUsername(nil))
+        XCTAssertEqual(SquareLogic.startCommand("n0nce"), "/start n0nce")
     }
 
     func testTextsCoverBothLanguagesAndWaitTimes() {
@@ -119,12 +161,12 @@ final class SquareLogicTests: XCTestCase {
         let en = SquareLogic.Texts(zh: false)
         XCTAssertEqual(zh.title, "广场")
         XCTAssertEqual(en.title, "Square")
-        XCTAssertEqual(zh.rejectedReason("x"), "未通过：x")
-        XCTAssertEqual(en.rejectedReason(nil), "Not approved")
+        XCTAssertTrue(zh.hiddenInfo("x").contains("原因：x"))
+        XCTAssertTrue(en.hiddenInfo(nil).hasPrefix("This post has been hidden"))
         XCTAssertTrue(zh.waitSeconds(30).contains("30 秒"))
         XCTAssertTrue(en.waitSeconds(90).contains("2 min"))
         XCTAssertTrue(zh.waitSeconds(7200).contains("小时"))
-        XCTAssertTrue(en.waitSeconds(0).hasPrefix("Too many"))
+        XCTAssertTrue(en.waitSeconds(0).hasPrefix("You're doing that too often"))
         let now = Date()
         XCTAssertEqual(zh.timeAgo(now.addingTimeInterval(-1), now: now), "刚刚")
         XCTAssertEqual(en.timeAgo(now.addingTimeInterval(-3 * 3600), now: now), "3 h ago")
@@ -134,5 +176,13 @@ final class SquareLogicTests: XCTestCase {
             XCTAssertFalse(en.reportReason(r).isEmpty)
         }
         XCTAssertTrue(en.dailyLimitInfo(10).contains("10"))
+        XCTAssertTrue(en.videoTooLong(60, 95).contains("1:35"))
+        XCTAssertTrue(zh.attachmentsInfo(60).contains("60 秒"))
+        XCTAssertEqual(zh.videoLabel(42), "视频 · 0:42")
+        for tx in [zh, en] {
+            for s in [tx.connecting, tx.connectFailed, tx.needContent, tx.profileNeeded, tx.empty] {
+                XCTAssertFalse(s.contains("绑定") || s.lowercased().contains("link"), s)
+            }
+        }
     }
 }

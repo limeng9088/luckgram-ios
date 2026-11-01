@@ -24,8 +24,9 @@ public final class DiscoverMock {
     public static let myId = "me"
     public static let uploadPrefix = "/mock-upload/"
     public static let imagePrefix = "/mock-image/"
-    /// Pending posts are approved this long after posting (mock moderation).
-    public static let mockReviewSeconds: TimeInterval = 5
+    /// Reports per target id; at `reportHideThreshold` the content is hidden (S11: 3 different users; the mock has one).
+    public static let reportHideThreshold = 3
+    private var reports: [String: Int] = [:]
     private var squareProfile: [String: Any]?
     private var posts: [[String: Any]] = []
     private var comments: [[String: Any]] = []
@@ -60,7 +61,7 @@ public final class DiscoverMock {
                 "id": "p\(i)", "author": author,
                 "text": (i % 2 == 0 ? "Mock 帖子 #" : "Mock post #") + "\(i)",
                 "images": images, "like_count": (i * 7) % 13, "comment_count": 0,
-                "created_at_ms": now.timeIntervalSince1970 * 1000 - Double(i) * 3_600_000, "status": "approved"
+                "created_at_ms": now.timeIntervalSince1970 * 1000 - Double(i) * 3_600_000, "status": "published"
             ])
         }
     }
@@ -178,22 +179,28 @@ public final class DiscoverMock {
         if let a = (o["author"] as? [String: Any])?["id"] as? String, self.blocked.contains(a) {
             return false
         }
-        return DiscoverMock.isMine(o) || (o["status"] as? String) == "approved"
+        return DiscoverMock.isMine(o) || (o["status"] as? String) == "published"
     }
 
     private static func createdMs(_ o: [String: Any]) -> Double {
         return (o["created_at_ms"] as? NSNumber)?.doubleValue ?? 0
     }
 
-    private func moderate() {
-        let now = Date().timeIntervalSince1970 * 1000
-        for i in self.posts.indices where (self.posts[i]["status"] as? String) == "pending" && now - DiscoverMock.createdMs(self.posts[i]) >= DiscoverMock.mockReviewSeconds * 1000 {
-            let text = (self.posts[i]["text"] as? String ?? "")
-            if text.lowercased().contains("reject") || text.contains("违规") {
-                self.posts[i]["status"] = "rejected"
-                self.posts[i]["reject_reason"] = "Mock: 内容不符合广场规则 / against the rules"
-            } else {
-                self.posts[i]["status"] = "approved"
+    private func countReport(target: String, id: String) {
+        let n = (self.reports[id] ?? 0) + 1
+        self.reports[id] = n
+        if n < DiscoverMock.reportHideThreshold {
+            return
+        }
+        if target == "comment" {
+            for i in self.comments.indices where (self.comments[i]["id"] as? String) == id {
+                self.comments[i]["status"] = "hidden"
+                self.comments[i]["hidden_reason"] = "Mock: 被多名用户举报 / reported by several users"
+            }
+        } else {
+            for i in self.posts.indices where (self.posts[i]["id"] as? String) == id {
+                self.posts[i]["status"] = "hidden"
+                self.posts[i]["hidden_reason"] = "Mock: 被多名用户举报 / reported by several users"
             }
         }
     }
@@ -206,7 +213,7 @@ public final class DiscoverMock {
         o["liked"] = self.linked && self.myLikes.contains(id)
         o["comment_count"] = self.comments.filter { ($0["post_id"] as? String) == id && self.visible($0) }.count
         if !DiscoverMock.isMine(p) {
-            o.removeValue(forKey: "reject_reason")
+            o.removeValue(forKey: "hidden_reason")
         }
         return o
     }
@@ -239,7 +246,6 @@ public final class DiscoverMock {
     }
 
     private func square(method: String, path: String, query: String, body: Data) -> Reply {
-        self.moderate()
         let write = method != "GET"
         if write && !self.linked {
             return DiscoverMock.error(403, "not_linked")
@@ -288,12 +294,14 @@ public final class DiscoverMock {
         if path == "/v1/square/uploads" && method == "POST" {
             let r = DiscoverMock.json(body)
             let count = (r["count"] as? NSNumber)?.intValue ?? 0
-            if count < 1 || count > 9 || (r["content_type"] as? String) != "image/jpeg" {
+            let ct = r["content_type"] as? String ?? ""
+            let video = ct == "video/mp4"
+            if count < 1 || count > 9 || !(ct == "image/jpeg" || video) {
                 return DiscoverMock.error(400, "invalid_request")
             }
             var ups: [[String: Any]] = []
             for _ in 0 ..< count {
-                let key = "square/mock_\(self.nextId).jpg"
+                let key = "square/mock_\(self.nextId)" + (video ? ".mp4" : ".jpg")
                 self.nextId += 1
                 ups.append(["key": key, "url": "https://\(DiscoverMock.mockHost)\(DiscoverMock.uploadPrefix)\(key)", "expires_at": DiscoverMock.iso(Date().addingTimeInterval(900))])
             }
@@ -316,11 +324,28 @@ public final class DiscoverMock {
                 }
                 images.append(["url": "https://\(DiscoverMock.mockHost)\(DiscoverMock.imagePrefix)\(k)", "width": 1, "height": 1])
             }
+            var video: [String: Any]?
+            if let v = r["video"] as? [String: Any] {
+                if !keys.isEmpty {
+                    return DiscoverMock.error(400, "invalid_request") // attachments are exclusive
+                }
+                let vk = v["key"] as? String ?? ""
+                let ck = v["cover_key"] as? String ?? ""
+                let dur = (v["duration_seconds"] as? NSNumber)?.intValue ?? 0
+                if !self.uploaded.contains(vk) || !self.uploaded.contains(ck) || dur <= 0 || dur > 60 {
+                    return DiscoverMock.error(400, "invalid_request")
+                }
+                video = ["url": "https://\(DiscoverMock.mockHost)/mock-video/\(vk)", "cover_url": "https://\(DiscoverMock.mockHost)\(DiscoverMock.imagePrefix)\(ck)",
+                         "width": (v["width"] as? NSNumber)?.intValue ?? 0, "height": (v["height"] as? NSNumber)?.intValue ?? 0, "duration_seconds": dur]
+            }
             if let lim = self.limited(&self.myPostTimes, window: 24 * 3600, max: 10) {
                 return lim
             }
-            let p: [String: Any] = ["id": "p\(self.nextId)", "author": self.myAuthor(), "text": text, "images": images,
-                                    "like_count": 0, "comment_count": 0, "created_at_ms": Date().timeIntervalSince1970 * 1000, "status": "pending"]
+            var p: [String: Any] = ["id": "p\(self.nextId)", "author": self.myAuthor(), "text": text, "images": images,
+                                    "like_count": 0, "comment_count": 0, "created_at_ms": Date().timeIntervalSince1970 * 1000, "status": "published"]
+            if let video {
+                p["video"] = video
+            }
             self.nextId += 1
             self.posts.insert(p, at: 0)
             return Reply(status: 200, body: self.out(p))
@@ -368,7 +393,7 @@ public final class DiscoverMock {
                         return lim
                     }
                     var c: [String: Any] = ["id": "c\(self.nextId)", "post_id": id, "author": self.myAuthor(), "text": text,
-                                            "created_at": DiscoverMock.iso(Date()), "status": "approved"]
+                                            "created_at": DiscoverMock.iso(Date()), "status": "published"]
                     self.nextId += 1
                     if let parent = r["parent_id"] as? String, !parent.isEmpty {
                         c["parent_id"] = parent
@@ -429,6 +454,7 @@ public final class DiscoverMock {
             if (r["target"] as? String ?? "").isEmpty || (r["id"] as? String ?? "").isEmpty || (r["reason"] as? String ?? "").isEmpty {
                 return DiscoverMock.error(400, "invalid_request")
             }
+            self.countReport(target: r["target"] as? String ?? "", id: r["id"] as? String ?? "")
             return Reply(status: 200, body: [:])
         }
         return DiscoverMock.error(404, "not_found")

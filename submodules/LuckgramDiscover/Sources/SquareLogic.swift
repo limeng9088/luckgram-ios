@@ -1,8 +1,8 @@
 import Foundation
 
-/// Pure logic of "Square" (spec 26, server S11): response parsing, limits, image sizing, comment
-/// threading, permissions and all texts in both languages. Foundation only (SwiftPM tests on
-/// Linux); the same rules are in `org.telegram.luckgram.square.SquareLogic` on Android.
+/// Pure logic of "Square" (spec 26, server S11): response parsing, limits, image and video sizing,
+/// comment threading, permissions, the silent S6 link and all texts in both languages. Foundation
+/// only (SwiftPM tests on Linux); the same rules are in `org.telegram.luckgram.square.SquareLogic`.
 public enum SquareLogic {
     public static let featureKey = "square"
 
@@ -15,13 +15,20 @@ public enum SquareLogic {
     public static let profileBioMax = 70
     /// Built-in default for `square.max_posts_per_day`; the remote config value wins (spec 26 item 7).
     public static let defaultMaxPostsPerDay = 10
+    /// Built-in default for `square.max_video_seconds`; the remote config value wins (spec 26 item 3).
+    public static let defaultMaxVideoSeconds = 60
+    /// Short video after client-side transcoding: long edge ≤ 1280 px, ≤ 50 MB, H.264/AAC MP4.
+    public static let videoMaxEdge = 1280
+    public static let videoMaxBytes = 50 * 1024 * 1024
+    public static let imageContentType = "image/jpeg"
+    public static let videoContentType = "video/mp4"
 
     public static let tabLatest = "latest"
     public static let tabHot = "hot"
 
-    public static let statusPending = "pending"
-    public static let statusApproved = "approved"
-    public static let statusRejected = "rejected"
+    /// Posts are public as soon as they are created; reported ones are hidden (S11 governance).
+    public static let statusPublished = "published"
+    public static let statusHidden = "hidden"
 
     // MARK: - model
 
@@ -53,17 +60,40 @@ public enum SquareLogic {
         }
     }
 
+    /// One short video: the MP4, its cover frame and the duration in seconds.
+    public struct Video: Equatable {
+        public var url: String
+        public var coverUrl: String?
+        public var width: Int
+        public var height: Int
+        public var durationSeconds: Int
+
+        public init(url: String, coverUrl: String? = nil, width: Int = 0, height: Int = 0, durationSeconds: Int = 0) {
+            self.url = url
+            self.coverUrl = coverUrl
+            self.width = width
+            self.height = height
+            self.durationSeconds = durationSeconds
+        }
+    }
+
     public struct Post: Equatable {
         public var id: String = ""
         public var author = Author()
         public var text: String = ""
         public var images: [Image] = []
+        public var video: Video?
         public var likeCount: Int = 0
         public var commentCount: Int = 0
         public var liked: Bool = false
         public var createdAt: Date?
-        public var status: String = SquareLogic.statusApproved
-        public var rejectReason: String?
+        public var status: String = SquareLogic.statusPublished
+        /// Why the post was hidden (only sent to its author).
+        public var hiddenReason: String?
+
+        public var isHidden: Bool {
+            return self.status == SquareLogic.statusHidden
+        }
 
         public init() {
         }
@@ -76,8 +106,8 @@ public enum SquareLogic {
         public var author = Author()
         public var text: String = ""
         public var createdAt: Date?
-        public var status: String = SquareLogic.statusApproved
-        public var rejectReason: String?
+        public var status: String = SquareLogic.statusPublished
+        public var hiddenReason: String?
         /// Set by `thread`: 0 = comment, 1 = reply.
         public var depth: Int = 0
 
@@ -149,6 +179,13 @@ public enum SquareLogic {
         return a
     }
 
+    public static func parseVideo(_ o: [String: Any]?) -> Video? {
+        guard let o, let url = httpsOrNil(str(o, "url")) else {
+            return nil
+        }
+        return Video(url: url, coverUrl: httpsOrNil(str(o, "cover_url")), width: max(0, int(o, "width")), height: max(0, int(o, "height")), durationSeconds: max(0, int(o, "duration_seconds")))
+    }
+
     public static func parsePost(_ o: [String: Any]) -> Post {
         var p = Post()
         p.id = o["id"] as? String ?? ""
@@ -160,12 +197,16 @@ public enum SquareLogic {
             }
             p.images.append(Image(url: url, width: int(io, "width"), height: int(io, "height")))
         }
+        p.video = parseVideo(o["video"] as? [String: Any])
+        if p.video != nil {
+            p.images = [] // attachments are exclusive
+        }
         p.likeCount = max(0, int(o, "like_count"))
         p.commentCount = max(0, int(o, "comment_count"))
         p.liked = bool(o, "liked")
         p.createdAt = parseTime(o["created_at"] as? String)
         p.status = normalizeStatus(o["status"] as? String)
-        p.rejectReason = str(o, "reject_reason")
+        p.hiddenReason = hiddenReason(o)
         return p
     }
 
@@ -178,7 +219,7 @@ public enum SquareLogic {
         c.text = o["text"] as? String ?? ""
         c.createdAt = parseTime(o["created_at"] as? String)
         c.status = normalizeStatus(o["status"] as? String)
-        c.rejectReason = str(o, "reject_reason")
+        c.hiddenReason = hiddenReason(o)
         return c
     }
 
@@ -218,11 +259,13 @@ public enum SquareLogic {
         return out
     }
 
+    /// Anything but `hidden` is shown as published.
     static func normalizeStatus(_ s: String?) -> String {
-        if s == statusPending || s == statusRejected {
-            return s!
-        }
-        return statusApproved
+        return s == statusHidden ? statusHidden : statusPublished
+    }
+
+    static func hiddenReason(_ o: [String: Any]) -> String? {
+        return str(o, "hidden_reason") ?? str(o, "reason")
     }
 
     /// Appends a page without duplicates (cursor pages may overlap after new posts).
@@ -299,9 +342,16 @@ public enum SquareLogic {
         return s?.unicodeScalars.count ?? 0
     }
 
-    public static func isValidPost(text: String?, images: Int) -> Bool {
+    /// Text ≤ 1000 characters; attachments are either up to 9 images or one video; something must be there.
+    public static func isValidPost(text: String?, images: Int, hasVideo: Bool = false) -> Bool {
         let n = length(text?.trimmingCharacters(in: .whitespacesAndNewlines))
-        return images >= 0 && images <= imagesMax && n <= textMax && (n > 0 || images > 0)
+        if images < 0 || images > imagesMax || n > textMax {
+            return false
+        }
+        if hasVideo && images > 0 {
+            return false
+        }
+        return n > 0 || images > 0 || hasVideo
     }
 
     public static func isValidComment(_ text: String?) -> Bool {
@@ -309,21 +359,48 @@ public enum SquareLogic {
         return n > 0 && n <= commentMax
     }
 
-    /// Output size with the long edge ≤ `imageMaxEdge`, keeping the aspect ratio.
-    public static func scaledSize(width: Int, height: Int) -> (width: Int, height: Int) {
+    /// Output size with the long edge ≤ `maxEdge` (default `imageMaxEdge`), keeping the aspect ratio.
+    public static func scaledSize(width: Int, height: Int, maxEdge: Int = SquareLogic.imageMaxEdge) -> (width: Int, height: Int) {
         if width <= 0 || height <= 0 {
             return (0, 0)
         }
         let edge = max(width, height)
-        if edge <= imageMaxEdge {
+        if edge <= maxEdge {
             return (width, height)
         }
-        let k = Double(imageMaxEdge) / Double(edge)
+        let k = Double(maxEdge) / Double(edge)
         return (max(1, Int((Double(width) * k).rounded())), max(1, Int((Double(height) * k).rounded())))
+    }
+
+    /// Video output size: long edge ≤ `videoMaxEdge`, both sides even (H.264 needs that).
+    public static func videoSize(width: Int, height: Int) -> (width: Int, height: Int) {
+        let s = scaledSize(width: width, height: height, maxEdge: videoMaxEdge)
+        return (max(2, s.width / 2 * 2), max(2, s.height / 2 * 2))
+    }
+
+    /// Bitrate for the transcoded video: ~2.5 Mbps at 1280 px, scaled with the area, never above the source.
+    public static func videoBitrate(width: Int, height: Int, sourceBitrate: Int) -> Int {
+        let area = max(1, width) * max(1, height)
+        let target = min(4_000_000, max(600_000, area * 2_500_000 / (1280 * 720)))
+        return sourceBitrate > 0 ? min(target, sourceBitrate) : target
+    }
+
+    /// "0:07", "1:00", "12:34".
+    public static func formatDuration(_ seconds: Int) -> String {
+        let s = max(0, seconds)
+        return "\(s / 60):" + (s % 60 < 10 ? "0" : "") + "\(s % 60)"
     }
 
     public static func postBody(text: String?, imageKeys: [String]) -> [String: Any] {
         return ["text": (text ?? "").trimmingCharacters(in: .whitespacesAndNewlines), "image_keys": imageKeys]
+    }
+
+    public static func postBody(text: String?, videoKey: String, coverKey: String, width: Int, height: Int, durationSeconds: Int) -> [String: Any] {
+        return [
+            "text": (text ?? "").trimmingCharacters(in: .whitespacesAndNewlines),
+            "image_keys": [String](),
+            "video": ["key": videoKey, "cover_key": coverKey, "width": width, "height": height, "duration_seconds": durationSeconds]
+        ]
     }
 
     public static func commentBody(text: String?, parentId: String?) -> [String: Any] {
@@ -384,6 +461,28 @@ public enum SquareLogic {
         return ["target": target, "id": id, "reason": reason]
     }
 
+    // MARK: - silent link (S6)
+
+    /// Bot username from the `t.me/<bot>?start=<nonce>` link, or nil.
+    public static func botUsername(_ link: String?) -> String? {
+        guard let link, let range = link.range(of: "t.me/") else {
+            return nil
+        }
+        var s = String(link[range.upperBound...])
+        if let end = s.firstIndex(where: { $0 == "?" || $0 == "/" || $0 == "#" }) {
+            s = String(s[..<end])
+        }
+        guard !s.isEmpty, s.range(of: "^[A-Za-z0-9_]{4,32}$", options: .regularExpression) != nil else {
+            return nil
+        }
+        return s
+    }
+
+    /// The message the app sends to the bot on the user's behalf.
+    public static func startCommand(_ nonce: String) -> String {
+        return "/start " + nonce
+    }
+
     // MARK: - time
 
     private static let isoFractional: ISO8601DateFormatter = {
@@ -420,21 +519,21 @@ public enum SquareLogic {
 
         public var title: String { t("广场", "Square") }
         public var latest: String { t("最新", "Latest") }
-        public var hot: String { t("热门", "Popular") }
-        public var compose: String { t("发帖", "New post") }
+        public var hot: String { t("热门", "Trending") }
+        public var compose: String { t("发帖", "Post") }
         public var loadMore: String { t("加载更多", "Load more") }
         public var loading: String { t("正在加载…", "Loading…") }
-        public var empty: String { t("还没有帖子", "No posts yet") }
-        public var noMore: String { t("没有更多了", "That's all") }
+        public var empty: String { t("还没有动态，来发第一条吧", "No posts yet. Be the first to share something.") }
+        public var noMore: String { t("已经到底了", "You're all caught up") }
         public var refresh: String { t("刷新", "Refresh") }
 
-        public var pending: String { t("审核中", "Under review") }
-        public var rejected: String { t("未通过", "Not approved") }
-        public func rejectedReason(_ reason: String?) -> String {
+        public var hidden: String { t("已隐藏", "Hidden") }
+        public func hiddenInfo(_ reason: String?) -> String {
+            let base = t("这条动态已被隐藏，只有你自己能看到。", "This post has been hidden and is visible only to you.")
             guard let reason, !reason.isEmpty else {
-                return rejected
+                return base
             }
-            return t("未通过：" + reason, "Not approved: " + reason)
+            return base + " " + t("原因：", "Reason: ") + reason
         }
         public func likes(_ n: Int) -> String { t("赞 \(n)", n == 1 ? "1 like" : "\(n) likes") }
         public func comments(_ n: Int) -> String { t("评论 \(n)", n == 1 ? "1 comment" : "\(n) comments") }
@@ -443,96 +542,117 @@ public enum SquareLogic {
         public var comment: String { t("评论", "Comment") }
         public var reply: String { t("回复", "Reply") }
         public func replyTo(_ name: String) -> String { t("回复 " + name, "Reply to " + name) }
-        public var commentHint: String { t("写评论（最多 300 字）", "Write a comment (up to 300 characters)") }
+        public var commentHint: String { t("写下你的评论（最多 300 字）", "Write a comment (up to 300 characters)") }
         public var send: String { t("发送", "Send") }
         public var delete: String { t("删除", "Delete") }
-        public var deletePostConfirm: String { t("删除这条帖子？", "Delete this post?") }
+        public var deletePostConfirm: String { t("删除这条动态？删除后无法恢复。", "Delete this post? This can't be undone.") }
         public var deleteCommentConfirm: String { t("删除这条评论？", "Delete this comment?") }
         public var deleted: String { t("已删除", "Deleted") }
-        public var noComments: String { t("还没有评论", "No comments yet") }
+        public var noComments: String { t("还没有评论，来说两句吧", "No comments yet. Start the conversation.") }
         public var commentsHeader: String { t("评论", "Comments") }
         public var commentsLoading: String { t("正在加载评论…", "Loading comments…") }
         public func replyingTo(_ name: String) -> String { t("正在回复 " + name, "Replying to " + name) }
-        public var cancelReply: String { t("取消回复", "Cancel reply") }
-        public var commentSent: String { t("评论已发送", "Comment sent") }
-        public var postGone: String { t("这条帖子已不存在", "This post is no longer available") }
-        public var authorGone: String { t("找不到这位作者", "Author not found") }
-        public var noPublicUsername: String { t("作者没有公开用户名，无法发消息", "This author has no public username, so you can't message them") }
+        public var cancelReply: String { t("取消回复", "Cancel") }
+        public var commentSent: String { t("评论已发布", "Comment posted") }
+        public var postGone: String { t("这条动态已不存在", "This post is no longer available") }
+        public var authorGone: String { t("找不到这位用户", "User not found") }
+        public var noPublicUsername: String { t("对方没有公开用户名，暂时无法发消息", "This person hasn't set a public username, so you can't message them yet") }
 
-        public var composeTitle: String { t("发帖", "New post") }
-        public var textHint: String { t("说点什么（最多 1000 字）", "Say something (up to 1000 characters)") }
-        public func addImages(_ n: Int) -> String { t("添加图片（\(n)/9）", "Add images (\(n)/9)") }
-        public var removeImages: String { t("清空图片", "Remove images") }
-        public func imagesSelected(_ n: Int) -> String { t("已选 \(n) 张图片", n == 1 ? "1 image selected" : "\(n) images selected") }
+        public var composeTitle: String { t("发动态", "New post") }
+        public var textHint: String { t("分享新鲜事…（最多 1000 字）", "Share what's new… (up to 1000 characters)") }
+        public var addAttachment: String { t("添加图片或视频", "Add photos or video") }
+        public func addImages(_ n: Int) -> String { t("添加图片（\(n)/9）", "Add photos (\(n)/9)") }
+        public var chooseImages: String { t("从相册选图片", "Choose photos") }
+        public var chooseVideo: String { t("从相册选视频", "Choose a video") }
+        public var takePhoto: String { t("拍照", "Take a photo") }
+        public var recordVideo: String { t("录像", "Record a video") }
+        public var removeImages: String { t("移除全部图片", "Remove all photos") }
+        public var removeVideo: String { t("移除视频", "Remove video") }
+        public func videoLabel(_ seconds: Int) -> String { t("视频 · " + SquareLogic.formatDuration(seconds), "Video · " + SquareLogic.formatDuration(seconds)) }
         public var publish: String { t("发布", "Post") }
         public var publishing: String { t("正在发布…", "Posting…") }
-        public var published: String { t("已发布，审核通过后出现在广场", "Posted. It will appear in Square once it's approved.") }
-        public var imagesInfo: String { t("图片会先压缩到长边 2048 像素，并去掉位置等 EXIF 信息再上传。", "Images are resized to 2048 px on the long edge and their EXIF data (including location) is removed before upload.") }
-        public var tooLong: String { t("内容太长", "Too long") }
-        public var needContent: String { t("写点文字或添加图片", "Add some text or images") }
-        public var imageFailed: String { t("有图片处理失败，请换一张", "An image couldn't be processed. Try another one.") }
-        public var preparingImages: String { t("正在处理图片…", "Preparing images…") }
-        public func dailyLimitInfo(_ perDay: Int) -> String { t("每天最多发 \(perDay) 条帖子。", "Up to \(perDay) posts a day.") }
+        public var uploadingVideo: String { t("正在上传视频…", "Uploading video…") }
+        public var published: String { t("已发布", "Posted") }
+        public func attachmentsInfo(_ maxSeconds: Int) -> String {
+            return t("最多 9 张图片，或 1 段不超过 \(maxSeconds) 秒的视频。图片会压缩到长边 2048 像素，视频会转码为 1280p 以内的 MP4；位置等元数据都会去掉后再上传。",
+                     "Up to 9 photos, or one video of up to \(maxSeconds) seconds. Photos are resized to 2048 px on the long edge and videos are transcoded to MP4 at up to 1280p; location and other metadata are removed before upload.")
+        }
+        public var tooLong: String { t("内容超过了 1000 字", "The text is over 1000 characters") }
+        public var needContent: String { t("写点什么，或添加图片 / 视频", "Add some text, photos or a video") }
+        public var imageFailed: String { t("有图片无法处理，请换一张试试", "One of the photos couldn't be processed. Please try another.") }
+        public var preparingImages: String { t("正在处理图片…", "Preparing photos…") }
+        public var preparingVideo: String { t("正在处理视频…", "Preparing video…") }
+        public var videoFailed: String { t("视频无法处理，请换一段试试", "The video couldn't be processed. Please try another.") }
+        public var videoTooBig: String { t("转码后仍超过 50 MB，请选一段更短的视频", "The video is still over 50 MB after compression. Please pick a shorter one.") }
+        public var videoTooLongTitle: String { t("视频超过时长限制", "Video is too long") }
+        public func videoTooLong(_ maxSeconds: Int, _ actualSeconds: Int) -> String {
+            return t("广场视频最长 \(maxSeconds) 秒，这段视频有 " + SquareLogic.formatDuration(actualSeconds) + "。可以只保留开头 \(maxSeconds) 秒继续发布。",
+                     "Videos can be up to \(maxSeconds) seconds; this one is " + SquareLogic.formatDuration(actualSeconds) + ". You can keep the first \(maxSeconds) seconds and continue.")
+        }
+        public func trimAndContinue(_ maxSeconds: Int) -> String { t("保留前 \(maxSeconds) 秒", "Keep first \(maxSeconds) s") }
+        public var onlyOneAttachmentType: String { t("一条动态只能带图片或视频中的一种", "A post can have either photos or a video, not both") }
+        public func dailyLimitInfo(_ perDay: Int) -> String { t("每天最多发布 \(perDay) 条动态。", "You can post up to \(perDay) times a day.") }
 
-        public var profileTitle: String { t("广场名片", "Square profile") }
-        public var profileNeeded: String { t("发帖前先填写广场名片，别人会在你的帖子上看到它。", "Fill in your Square profile first; others see it on your posts.") }
+        public var profileTitle: String { t("广场资料", "Square profile") }
+        public var profileNeeded: String { t("先设置一下在广场显示的名字和简介，其他人会在你的动态上看到。", "Set the name and bio shown with your posts in Square.") }
         public var displayName: String { t("显示名", "Name") }
         public var bio: String { t("简介", "Bio") }
-        public var publicUsername: String { t("公开用户名（可选，别人可以给你发消息）", "Public username (optional, lets others message you)") }
-        public func useMyUsername(_ u: String) -> String { t("显示 @" + u, "Show @" + u) }
+        public var publicUsername: String { t("公开用户名", "Public username") }
+        public func useMyUsername(_ u: String) -> String { t("在广场显示 @" + u + "，其他人可以通过它给你发消息", "Show @" + u + " in Square so others can message you") }
+        public var showUsername: String { t("显示", "Show") }
+        public var hideUsername: String { t("不显示", "Don't show") }
         public var save: String { t("保存", "Save") }
         public var saved: String { t("已保存", "Saved") }
-        public var editProfile: String { t("编辑广场名片", "Edit Square profile") }
+        public var editProfile: String { t("编辑广场资料", "Edit Square profile") }
 
-        public var authorPosts: String { t("帖子", "Posts") }
-        public var sendMessage: String { t("发消息", "Send message") }
+        public var authorPosts: String { t("动态", "Posts") }
+        public var sendMessage: String { t("发消息", "Message") }
 
-        public var needLinkTitle: String { t("需要先绑定 Telegram 账号", "Link your Telegram account first") }
-        public var needLinkText: String { t("浏览不需要绑定；发帖、点赞、评论和举报需要先在「Luckgram 功能 → 账号」里绑定。", "Browsing works without it; posting, liking, commenting and reporting need a linked account (Luckgram Features → Account).") }
-        public var goLink: String { t("去绑定", "Link account") }
+        public var connecting: String { t("正在连接广场…", "Connecting to Square…") }
+        public var connectFailed: String { t("暂时无法连接广场，请稍后再试", "Square isn't reachable right now. Please try again later.") }
         public var cancel: String { t("取消", "Cancel") }
 
         public var report: String { t("举报", "Report") }
-        public var reportPost: String { t("举报帖子", "Report post") }
-        public var reportComment: String { t("举报评论", "Report comment") }
-        public var reportAuthor: String { t("举报作者", "Report author") }
-        public var reportTitle: String { t("举报原因", "Reason") }
+        public var reportPost: String { t("举报这条动态", "Report post") }
+        public var reportComment: String { t("举报这条评论", "Report comment") }
+        public var reportAuthor: String { t("举报该用户", "Report user") }
+        public var reportTitle: String { t("举报原因", "Why are you reporting this?") }
         public func reportReason(_ r: String) -> String {
             switch r {
-            case "spam": return t("垃圾信息", "Spam")
-            case "scam": return t("诈骗", "Scam")
-            case "porn": return t("色情", "Pornography")
-            case "violence": return t("暴力", "Violence")
-            case "hate": return t("仇恨", "Hate")
+            case "spam": return t("垃圾广告", "Spam")
+            case "scam": return t("诈骗", "Scam or fraud")
+            case "porn": return t("色情内容", "Sexual content")
+            case "violence": return t("暴力内容", "Violence")
+            case "hate": return t("仇恨言论", "Hate speech")
             case "impersonation": return t("冒充他人", "Impersonation")
-            default: return t("其他", "Other")
+            default: return t("其他", "Something else")
             }
         }
-        public var reported: String { t("已举报，感谢反馈", "Reported. Thank you.") }
-        public var block: String { t("拉黑作者", "Block author") }
-        public func blockConfirm(_ name: String) -> String { t("拉黑后你和 " + name + " 互相看不到对方的帖子和评论，「附近的人」里也互相不可见。", "You and " + name + " won't see each other's posts and comments, or each other in People Nearby.") }
+        public var reported: String { t("已收到你的举报，感谢反馈", "Thanks, your report has been received") }
+        public var block: String { t("拉黑该用户", "Block user") }
+        public func blockConfirm(_ name: String) -> String { t("拉黑后，你和 " + name + " 在广场和「附近的人」里都不会再看到对方。", "You and " + name + " will no longer see each other in Square or People Nearby.") }
         public var blocked: String { t("已拉黑", "Blocked") }
         public var more: String { t("更多", "More") }
 
         public var deleteMyData: String { t("删除我的广场数据", "Delete my Square data") }
-        public var deleteMyDataConfirm: String { t("会删除你在广场的全部帖子、评论、点赞和图片，不能恢复。", "This deletes all your Square posts, comments, likes and images. It can't be undone.") }
-        public var deletedMyData: String { t("已删除你的广场数据", "Your Square data was deleted") }
+        public var deleteMyDataConfirm: String { t("将删除你在广场发布的全部动态、评论、点赞和媒体文件，无法恢复。", "This permanently deletes all your Square posts, comments, likes and media.") }
+        public var deletedMyData: String { t("你的广场数据已删除", "Your Square data has been deleted") }
 
         public func waitSeconds(_ seconds: Int) -> String {
             if seconds <= 0 {
-                return t("操作太频繁，请稍后再试", "Too many requests. Try again later.")
+                return t("操作太频繁，请稍后再试", "You're doing that too often. Please try again later.")
             }
             if seconds < 60 {
-                return t("操作太频繁，请 \(seconds) 秒后再试", "Too many requests. Try again in \(seconds) s.")
+                return t("操作太频繁，请 \(seconds) 秒后再试", "You're doing that too often. Try again in \(seconds) s.")
             }
             let min = (seconds + 59) / 60
             if min < 60 {
-                return t("操作太频繁，请 \(min) 分钟后再试", "Too many requests. Try again in \(min) min.")
+                return t("操作太频繁，请 \(min) 分钟后再试", "You're doing that too often. Try again in \(min) min.")
             }
             let h = (min + 59) / 60
-            return t("今天发帖已达上限，请 \(h) 小时后再试", "Daily post limit reached. Try again in \(h) h.")
+            return t("今天的发布次数已用完，请 \(h) 小时后再试", "You've reached today's posting limit. Try again in \(h) h.")
         }
-        public var banned: String { t("你的账号已被限制在广场发言", "Your account can't post in Square") }
+        public var banned: String { t("你的账号暂时无法在广场发布内容", "Your account can't post in Square at the moment") }
 
         public func timeAgo(_ createdAt: Date?, now: Date) -> String {
             guard let createdAt else {
@@ -540,7 +660,7 @@ public enum SquareLogic {
             }
             let s = max(0, Int(now.timeIntervalSince(createdAt)))
             if s < 60 {
-                return t("刚刚", "just now")
+                return t("刚刚", "Just now")
             }
             if s < 3600 {
                 return t("\(s / 60) 分钟前", "\(s / 60) min ago")
