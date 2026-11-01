@@ -51,7 +51,6 @@ public enum LuckgramAccountLogic {
         return LinkStart(nonce: j["nonce"] as? String ?? "", url: j["url"] as? String ?? "", expiresAt: parseTime(j["expires_at"] as? String))
     }
 
-    /// Keep polling while the request is pending and the nonce has not expired.
     /// Bot username from the `t.me/<bot>?start=<nonce>` link, or nil (silent link, 25/26).
     public static func botUsername(_ link: String?) -> String? {
         guard let link, let range = link.range(of: "t.me/") else {
@@ -67,11 +66,15 @@ public enum LuckgramAccountLogic {
         return s
     }
 
+    /// The bot's "linked" reply can arrive after the chat was cleared: clear it again after these delays.
+    public static let botCleanupDelays: [TimeInterval] = [5, 15]
+
     /// The message the app sends to the bot on the user's behalf.
     public static func startCommand(_ nonce: String) -> String {
         return "/start " + nonce
     }
 
+    /// Keep polling while the request is pending and the nonce has not expired.
     public static func shouldPoll(request: String?, now: Date, expiresAt: Date) -> Bool {
         return (request == nil || request == "pending") && now < expiresAt
     }

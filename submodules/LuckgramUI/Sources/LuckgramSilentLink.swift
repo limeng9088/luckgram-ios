@@ -22,16 +22,17 @@ public enum LuckgramSilentLink {
         cached = nil
     }
 
-    /// `GET /v1/link`; delivers the state (the cached one if offline). Main queue.
-    public static func refresh() -> Signal<Bool, NoError> {
+    /// `GET /v1/link`; delivers the server's answer, or nil when it couldn't be asked (offline,
+    /// server error) so callers never mistake a network error for "unlinked". Main queue.
+    public static func refresh() -> Signal<Bool?, NoError> {
         return LuckgramAI.shared.requestJSON(method: "GET", path: "/v1/link")
-        |> map { j -> Bool in
+        |> map { j -> Bool? in
             let value = (j["linked"] as? Bool) ?? ((j["linked"] as? NSNumber)?.boolValue ?? false)
             cached = value
             return value
         }
-        |> `catch` { _ -> Signal<Bool, NoError> in
-            return .single(cached ?? false)
+        |> `catch` { _ -> Signal<Bool?, NoError> in
+            return .single(nil)
         }
         |> deliverOnMainQueue
     }
@@ -49,7 +50,7 @@ public enum LuckgramSilentLink {
         }
         linking = true
         let _ = refresh().start(next: { ok in
-            if ok {
+            if ok == true {
                 finish(true)
             } else {
                 start(context: context)
@@ -114,7 +115,7 @@ public enum LuckgramSilentLink {
             if s.linked || s.request == "linked" {
                 cached = true
                 // The bot conversation is cleaned up so the user isn't bothered by it.
-                let _ = context.engine.messages.clearHistoryInteractively(peerId: botPeerId, threadId: nil, type: .forLocalPeer).start()
+                clearBotChat(context: context, botPeerId: botPeerId)
                 finish(true)
             } else if LuckgramAccountLogic.shouldPoll(request: s.request, now: Date(), expiresAt: deadline) {
                 again()
@@ -124,6 +125,20 @@ public enum LuckgramSilentLink {
         }, error: { _ in
             again() // offline for a moment: keep trying until the deadline
         })
+    }
+
+    /// Clears the bot chat now and again a little later: the server records the link before the
+    /// bot sends its reply, so the reply may land after the first clear (review P2).
+    private static func clearBotChat(context: AccountContext, botPeerId: EnginePeer.Id) {
+        let clear: () -> Void = {
+            let _ = context.engine.messages.clearHistoryInteractively(peerId: botPeerId, threadId: nil, type: .forLocalPeer).start()
+        }
+        clear()
+        for d in LuckgramAccountLogic.botCleanupDelays {
+            let _ = (Signal<Void, NoError>.single(Void()) |> delay(d, queue: .mainQueue())).start(next: {
+                clear()
+            })
+        }
     }
 
     private static func finish(_ ok: Bool) {

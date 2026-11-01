@@ -66,4 +66,11 @@ final class LuckgramSilentLinkLogicTests: XCTestCase {
         XCTAssertNil(LuckgramAccountLogic.botUsername(nil))
         XCTAssertEqual(LuckgramAccountLogic.startCommand("n1"), "/start n1")
     }
+
+    func testBotCleanupDelays() {
+        let d = LuckgramAccountLogic.botCleanupDelays
+        XCTAssertFalse(d.isEmpty)
+        XCTAssertEqual(d, d.sorted())
+        XCTAssertTrue(d.allSatisfy { $0 > 0 && $0 < 60 })
+    }
 }
