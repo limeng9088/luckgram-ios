@@ -1,4 +1,5 @@
 import Foundation
+import LuckgramUI
 import UIKit
 import Postbox
 import SwiftSignalKit
@@ -6129,6 +6130,16 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
                             f(.dismissWithoutContent)
                             self?.interfaceInteraction?.beginMessageSearch(.everything, "")
                         })))
+                        
+                        // Luckgram: chat summary (feature 19)
+                        if LuckgramChatSummaryModel.isEnabled, peer.id.namespace != Namespaces.Peer.SecretChat {
+                            items.append(.action(ContextMenuActionItem(text: LuckgramStrings.pick("总结聊天", "Summarize chat"), icon: { theme in
+                                return generateTintedImage(image: UIImage(systemName: "sparkles"), color: theme.actionSheet.primaryTextColor)
+                            }, action: { _, f in
+                                f(.dismissWithoutContent)
+                                self?.luckgramShowSummaryRangePicker()
+                            })))
+                        }
                                                 
                         return items
                     }
@@ -7873,6 +7884,9 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
     override public func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
         
+        if !self.didAppear {
+            self.luckgramCheckSummaryBar()
+        }
         self.didAppear = true
         
         self.chatDisplayNode.historyNode.experimentalSnapScrollToItem = false

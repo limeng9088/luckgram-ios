@@ -25,6 +25,7 @@ swift_library(
         "//submodules/PasscodeCore:PasscodeCore",
         "//submodules/LegacyMediaPickerUI:LegacyMediaPickerUI",
         "//submodules/OverlayStatusController:OverlayStatusController",
+        "//submodules/ComponentFlow:ComponentFlow",
     ],
     visibility = [
         "//visibility:public",
