@@ -134,6 +134,8 @@ final class DiscoverMockTests: XCTestCase {
         XCTAssertEqual(DiscoverMock.decimals("31.23"), 2)
         XCTAssertEqual(DiscoverMock.decimals("31"), 0)
         XCTAssertEqual(DiscoverMock.decimals("1e-05"), 99)
+        XCTAssertEqual(DiscoverMock.decimals("1.0E-5"), 99)
+        XCTAssertEqual(DiscoverMock.decimals("1E5"), 99)
     }
 }
 

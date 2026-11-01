@@ -151,15 +151,15 @@ public final class DiscoverMock {
 
     // MARK: - helpers
 
+    /// Decimal places of a coordinate as sent; exponent notation ("1e-05") counts as too precise.
     static func decimals(_ number: String) -> Int {
+        if number.lowercased().contains("e") {
+            return 99
+        }
         guard let dot = number.firstIndex(of: ".") else {
             return 0
         }
-        let frac = number[number.index(after: dot)...]
-        if frac.lowercased().contains("e") {
-            return 99
-        }
-        return frac.count
+        return number[number.index(after: dot)...].count
     }
 
     static func json(_ body: Data) -> [String: Any] {
