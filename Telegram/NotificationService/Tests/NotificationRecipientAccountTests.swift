@@ -5,8 +5,7 @@ import TelegramCore
 @testable import NotificationServiceExtensionLib
 
 /// With more than one account signed in, a notification names the account it was delivered to
-/// ("Alice → peter"), as it did before the 2021 rewrite of the extension dropped it
-/// (bugs.telegram.org/c/18387).
+/// in front of the title ("[peter] Alice", Luckgram spec 09; same as Android).
 final class NotificationRecipientAccountTests: XCTestCase {
     private func record(_ id: Int64, loggedOut: Bool = false) -> AccountRecord<TelegramAccountManagerTypes.Attribute> {
         return AccountRecord<TelegramAccountManagerTypes.Attribute>(id: AccountRecordId(rawValue: id), attributes: loggedOut ? [.loggedOut(LoggedOutAccountAttribute())] : [], temporarySessionId: nil)
@@ -52,16 +51,20 @@ final class NotificationRecipientAccountTests: XCTestCase {
         XCTAssertFalse(notificationsNameRecipientAccount(records: [self.record(1), self.record(2, loggedOut: true)]))
     }
 
-    func testTheUsernameNamesTheAccount() {
-        XCTAssertEqual(notificationRecipientAccountName(accountPeer: .user(self.user(firstName: "Peter", username: "peter"))), "peter")
+    func testTheFirstNameNamesTheAccount() {
+        XCTAssertEqual(notificationRecipientAccountName(accountPeer: .user(self.user(firstName: "Peter", username: "peter"))), "Peter")
+    }
+
+    func testTheLocalNameWins() {
+        XCTAssertEqual(notificationRecipientAccountName(accountPeer: .user(self.user(firstName: "Peter", username: "peter")), alias: "Work"), "Work")
+    }
+
+    func testAnEmptyLocalNameFallsBackToTheFirstName() {
+        XCTAssertEqual(notificationRecipientAccountName(accountPeer: .user(self.user(firstName: "Peter", username: nil)), alias: ""), "Peter")
     }
 
     func testAnAccountWithoutAUsernameIsNamedByItsName() {
         XCTAssertEqual(notificationRecipientAccountName(accountPeer: .user(self.user(firstName: "Peter", username: nil))), "Peter")
-    }
-
-    func testAnEmptyUsernameFallsBackToTheName() {
-        XCTAssertEqual(notificationRecipientAccountName(accountPeer: .user(self.user(firstName: "Peter", username: ""))), "Peter")
     }
 
     func testAnAccountWhosePeerIsUnknownIsNotNamed() {
@@ -77,7 +80,7 @@ final class NotificationRecipientAccountTests: XCTestCase {
     func testTheTitleNamesTheRecipientAccount() {
         let names = NotificationNames(title: "Alice", senderName: nil, silent: false, recipientAccountName: "peter")
 
-        XCTAssertEqual(names.title, "Alice → peter")
+        XCTAssertEqual(names.title, "[peter] Alice")
     }
 
     func testWithOneAccountTheTitleIsUnchanged() {
@@ -92,8 +95,8 @@ final class NotificationRecipientAccountTests: XCTestCase {
     func testTheMutedMarkerStaysLast() {
         let names = NotificationNames(title: "Alice", senderName: "Alice", silent: true, recipientAccountName: "peter")
 
-        XCTAssertEqual(names.title, "Alice → peter 🔕")
-        XCTAssertEqual(names.displayedSenderName, "Alice → peter 🔕")
+        XCTAssertEqual(names.title, "[peter] Alice 🔕")
+        XCTAssertEqual(names.displayedSenderName, "[peter] Alice 🔕")
     }
 
     /// On a communication notification the system draws the sender's name in place of the title,
@@ -102,7 +105,7 @@ final class NotificationRecipientAccountTests: XCTestCase {
     func testOnlyTheDisplayedSenderNamesTheRecipientAccount() {
         let names = NotificationNames(title: "Alice", senderName: "Alice", silent: false, recipientAccountName: "peter")
 
-        XCTAssertEqual(names.displayedSenderName, "Alice → peter")
+        XCTAssertEqual(names.displayedSenderName, "[peter] Alice")
         XCTAssertEqual(names.donatedSenderName, "Alice")
     }
 
@@ -130,45 +133,19 @@ final class NotificationRecipientAccountTests: XCTestCase {
         XCTAssertNil(names.donatedSenderName)
     }
 
-    /// The arrow is not mirrored, and a title reads in the direction of its first letter, so
-    /// "علي → peter" displays as "peter → علي", pointing from the account to the sender (measured
-    /// on the iOS 27 simulator). A right-to-left title takes the arrow that points the way it reads.
-    func testARightToLeftTitlePointsTheArrowTheWayItReads() {
-        for name in ["علي", "שלום"] {
-            let names = NotificationNames(title: name, senderName: name, silent: false, recipientAccountName: "peter")
+    func testARightToLeftTitleGetsTheSamePrefix() {
+        let names = NotificationNames(title: "علي", senderName: "علي", silent: false, recipientAccountName: "peter")
 
-            XCTAssertEqual(names.title, "\(name) ← peter")
-            XCTAssertEqual(names.displayedSenderName, "\(name) ← peter")
-        }
-    }
-
-    /// Digits, spaces and emoji do not decide the direction; the first letter does.
-    func testTheFirstLetterDecidesTheDirection() {
-        let names = NotificationNames(title: "123 علي", senderName: nil, silent: false, recipientAccountName: "peter")
-
-        XCTAssertEqual(names.title, "123 علي ← peter")
-    }
-
-    /// A name without letters leaves the direction to the account's name ("🔥 → بيتر" displays
-    /// as "بيتر → 🔥").
-    func testATitleWithoutLettersTakesTheDirectionOfTheAccountName() {
-        let names = NotificationNames(title: "🔥", senderName: nil, silent: false, recipientAccountName: "بيتر")
-
-        XCTAssertEqual(names.title, "🔥 ← بيتر")
-    }
-
-    func testALeftToRightTitleKeepsItsArrowForARightToLeftAccountName() {
-        let names = NotificationNames(title: "Alice", senderName: nil, silent: false, recipientAccountName: "بيتر")
-
-        XCTAssertEqual(names.title, "Alice → بيتر")
+        XCTAssertEqual(names.title, "[peter] علي")
+        XCTAssertEqual(names.displayedSenderName, "[peter] علي")
     }
 
     /// Topic notifications already carry "Topic (Forum)" in both the title and the sender's name;
-    /// the account follows it.
+    /// the account goes in front of it.
     func testATopicTitleKeepsTheAccountAfterIt() {
         let names = NotificationNames(title: "Releases (Dev Forum)", senderName: "Releases (Dev Forum)", silent: false, recipientAccountName: "peter")
 
-        XCTAssertEqual(names.title, "Releases (Dev Forum) → peter")
-        XCTAssertEqual(names.displayedSenderName, "Releases (Dev Forum) → peter")
+        XCTAssertEqual(names.title, "[peter] Releases (Dev Forum)")
+        XCTAssertEqual(names.displayedSenderName, "[peter] Releases (Dev Forum)")
     }
 }

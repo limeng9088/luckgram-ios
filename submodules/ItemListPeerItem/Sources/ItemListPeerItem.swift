@@ -1215,9 +1215,14 @@ public class ItemListPeerItemNode: ItemListRevealOptionsItemNode, ItemListItemNo
             let editingOffset: CGFloat
             var reorderInset: CGFloat = 0.0
             if item.editing.editing {
-                let sizeAndApply = editableControlLayout(item.presentationData.theme, false)
-                editableControlSizeAndApply = sizeAndApply
-                editingOffset = sizeAndApply.0
+                // Luckgram 09: a row that can only be reordered (not deleted) has no delete control.
+                if !item.editing.editable && item.editing.canBeReordered {
+                    editingOffset = 0.0
+                } else {
+                    let sizeAndApply = editableControlLayout(item.presentationData.theme, false)
+                    editableControlSizeAndApply = sizeAndApply
+                    editingOffset = sizeAndApply.0
+                }
                 
                 if item.editing.canBeReordered {
                     let reorderSizeAndApply = reorderControlLayout(item.presentationData.theme)

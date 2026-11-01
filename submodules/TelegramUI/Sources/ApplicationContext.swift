@@ -10,6 +10,7 @@ import LegacyComponents
 import DeviceAccess
 import TelegramUpdateUI
 import AccountContext
+import LuckgramAccountsStore
 import AlertUI
 import PresentationDataUtils
 import TelegramPermissions
@@ -307,6 +308,10 @@ final class AuthorizedApplicationContext {
             ))
             |> map { chatListIndexMap in
                 return messageList.filter { item in
+                    // Luckgram 09 (more accounts): no in-app banner for an account whose notifications are off
+                    if !LuckgramAccountsStore.shared.isNotificationsEnabled(context.account.id.int64) {
+                        return false
+                    }
                     guard let message = item.0.first else {
                         return false
                     }

@@ -14,6 +14,7 @@ import TelegramStringFormatting
 import PeerNameColorItem
 import WalletContext
 import LuckgramUI
+import LuckgramAccountsStore
 
 enum SettingsSection: Int, CaseIterable {
     case edit
@@ -119,7 +120,12 @@ func settingsItems(data: PeerInfoScreenData?, context: AccountContext, presentat
         }
         
         if !settings.accountsAndPeers.isEmpty {
-            for (peerAccountContext, peer, badgeCount) in settings.accountsAndPeers {
+            // Luckgram 09 (more accounts): the user's order (activeAccountsAndPeers); collapse after 5.
+            LuckgramStrings.appLanguageCode = presentationData.strings.primaryComponent.languageCode
+            let luckgramCollapsible = settings.accountsAndPeers.count > LuckgramAccountsStore.collapsedCount
+            let luckgramExpanded = LuckgramAccountsStore.shared.isExpanded
+            let luckgramShownAccounts = luckgramCollapsible && !luckgramExpanded ? Array(settings.accountsAndPeers.prefix(LuckgramAccountsStore.collapsedCount)) : settings.accountsAndPeers
+            for (peerAccountContext, peer, badgeCount) in luckgramShownAccounts {
                 let mappedContext = ItemListPeerItem.Context.custom(ItemListPeerItem.Context.Custom(
                     accountPeerId: peerAccountContext.account.peerId,
                     engine: peerAccountContext.engine,
@@ -145,8 +151,17 @@ func settingsItems(data: PeerInfoScreenData?, context: AccountContext, presentat
                 }))
             }
             
+            if luckgramCollapsible {
+                items[.accounts]!.append(PeerInfoScreenActionItem(id: 101, text: luckgramExpanded ? LuckgramAccountsStrings.showLess : LuckgramAccountsStrings.showAll(settings.accountsAndPeers.count), action: {
+                    LuckgramAccountsStore.shared.setExpanded(!luckgramExpanded)
+                }))
+            }
+            
             items[.accounts]!.append(PeerInfoScreenActionItem(id: 100, text: presentationData.strings.Settings_AddAccount, icon: PresentationResourcesItemList.plusIconImage(presentationData.theme), action: {
                 interaction.openSettings(.addAccount)
+            }))
+            items[.accounts]!.append(PeerInfoScreenActionItem(id: 102, text: LuckgramAccountsStrings.manage, action: {
+                interaction.openSettings(.luckgramAccounts)
             }))
         }
         
@@ -549,22 +564,17 @@ func settingsEditingItems(data: PeerInfoScreenData?, state: PeerInfoState, conte
         interaction.openSettings(.addAccount)
     }))
     
-    var hasPremiumAccounts = false
-    if data.peer?.isPremium == true && !context.account.testingEnvironment {
-        hasPremiumAccounts = true
-    }
+    // Luckgram 09 (more accounts): 20 accounts for everyone, no Premium tier; same text as Android
+    // ("You can add N additional accounts" until the limit).
+    LuckgramStrings.appLanguageCode = presentationData.strings.primaryComponent.languageCode
+    var luckgramAccountCount = 1
     if let settings = data.globalSettings {
-        for (accountContext, peer, _) in settings.accountsAndPeers {
-            if !accountContext.account.testingEnvironment {
-                if peer.isPremium {
-                    hasPremiumAccounts = true
-                    break
-                }
-            }
+        for (accountContext, _, _) in settings.accountsAndPeers where !accountContext.account.testingEnvironment {
+            luckgramAccountCount += 1
         }
     }
-    
-    items[.account]!.append(PeerInfoScreenCommentItem(id: ItemAddAccountHelp, text: hasPremiumAccounts ? presentationData.strings.Settings_AddAnotherAccount_PremiumHelp : presentationData.strings.Settings_AddAnotherAccount_Help))
+    let luckgramMoreAccounts = max(0, LuckgramAccountsStore.maxAccounts - luckgramAccountCount)
+    items[.account]!.append(PeerInfoScreenCommentItem(id: ItemAddAccountHelp, text: luckgramMoreAccounts > 0 ? LuckgramAccountsStrings.canAddMore(luckgramMoreAccounts) : LuckgramAccountsStrings.limitReached))
     
     items[.logout]!.append(PeerInfoScreenActionItem(id: ItemLogout, text: presentationData.strings.Settings_Logout, color: .destructive, alignment: .center, action: {
         interaction.openSettings(.logout)

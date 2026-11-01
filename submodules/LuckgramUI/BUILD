@@ -18,6 +18,10 @@ swift_library(
         "//submodules/AlertUI:AlertUI",
         "//submodules/PresentationDataUtils:PresentationDataUtils",
         "//submodules/UndoUI:UndoUI",
+        "//submodules/ItemListPeerItem:ItemListPeerItem",
+        "//submodules/AccountUtils:AccountUtils",
+        "//submodules/PromptUI:PromptUI",
+        "//submodules/LuckgramAccountsStore:LuckgramAccountsStore",
     ],
     visibility = [
         "//visibility:public",

@@ -27,6 +27,7 @@ swift_library(
         "//submodules/Utils/RangeSet",
         "//submodules/Media/ConvertOpusToAAC",
         "//submodules/PasscodeCore",
+        "//submodules/LuckgramAccountsStore:LuckgramAccountsStore",
     ],
     visibility = [
         "//visibility:public",

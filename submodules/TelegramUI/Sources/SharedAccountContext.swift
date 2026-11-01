@@ -129,6 +129,7 @@ import EmojiStatusSelectionComponent
 import EntityKeyboard
 import LuckgramUI
 import LuckgramUserNotes
+import LuckgramAccountsStore
 
 private final class AccountUserInterfaceInUseContext {
     let subscribers = Bag<(Bool) -> Void>()
@@ -404,6 +405,8 @@ public final class SharedAccountContextImpl: SharedAccountContext {
             // Legal reminder before it is switched on from the Luckgram features page (spec 04 §1, #58).
             luckgramConfirmEnableCallRecording(context: context, present: present, done: done)
         }
+        // Luckgram 09: account order, local names and notification switches (shared with the notification extension)
+        LuckgramAccountsStore.shared.configure(rootPath: rootPath)
         self._automaticMediaDownloadSettings.set(.single(initialPresentationDataAndSettings.automaticMediaDownloadSettings)
         |> then(accountManager.sharedData(keys: [SharedDataKeys.autodownloadSettings, ApplicationSpecificSharedDataKeys.automaticMediaDownloadSettings])
             |> map { sharedData in
@@ -675,6 +678,7 @@ public final class SharedAccountContextImpl: SharedAccountContext {
             if let previous = luckgramPreviousRecordIds {
                 for removed in previous.subtracting(luckgramRecordIds) {
                     LuckgramSettings.shared.accountRemoved(accountId: removed.int64, noAccountsLeft: luckgramRecordIds.isEmpty)
+                    LuckgramAccountsStore.shared.accountRemoved(removed.int64)
                 }
             }
             luckgramPreviousRecordIds = luckgramRecordIds
