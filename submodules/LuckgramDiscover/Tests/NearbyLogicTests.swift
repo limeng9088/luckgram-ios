@@ -88,6 +88,16 @@ final class NearbyLogicTests: XCTestCase {
     }
 }
 
+final class NearbyFixTests: XCTestCase {
+    func testFixMustBeFresh() {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        XCTAssertTrue(NearbyLogic.isFreshFix(now.addingTimeInterval(-29 * 60), now: now))
+        XCTAssertTrue(NearbyLogic.isFreshFix(now.addingTimeInterval(-30 * 60), now: now))
+        XCTAssertFalse(NearbyLogic.isFreshFix(now.addingTimeInterval(-31 * 60), now: now))
+        XCTAssertFalse(NearbyLogic.isFreshFix(now.addingTimeInterval(10 * 60), now: now))
+    }
+}
+
 final class DiscoverMockTests: XCTestCase {
     private func b(_ s: String) -> Data {
         return s.data(using: .utf8)!
