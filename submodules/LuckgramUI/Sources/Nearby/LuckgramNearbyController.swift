@@ -167,6 +167,8 @@ public func luckgramNearbyController(context: AccountContext) -> ViewController 
             toast(tx.rateLimited(error.retryAfterSeconds))
         case "banned":
             toast(tx.banned)
+        case "nearby_disabled":
+            toast(tx.disabled)
         case "not_linked":
             toast(tx.notLinked)
         default:
@@ -335,8 +337,12 @@ public func luckgramNearbyController(context: AccountContext) -> ViewController 
             if j["visible"] == nil {
                 j["visible"] = true
             }
-            LuckgramNearby.apply(NearbyLogic.parseMe(j), accountId: context.account.id.int64)
-            if wasVisible {
+            let me = NearbyLogic.parseMe(j)
+            LuckgramNearby.apply(me, accountId: context.account.id.int64)
+            if !me.visible {
+                // S10: a reported card awaiting review comes back as visible:false
+                toast(tx.underReview)
+            } else if wasVisible {
                 toast(tx.renewed)
             }
             refresh()

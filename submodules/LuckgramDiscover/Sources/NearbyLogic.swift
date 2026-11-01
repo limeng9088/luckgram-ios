@@ -297,6 +297,8 @@ public enum NearbyLogic {
             let min = max(1, (seconds + 59) / 60)
             return t("操作太频繁，请 \(min) 分钟后再试", "Too many requests. Try again in \(min) min.")
         }
+        public var disabled: String { t("附近的人暂时不可用，请稍后再试", "People Nearby is temporarily unavailable. Please try again later.") }
+        public var underReview: String { t("你的名片被举报，正在审核，暂时不会出现在附近的人里", "Your card was reported and is under review. It won't appear nearby for now.") }
         public var banned: String { t("你的账号已被限制使用附近的人", "Your account can't use People Nearby") }
         public var notLinked: String { t("设备未绑定 Telegram 账号", "This device isn't linked to a Telegram account") }
     }

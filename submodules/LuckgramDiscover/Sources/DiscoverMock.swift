@@ -71,6 +71,9 @@ public final class DiscoverMock {
                 self.blocked.insert(user)
                 return Reply(status: 200, body: [:])
             }
+            if !self.linked {
+                return DiscoverMock.error(403, "not_linked")
+            }
             return Reply(status: 200, body: ["items": self.blocked.map { ["user": $0] }])
         }
         if path.hasPrefix("/v1/blocks/") && method == "DELETE" {
