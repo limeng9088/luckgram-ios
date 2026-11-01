@@ -220,6 +220,7 @@ public final class SharedAccountContextImpl: SharedAccountContext {
 
     private var callStateDisposable: Disposable?
     private var luckgramRemoteConfigDisposable: Disposable?
+    private var luckgramProxyDisposable: Disposable?
     private var luckgramUpdateDisposable: Disposable?
     private weak var luckgramForceUpdateController: LuckgramForceUpdateController?
     private var luckgramStoreRestrictionsDisposable: Disposable?
@@ -433,6 +434,25 @@ public final class SharedAccountContextImpl: SharedAccountContext {
                 }
             })
         }
+        // Luckgram specs#72: Luckgram API requests follow the in-app proxy (SOCKS5 only).
+        self.luckgramProxyDisposable = (self.accountManager.sharedData(keys: [SharedDataKeys.proxySettings])
+        |> map { sharedData -> ProxyServerSettings? in
+            return sharedData.entries[SharedDataKeys.proxySettings]?.get(ProxySettings.self)?.effectiveActiveServer
+        }
+        |> distinctUntilChanged).startStrict(next: { server in
+            guard let server else {
+                LuckgramNet.shared.setProxy(nil)
+                return
+            }
+            switch server.connection {
+            case let .socks5(username, password):
+                LuckgramNet.shared.setProxy(LuckgramNet.Proxy(type: "SOCKS5", host: server.host, port: Int(server.port), username: username, password: password))
+            case .mtp:
+                LuckgramNet.shared.setProxy(LuckgramNet.Proxy(type: "MTPROTO", host: server.host, port: Int(server.port)))
+            case .web:
+                LuckgramNet.shared.setProxy(LuckgramNet.Proxy(type: "WEB", host: server.host, port: Int(server.port)))
+            }
+        })
         // Luckgram: remote config (task S4), refreshed whenever the app comes to the foreground.
         self.luckgramRemoteConfigDisposable = (self.applicationBindings.applicationInForeground
         |> distinctUntilChanged
@@ -1239,6 +1259,7 @@ public final class SharedAccountContextImpl: SharedAccountContext {
         assertionFailure("SharedAccountContextImpl is not supposed to be deallocated")
         self.registeredNotificationTokensDisposable.dispose()
         self.luckgramRemoteConfigDisposable?.dispose()
+        self.luckgramProxyDisposable?.dispose()
         self.luckgramUpdateDisposable?.dispose()
         self.presentationDataDisposable.dispose()
         self.automaticMediaDownloadSettingsDisposable.dispose()
