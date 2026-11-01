@@ -408,6 +408,8 @@ public final class SharedAccountContextImpl: SharedAccountContext {
         // Luckgram 09: account order, local names and notification switches (shared with the notification extension)
         LuckgramAccountsStore.shared.configure(rootPath: rootPath)
         LuckgramDoubleBottomState.shared.configure(rootPath: rootPath)
+        LuckgramHiddenChatsStore.shared.configure(rootPath: rootPath)
+        LuckgramHiddenChats.install()
         LuckgramDoubleBottom.install()
         LuckgramDoubleBottom.openPasscodeSetup = { context, push in
             let _ = passcodeOptionsAccessController(context: context, replaceController: { controller in

@@ -8,6 +8,8 @@ import SwiftSignalKit
 import TelegramPresentationData
 import PresentationDataUtils
 import AccountContext
+import LuckgramUI
+import LuckgramAccountsStore
 import MergeLists
 import ItemListUI
 import ContextUI
@@ -2129,7 +2131,13 @@ final class ChatListSearchListPaneNode: ASDisplayNode, ChatListSearchPaneNode {
 
         let communityId = self.communityId
 
-        let foundItems: Signal<([ChatListSearchEntry], Bool, String?)?, NoError> = combineLatest(queue: .mainQueue(), searchQuery, self.approvedGlobalPostQueryState.get(), searchOptions, self.searchScopePromise.get(), downloadItems, globalPostSearchStateType, isPremium)
+        // Luckgram 12 (hidden chats): hidden chats are left out until the user asks for them; runs again when they do.
+        let luckgramSearchQuery: Signal<String?, NoError> = combineLatest(searchQuery, LuckgramHiddenChatsStore.shared.searchUpdated)
+        |> map { query, _ -> String? in
+            LuckgramHiddenChatsStore.shared.noteSearchQuery(query)
+            return query
+        }
+        let foundItems: Signal<([ChatListSearchEntry], Bool, String?)?, NoError> = combineLatest(queue: .mainQueue(), luckgramSearchQuery, self.approvedGlobalPostQueryState.get(), searchOptions, self.searchScopePromise.get(), downloadItems, globalPostSearchStateType, isPremium)
         |> debounceOnMainThread
         |> mapToSignal { [weak self] query, approvedGlobalPostQueryState, options, searchScope, downloadItems, _, _ -> Signal<([ChatListSearchEntry], Bool, String?)?, NoError> in
             if query == nil && (options == nil || options?.withUpdatedFolder(nil).isEmpty == true) && [.chats, .topics, .channels, .apps].contains(key) {
@@ -3266,7 +3274,7 @@ final class ChatListSearchListPaneNode: ASDisplayNode, ChatListSearchPaneNode {
                         continue
                     }
 
-                    if let peer = renderedPeer.peers[renderedPeer.peerId], peer.id != context.account.peerId, filteredPeer(peer, EnginePeer(accountPeer)) {
+                    if let peer = renderedPeer.peers[renderedPeer.peerId], peer.id != context.account.peerId, filteredPeer(peer, EnginePeer(accountPeer)), !LuckgramHiddenChats.skipInSearch(context: context, peerId: peer.id) {
                         if !existingPeerIds.contains(peer.id) {
                             existingPeerIds.insert(peer.id)
                             var associatedPeer: EnginePeer?
@@ -3304,7 +3312,7 @@ final class ChatListSearchListPaneNode: ASDisplayNode, ChatListSearchPaneNode {
                                 matches = true
                             }
 
-                            if matches {
+                            if matches, !LuckgramHiddenChats.skipInSearch(context: context, peerId: peer.id) {
                                 existingPeerIds.insert(peer.id)
                                 entries.append(.localPeer(peer, associatedPeer, nil, index, presentationData.theme, presentationData.strings, presentationData.nameSortOrder, presentationData.nameDisplayOrder, localExpandType, nil, false, false))
                             }
@@ -3321,7 +3329,7 @@ final class ChatListSearchListPaneNode: ASDisplayNode, ChatListSearchPaneNode {
                         continue
                     }
 
-                    if let peer = renderedPeer.peers[renderedPeer.peerId], peer.id != context.account.peerId, filteredPeer(peer, EnginePeer(accountPeer)) {
+                    if let peer = renderedPeer.peers[renderedPeer.peerId], peer.id != context.account.peerId, filteredPeer(peer, EnginePeer(accountPeer)), !LuckgramHiddenChats.skipInSearch(context: context, peerId: peer.id) {
                         if !existingPeerIds.contains(peer.id) {
                             existingPeerIds.insert(peer.id)
                             var associatedPeer: EnginePeer?
@@ -3446,6 +3454,9 @@ final class ChatListSearchListPaneNode: ASDisplayNode, ChatListSearchPaneNode {
                                 }
 
                                 //TODO:requiresPremiumForMessaging
+                                if LuckgramHiddenChats.skipInSearch(context: context, peerId: message.id.peerId) {
+                                    continue
+                                }
                                 hasAnyMessages = true
                                 entries.append(.message(message, peer, foundRemoteMessageSet.readCounters[message.id.peerId], foundRemoteMessageSet.threadsData[message.id]?.info, presentationData, foundRemoteMessageSet.totalCount, selectionState?.contains(message.id), headerId == firstHeaderId, .index(message.index), nil, .generic, false, nil, false, searchScope))
                                 index += 1

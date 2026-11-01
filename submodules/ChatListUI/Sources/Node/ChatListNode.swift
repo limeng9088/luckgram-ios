@@ -8,6 +8,7 @@ import TelegramCore
 import TelegramPresentationData
 import TelegramUIPreferences
 import AccountContext
+import LuckgramAccountsStore
 import TelegramNotices
 import ContactsPeerItem
 import ContextUI
@@ -1941,8 +1942,9 @@ public final class ChatListNode: ListViewImpl {
             shouldLoadCanMessagePeer = false
         }
         
-        let chatListViewUpdate = self.chatListLocation.get()
-        |> distinctUntilChanged
+        // Luckgram 12 (hidden chats): reload when a chat is hidden or unhidden.
+        let chatListViewUpdate = combineLatest(self.chatListLocation.get() |> distinctUntilChanged, LuckgramHiddenChatsStore.shared.updated)
+        |> map { $0.0 }
         |> mapToSignal { listLocation -> Signal<(ChatListNodeViewUpdate, ChatListFilter?), NoError> in
             return chatListViewForLocation(chatListLocation: location, location: listLocation, account: context.account, shouldLoadCanMessagePeer: shouldLoadCanMessagePeer)
             |> map { update in
