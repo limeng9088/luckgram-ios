@@ -125,6 +125,13 @@ final class SquareLogicTests: XCTestCase {
         XCTAssertEqual(SquareLogic.formatDuration(7), "0:07")
         XCTAssertEqual(SquareLogic.formatDuration(60), "1:00")
         XCTAssertEqual(SquareLogic.formatDuration(754), "12:34")
+        // durations are rounded down everywhere (compose page, feed badge)
+        XCTAssertEqual(SquareLogic.wholeSeconds(75.02), 75)
+        XCTAssertEqual(SquareLogic.wholeSeconds(40.999), 40)
+        XCTAssertEqual(SquareLogic.wholeSeconds(60.0), 60)
+        XCTAssertEqual(SquareLogic.wholeSeconds(-5), 0)
+        XCTAssertEqual(SquareLogic.wholeSeconds(.nan), 0)
+        XCTAssertEqual(SquareLogic.formatDuration(SquareLogic.wholeSeconds(75.02)), "1:15")
     }
 
     func testPathsAndBodies() {

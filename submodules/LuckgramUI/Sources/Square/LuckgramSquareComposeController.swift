@@ -184,15 +184,16 @@ enum LuckgramSquareVideos {
         case tooBig
     }
 
-    /// Duration and display size of a picked video (orientation applied).
-    static func probe(_ url: URL) -> (seconds: Int, width: Int, height: Int)? {
+    /// Duration and display size of a picked video (orientation applied). `seconds` is rounded
+    /// down for display (same as the feed badge); `exact` is for the length check.
+    static func probe(_ url: URL) -> (seconds: Int, exact: Double, width: Int, height: Int)? {
         let asset = AVURLAsset(url: url)
-        let seconds = Int(CMTimeGetSeconds(asset.duration).rounded(.up))
-        guard seconds > 0, let track = asset.tracks(withMediaType: .video).first else {
+        let exact = CMTimeGetSeconds(asset.duration)
+        guard exact.isFinite, exact > 0, let track = asset.tracks(withMediaType: .video).first else {
             return nil
         }
         let size = track.naturalSize.applying(track.preferredTransform)
-        return (seconds, Int(abs(size.width)), Int(abs(size.height)))
+        return (SquareLogic.wholeSeconds(exact), exact, Int(abs(size.width)), Int(abs(size.height)))
     }
 
     /// Exports `url` to H.264/AAC MP4 at ≤ 1280 px, keeping only the first `keepSeconds`, with
@@ -249,7 +250,7 @@ enum LuckgramSquareVideos {
                     completion(.failure(.unreadable))
                     return
                 }
-                let finalSize = probe(output) ?? (min(keepSeconds, source.seconds), size.width, size.height)
+                let finalSize = probe(output) ?? (min(keepSeconds, source.seconds), Double(min(keepSeconds, source.seconds)), size.width, size.height)
                 completion(.success(LuckgramSquarePreparedVideo(fileUrl: output, coverJpeg: coverJpeg, thumbnail: LuckgramSquareImages.thumbnail(of: cover), width: finalSize.width, height: finalSize.height, durationSeconds: min(keepSeconds, finalSize.seconds))))
             }
         }
@@ -264,6 +265,8 @@ private final class SquareComposeState {
     var images: [LuckgramSquarePreparedImage] = []
     var video: LuckgramSquarePreparedVideo?
     var preparing = false
+    /// What `preparing` is about: a video (transcode) or photos.
+    var preparingVideo = false
     var prepareProgress: Float = -1
     var publishing = false
     var progressText: String?
@@ -437,7 +440,18 @@ public func luckgramSquareComposeController(context: AccountContext) -> ViewCont
                 let videoBytes = ((try? FileManager.default.attributesOfItem(atPath: video.fileUrl.path))?[.size] as? NSNumber)?.intValue ?? 0
                 requestUploads(contentType: SquareLogic.videoContentType, sizes: [videoBytes], then: { videoUploads in
                     requestUploads(contentType: SquareLogic.imageContentType, sizes: [video.coverJpeg.count], then: { coverUploads in
-                        requests.add((LuckgramAI.shared.putPresigned(url: videoUploads[0].url, contentType: SquareLogic.videoContentType, fileUrl: video.fileUrl)
+                        requests.add((LuckgramAI.shared.putPresigned(url: videoUploads[0].url, contentType: SquareLogic.videoContentType, fileUrl: video.fileUrl, progress: { fraction in
+                            Queue.mainQueue().async {
+                                guard state.publishing else {
+                                    return
+                                }
+                                let next = tx.uploadingVideo(max(0, min(100, Int((fraction * 100).rounded(.down)))))
+                                if next != state.progressText {
+                                    state.progressText = next
+                                    refresh()
+                                }
+                            }
+                        })
                         |> deliverOnMainQueue).start(error: { error in
                             fail(error)
                         }, completed: {
@@ -471,6 +485,7 @@ public func luckgramSquareComposeController(context: AccountContext) -> ViewCont
             return
         }
         state.preparing = true
+        state.preparingVideo = false
         state.prepareProgress = -1
         refresh()
         DispatchQueue.global(qos: .userInitiated).async {
@@ -490,6 +505,7 @@ public func luckgramSquareComposeController(context: AccountContext) -> ViewCont
 
     func transcode(_ url: URL, keepSeconds: Int) {
         state.preparing = true
+        state.preparingVideo = true
         state.prepareProgress = 0
         refresh()
         cancelExport = LuckgramSquareVideos.prepare(url, keepSeconds: keepSeconds, progress: { p in
@@ -523,7 +539,7 @@ public func luckgramSquareComposeController(context: AccountContext) -> ViewCont
             LuckgramSquare.toast(context: context, tx.videoFailed, present: present)
             return
         }
-        if probe.seconds > maxSeconds {
+        if probe.exact > Double(maxSeconds) {
             // Spec 26 item 3: too long → let the user trim (keep the first N seconds) or cancel.
             present(textAlertController(context: context, title: tx.videoTooLongTitle, text: tx.videoTooLong(maxSeconds, probe.seconds), actions: [
                 TextAlertAction(type: .genericAction, title: tx.cancel, action: {
@@ -631,7 +647,7 @@ public func luckgramSquareComposeController(context: AccountContext) -> ViewCont
         }
         if state.preparing {
             let p = state.prepareProgress
-            e.append(.progress(p >= 0 ? tx.preparingVideo + " \(Int((p * 100).rounded()))%" : tx.preparingImages))
+            e.append(.progress(state.preparingVideo ? (p >= 0 ? tx.preparingVideo + " \(Int((p * 100).rounded()))%" : tx.preparingVideo) : tx.preparingImages))
         } else if state.publishing {
             e.append(.progress(state.progressText ?? tx.publishing))
         } else {

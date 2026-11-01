@@ -386,6 +386,14 @@ public enum SquareLogic {
         return sourceBitrate > 0 ? min(target, sourceBitrate) : target
     }
 
+    /// Whole seconds of a duration, rounded down (acceptance P3: 75.02 s is "1:15", not "1:16").
+    public static func wholeSeconds(_ seconds: Double) -> Int {
+        guard seconds.isFinite, seconds > 0 else {
+            return 0
+        }
+        return Int(seconds.rounded(.down))
+    }
+
     /// "0:07", "1:00", "12:34".
     public static func formatDuration(_ seconds: Int) -> String {
         let s = max(0, seconds)
@@ -573,6 +581,7 @@ public enum SquareLogic {
         public var publish: String { t("发布", "Post") }
         public var publishing: String { t("正在发布…", "Posting…") }
         public var uploadingVideo: String { t("正在上传视频…", "Uploading video…") }
+        public func uploadingVideo(_ percent: Int) -> String { t("正在上传视频… \(percent)%", "Uploading video… \(percent)%") }
         public var published: String { t("已发布", "Posted") }
         public func attachmentsInfo(_ maxSeconds: Int) -> String {
             return t("最多 9 张图片，或 1 段不超过 \(maxSeconds) 秒的视频。图片会压缩到长边 2048 像素，视频会转码为 1280p 以内的 MP4；位置等元数据都会去掉后再上传。",
