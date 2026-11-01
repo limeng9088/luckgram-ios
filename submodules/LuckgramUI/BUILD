@@ -22,6 +22,7 @@ swift_library(
         "//submodules/AccountUtils:AccountUtils",
         "//submodules/PromptUI:PromptUI",
         "//submodules/LuckgramAccountsStore:LuckgramAccountsStore",
+        "//submodules/PasscodeCore:PasscodeCore",
     ],
     visibility = [
         "//visibility:public",

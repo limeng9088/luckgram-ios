@@ -12,6 +12,7 @@ import TelegramStringFormatting
 import PasscodeCore
 import LocalAuthentication
 import MonotonicTime
+import LuckgramAccountsStore
 
 public final class PasscodeEntryControllerPresentationArguments {
     let animated: Bool
@@ -231,6 +232,14 @@ public final class PasscodeEntryController: ViewController {
 
     private func verifyCode(_ code: String) {
         guard !self.checkingCode, self.authenticationLifecycle.canAuthenticate else { return }
+        // Luckgram 11 (double space): the second passcode opens the second space without touching
+        // Telegram's credential store; the main passcode (below) closes it. Biometrics keep the
+        // space that was open before.
+        if self.authenticated == nil, self.completed == nil, case .appUnlock = self.authenticationScope, LuckgramDoubleBottomState.shared.tryUnlockWithSecondPasscode(code) {
+            self.controllerNode.resetInput()
+            self.appLockContext.unlock()
+            return
+        }
         self.checkingCode = true
         self.cooldownRequestId &+= 1
         self.controllerNode.updateCredentialError(false)
@@ -267,6 +276,9 @@ public final class PasscodeEntryController: ViewController {
                         if self.completed != nil {
                             self.finishAuthentication(.success(nil))
                         } else {
+                            if case .appUnlock = scope {
+                                LuckgramDoubleBottomState.shared.onMainUnlock()
+                            }
                             self.appLockContext.unlock()
                         }
                         let isMainApp = self.applicationBindings.isMainApp
