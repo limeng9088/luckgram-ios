@@ -117,6 +117,10 @@ public enum LuckgramFeatures {
         add(.toggle(NearbyLogic.featureKey, group: .discover, default: true,
             title: ("附近的人", "People Nearby"),
             description: ("「联系人」顶部的入口：找到附近同样开启的 Luckgram 用户", "Entry at the top of Contacts: find Luckgram users nearby who turned it on")))
+        add(.toggle(SquareLogic.featureKey, group: .discover, default: true,
+            title: ("广场", "Square"),
+            description: ("「联系人」顶部的入口：所有 Luckgram 用户的公开动态，发图文短帖、点赞、评论", "Entry at the top of Contacts: a public feed for all Luckgram users with short posts, likes and comments"))
+            .subpage { context in luckgramSquareController(context: context) })
 
         // ---- AI
         add(.toggle(LuckgramFeatures.aiAssistant, group: .ai, default: true,

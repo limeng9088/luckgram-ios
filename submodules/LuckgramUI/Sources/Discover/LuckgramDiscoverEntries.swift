@@ -25,6 +25,13 @@ public enum LuckgramDiscoverEntries {
             iconName: "Chat/Attach Menu/Location",
             isEnabled: { LuckgramNearby.isFeatureEnabled },
             make: { luckgramNearbyController(context: $0) }
+        ),
+        LuckgramDiscoverEntry(
+            featureKey: SquareLogic.featureKey,
+            title: { LuckgramSquare.texts.title },
+            iconName: "Chat/Context Menu/Channels",
+            isEnabled: { LuckgramSquare.isFeatureEnabled },
+            make: { luckgramSquareController(context: $0) }
         )
     ]
 

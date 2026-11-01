@@ -213,11 +213,33 @@ public func luckgramAccountController(context: AccountContext) -> ViewController
                     requests.add(LuckgramAI.shared.requestJSON(method: "DELETE", path: "/v1/link").start(next: { _ in
                         state.busy = false
                         LuckgramNearby.onUnlinked() // 25: the server deleted the nearby card
+                        LuckgramSquare.clearCache() // 26: link state / profile belong to the linked user
                         luckgramToast(context, tx.unlinkedNow, present: presentImpl)
                         load()
                     }, error: { error in
                         state.busy = false
                         luckgramToast(context, tx.error(error.code), present: presentImpl)
+                    }))
+                })
+            ]))
+        case 4:
+            // 26 Square (spec item 8): one tap deletes all of this user's posts, comments and likes.
+            let sq = LuckgramSquare.texts
+            presentImpl?(textAlertController(context: context, title: sq.deleteMyData, text: sq.deleteMyDataConfirm, actions: [
+                TextAlertAction(type: .genericAction, title: LuckgramStrings.cancel, action: {}),
+                TextAlertAction(type: .destructiveAction, title: sq.delete, action: {
+                    state.busy = true
+                    refresh()
+                    requests.add(LuckgramAI.shared.requestJSON(method: "DELETE", path: "/v1/square/me").start(next: { _ in
+                        state.busy = false
+                        LuckgramSquare.clearCache()
+                        LuckgramSquare.markChanged()
+                        refresh()
+                        luckgramToast(context, sq.deletedMyData, present: presentImpl)
+                    }, error: { error in
+                        state.busy = false
+                        refresh()
+                        luckgramToast(context, LuckgramSquare.errorText(error), present: presentImpl)
                     }))
                 })
             ]))
@@ -244,6 +266,13 @@ public func luckgramAccountController(context: AccountContext) -> ViewController
             info = tx.devices(s.devices, s.maxDevices) + "\n\n" + info
         }
         e.append(.footer(0, 0, info))
+        if linked && LuckgramSquare.isFeatureEnabled {
+            // 26 Square: delete everything this user posted (spec 26 item 8).
+            let sq = LuckgramSquare.texts
+            e.append(.header(1, sq.title))
+            e.append(.action(1, 4, sq.deleteMyData, .destructive))
+            e.append(.footer(1, 1, sq.deleteMyDataConfirm))
+        }
         return e
     }
 

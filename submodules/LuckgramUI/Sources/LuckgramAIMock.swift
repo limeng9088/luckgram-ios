@@ -68,6 +68,21 @@ public final class LuckgramAIMock {
         self.requests += 1
         self.lock.unlock()
 
+        // 26: presigned image upload (S3 style: no Authorization, no payload-hash header) and the
+        // CloudFront-style image download of what was uploaded / seeded.
+        if method == "PUT" && path.hasPrefix(DiscoverMock.uploadPrefix) {
+            let ct = headers["Content-Type"] ?? ""
+            let ok = (ct == "image/jpeg" || ct == "video/mp4") && self.discover.acceptUpload(path: path, body: body)
+            return .raw(ok ? 200 : 403, "text/plain", Data())
+        }
+        if method == "GET" && path.hasPrefix(DiscoverMock.imagePrefix) {
+            return .raw(200, "image/png", Data(base64Encoded: LuckgramAIMock.tinyPNG) ?? Data())
+        }
+        if method == "GET" && path.hasPrefix("/mock-video/") {
+            // No real MP4 in the mock: players show the cover and fail quietly.
+            return .raw(200, "video/mp4", Data())
+        }
+
         // CloudFront OAC: a request with a body and no / a wrong payload hash is rejected with 403.
         if !body.isEmpty {
             let sent = headers.first(where: { $0.key.lowercased() == "x-amz-content-sha256" })?.value

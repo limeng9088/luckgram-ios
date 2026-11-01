@@ -309,6 +309,40 @@ public final class LuckgramAI {
 
     /// Downloads a temporary file from the API server. The device token is sent only to the API
     /// server's own host (§3.1), never to a third-party host.
+    /// Bytes of an https URL (26 square images via CloudFront, or the API host). API-host URLs are
+    /// authenticated; others are fetched as is. No consent prompt: nothing of the user's is sent.
+    public func fetchData(url: String) -> Signal<Data, LuckgramAIError> {
+        return self.download(url)
+    }
+
+    /// `PUT` to a presigned upload URL returned by the API server (26 square images). No device
+    /// token and no payload-hash header: the URL itself carries the authorization (S3). Completes
+    /// when the upload was accepted (2xx), fails otherwise.
+    public func putPresigned(url: String, contentType: String, body: Data) -> Signal<Void, LuckgramAIError> {
+        guard url.hasPrefix("https://"), let target = URL(string: url) else {
+            return .fail(LuckgramAIError(code: LuckgramAIError.invalidRequest))
+        }
+        var request = URLRequest(url: target)
+        request.httpMethod = "PUT"
+        request.setValue(contentType, forHTTPHeaderField: "Content-Type")
+        request.httpBody = body
+        return Signal { subscriber in
+            let handler = LuckgramHTTPTaskHandler(subscriber: subscriber)
+            let session = self.session(delegate: handler)
+            let task = session.dataTask(with: request)
+            task.resume()
+            session.finishTasksAndInvalidate()
+            return ActionDisposable {
+                task.cancel()
+            }
+        }
+        |> map { _ -> Void in
+            return Void()
+        }
+        |> then(.single(Void()))
+        |> take(1)
+    }
+
     private func download(_ url: String) -> Signal<Data, LuckgramAIError> {
         let signal: Signal<HTTPEvent, LuckgramAIError>
         if self.isAPIHost(url) {
