@@ -99,7 +99,7 @@ enum LuckgramSquarePostEntry: ItemListNodeEntry {
         case let .rejected(_, _, text):
             return ItemListTextItem(presentationData: presentationData, text: .plain(text), sectionId: self.section)
         case let .text(_, index, text, full):
-            return ItemListMultilineTextItem(presentationData: presentationData, text: text, enabledEntityTypes: [.url, .mention, .hashtag], sectionId: self.section, style: .blocks, action: full ? nil : {
+            return ItemListMultilineTextItem(presentationData: presentationData, text: text, enabledEntityTypes: [.allUrl, .mention, .hashtag], sectionId: self.section, style: .blocks, action: full ? nil : {
                 arguments.openPost(index)
             }, longTapAction: {
                 arguments.more(index)
