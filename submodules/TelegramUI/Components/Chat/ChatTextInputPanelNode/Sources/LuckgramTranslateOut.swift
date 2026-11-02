@@ -1,6 +1,7 @@
 // Luckgram: translate the message being composed before it is sent (feature 01, "translate_out").
 //
-// Translation goes through Telegram's own messages.translateText; nothing is sent anywhere else.
+// Translation goes through Telegram's own messages.translateText; only when that fails is the text sent to the
+// Luckgram API instead (specs#82, `luckgramTranslationFallback`).
 // Per-chat target languages live in the account's postbox item cache, so they are removed together
 // with the account data on logout.
 
@@ -190,12 +191,29 @@ public enum LuckgramTranslateOut {
 
     // MARK: - Translation
 
+    enum Outcome {
+        case translated(NSAttributedString)
+        /// The reason to show (nil: the generic "translation failed").
+        case failed(String?)
+    }
+
+    private enum TelegramOutcome {
+        case translated(NSAttributedString)
+        /// Telegram answered with an error (already written to the diagnostic log by TelegramCore).
+        case error
+        case empty
+        case timedOut
+    }
+
     /// Translates the composed text via messages.translateText. Emoji, custom emoji, mentions, links and line breaks
-    /// are preserved; formatting is kept when the server returns it. Emits nil on failure.
-    static func translate(context: AccountContext, text: NSAttributedString, toLang: String) -> Signal<NSAttributedString?, NoError> {
+    /// are preserved; formatting is kept when the server returns it.
+    ///
+    /// specs#82: when Telegram fails (any error such as TRANSLATIONS_DISABLED_ALT, an empty result or no answer
+    /// within 15 s) the plain text is translated by Luckgram AI instead; if that fails too, the outcome says why.
+    static func translate(context: AccountContext, text: NSAttributedString, toLang: String) -> Signal<Outcome, NoError> {
         let string = text.string
         if string.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            return .single(nil)
+            return .single(.failed(nil))
         }
         // Formatting, text mentions and custom emoji from the field, plus plain @usernames / links / hashtags so the
         // translator leaves them untouched.
@@ -216,16 +234,41 @@ public enum LuckgramTranslateOut {
         }
         entities.sort(by: { $0.range.lowerBound < $1.range.lowerBound })
 
-        return context.engine.messages.translate(text: string, toLang: toLang, entities: entities)
-        |> map { result -> NSAttributedString? in
+        let telegram: Signal<TelegramOutcome, NoError> = context.engine.messages.translate(text: string, toLang: toLang, entities: entities)
+        |> map { result -> TelegramOutcome in
             guard let result, !result.0.isEmpty else {
-                return nil
+                return .empty
             }
-            return chatInputStateStringWithAppliedEntities(result.0, entities: result.1)
+            return .translated(chatInputStateStringWithAppliedEntities(result.0, entities: result.1))
         }
-        |> `catch` { _ -> Signal<NSAttributedString?, NoError> in
-            return .single(nil)
+        |> `catch` { _ -> Signal<TelegramOutcome, NoError> in
+            return .single(.error)
         }
-        |> timeout(15.0, queue: Queue.mainQueue(), alternate: .single(nil))
+        |> timeout(LuckgramTranslateFallbackLogic.telegramTimeoutSeconds, queue: Queue.mainQueue(), alternate: .single(.timedOut))
+
+        return telegram
+        |> mapToSignal { outcome -> Signal<Outcome, NoError> in
+            let source = LuckgramTranslateFallbackLogic.sourceOut
+            switch outcome {
+            case let .translated(result):
+                return .single(.translated(result))
+            case .timedOut:
+                luckgramTranslationFallback?.logTelegramFailure(source: source, code: 0, text: LuckgramTranslateFallbackLogic.timeout)
+            case .empty:
+                luckgramTranslationFallback?.logTelegramFailure(source: source, code: 0, text: LuckgramTranslateFallbackLogic.emptyResult)
+            case .error:
+                break
+            }
+            guard let fallback = luckgramTranslationFallback else {
+                return .single(.failed(nil))
+            }
+            return fallback.translate(source: source, text: string, toLang: toLang)
+            |> map { translated -> Outcome in
+                return .translated(chatInputStateStringWithAppliedEntities(translated, entities: []))
+            }
+            |> `catch` { error -> Signal<Outcome, NoError> in
+                return .single(.failed(fallback.failureMessage(error)))
+            }
+        }
     }
 }
