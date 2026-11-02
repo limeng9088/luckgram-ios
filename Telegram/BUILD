@@ -412,8 +412,10 @@ plist_fragment(
     """
     <key>CFBundleVersion</key>
     <string>{buildNumber}</string>
+    <key>LuckgramGitCommit</key>
+    <string>{luckgramGitCommit}</string>
     """,
-    defaults = {"buildNumber": "1"},
+    defaults = {"buildNumber": "1", "luckgramGitCommit": "unknown"},
 )
 
 plist_fragment(

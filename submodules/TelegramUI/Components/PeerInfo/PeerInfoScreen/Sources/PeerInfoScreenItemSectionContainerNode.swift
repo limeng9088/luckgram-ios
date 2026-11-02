@@ -81,7 +81,7 @@ final class PeerInfoScreenItemSectionContainerNode: ASDisplayNode {
             let bottomItem: PeerInfoScreenItem?
             if i == items.count - 1 {
                 bottomItem = nil
-            } else if items[i + 1] is PeerInfoScreenCommentItem {
+            } else if items[i + 1] is PeerInfoScreenCommentItem || items[i + 1] is PeerInfoScreenLuckgramVersionItem {
                 bottomItem = nil
             } else {
                 bottomItem = items[i + 1]
@@ -96,7 +96,7 @@ final class PeerInfoScreenItemSectionContainerNode: ASDisplayNode {
                 alphaTransition.updateAlpha(node: itemNode, alpha: 1.0)
             }
             
-            if item is PeerInfoScreenCommentItem {
+            if item is PeerInfoScreenCommentItem || item is PeerInfoScreenLuckgramVersionItem {
             } else {
                 contentWithBackgroundHeight += itemHeight
             }
@@ -127,7 +127,8 @@ final class PeerInfoScreenItemSectionContainerNode: ASDisplayNode {
         transition.updateFrame(node: self.topSeparatorNode, frame: CGRect(origin: CGPoint(x: 0.0, y: contentWithBackgroundOffset - UIScreenPixel), size: CGSize(width: width, height: UIScreenPixel)))
         transition.updateFrame(node: self.bottomSeparatorNode, frame: CGRect(origin: CGPoint(x: 0.0, y: contentWithBackgroundHeight), size: CGSize(width: width, height: UIScreenPixel)))
         
-        if contentHeight.isZero {
+        // Luckgram 28: the version-line section has no background, so no separators either.
+        if contentHeight.isZero || (!items.isEmpty && items.allSatisfy({ $0 is PeerInfoScreenLuckgramVersionItem })) {
             transition.updateAlpha(node: self.topSeparatorNode, alpha: 0.0)
             transition.updateAlpha(node: self.bottomSeparatorNode, alpha: 0.0)
         } else {
