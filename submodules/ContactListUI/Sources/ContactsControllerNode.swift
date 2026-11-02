@@ -99,12 +99,18 @@ final class ContactsControllerNode: ASDisplayNode, ASGestureRecognizerDelegate {
         
         var inviteImpl: (() -> Void)?
         
-        // Luckgram 27: People Nearby and Square moved from here to the Discover tab.
+        // Luckgram 27: People Nearby and Square moved from here to the Discover tab; the calls tab is gone,
+        // so Recent Calls sits right after Invite Friends (same order as Android).
         let presentation = combineLatest(sortOrder, self.stringsPromise.get())
         |> map { sortOrder, strings -> ContactListPresentation in
-            let options = [ContactListAdditionalOption(title: strings.Contacts_InviteFriends, icon: .generic(UIImage(bundleImageName: "Contact List/AddMemberIcon")!), action: {
+            var options = [ContactListAdditionalOption(title: strings.Contacts_InviteFriends, icon: .generic(UIImage(bundleImageName: "Contact List/AddMemberIcon")!), action: {
                 inviteImpl?()
             })]
+            if let callsIcon = UIImage(bundleImageName: "Chat List/Tabs/IconCalls") {
+                options.append(ContactListAdditionalOption(title: strings.CallSettings_RecentCalls, icon: .generic(callsIcon), action: {
+                    (context.sharedContext.mainWindow?.viewController as? TelegramRootControllerInterface)?.luckgramOpenRecentCalls()
+                }))
+            }
             switch sortOrder {
                 case .presence:
                     return .orderedByPresence(options: options)

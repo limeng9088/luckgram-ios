@@ -887,6 +887,10 @@ public final class TelegramRootController: NavigationController, TelegramRootCon
     
     public func startNewCall() {
         // Luckgram 27: no calls tab any more; open the call list as a page.
+        self.luckgramOpenRecentCalls()
+    }
+    
+    public func luckgramOpenRecentCalls() {
         self.pushViewController(CallListController(context: self.context, mode: .navigation))
     }
 }
