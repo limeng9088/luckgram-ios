@@ -1754,6 +1754,16 @@ plist_fragment(
     <string>https://api.luckgram.cc</string>
     <key>LuckgramAPIURLDebug</key>
     <string>https://api-dev.luckgram.cc</string>
+    <key>LuckgramAPIURLs</key>
+    <array>
+        <string>https://api.luckgram.cc</string>
+        <string>https://lg.cat158.com</string>
+    </array>
+    <key>LuckgramAPIURLsDebug</key>
+    <array>
+        <string>https://api-dev.luckgram.cc</string>
+        <string>https://lg-dev.cat158.com</string>
+    </array>
     <key>NSAppTransportSecurity</key>
     <dict>
         <key>NSAllowsArbitraryLoads</key>

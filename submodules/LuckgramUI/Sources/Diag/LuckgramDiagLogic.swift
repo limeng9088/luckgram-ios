@@ -59,6 +59,9 @@ public enum LuckgramDiagLog {
         public var proxy: String?
         /// The server's `X-Request-Id` header.
         public var requestId: String?
+        /// specs#81: host of the API entry used, and whether another entry failed first.
+        public var endpoint: String?
+        public var switched = false
 
         public init() {
         }
@@ -117,6 +120,10 @@ public enum LuckgramDiagLog {
         }
         field(&b, "proxy", e.proxy)
         field(&b, "rid", e.requestId)
+        field(&b, "endpoint", e.endpoint)
+        if e.switched {
+            b += " switched=1"
+        }
         return b
     }
 

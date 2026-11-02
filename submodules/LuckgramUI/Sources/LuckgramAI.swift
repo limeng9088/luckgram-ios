@@ -147,15 +147,68 @@ public final class LuckgramAI {
     private init() {
     }
 
-    /// API server base URL from the build configuration (Info.plist; debug builds use the dev server).
+    /// API entry in use (debug builds use the dev server; a backup after a network failure, specs#81).
     public static var apiBaseURL: String {
+        return LuckgramAI.endpoints.current
+    }
+
+    private static let endpointKey = "_api_endpoint"
+
+    /// specs#81: the API entries from Info.plist (`LuckgramAPIURLs`, debug `LuckgramAPIURLsDebug`;
+    /// the old single-URL keys still work), starting with the one that worked last.
+    public static let endpoints: LuckgramEndpoints = {
         let info = Bundle.main.infoDictionary ?? [:]
+        var list: [String] = []
         #if DEBUG
-        if let value = info["LuckgramAPIURLDebug"] as? String, !value.isEmpty {
-            return value
+        list = LuckgramEndpoints.parse((info["LuckgramAPIURLsDebug"] as? [String]) ?? [])
+        if list.isEmpty, let value = info["LuckgramAPIURLDebug"] as? String {
+            list = LuckgramEndpoints.parse([value])
         }
         #endif
-        return (info["LuckgramAPIURL"] as? String) ?? ""
+        if list.isEmpty {
+            list = LuckgramEndpoints.parse((info["LuckgramAPIURLs"] as? [String]) ?? [])
+        }
+        if list.isEmpty {
+            list = LuckgramEndpoints.parse([(info["LuckgramAPIURL"] as? String) ?? ""])
+        }
+        if list.isEmpty {
+            list = ["https://api.luckgram.cc"]
+        }
+        return LuckgramEndpoints(bases: list, remembered: LuckgramSettings.shared.string(LuckgramAI.endpointKey, default: nil))
+    }()
+
+    static func rememberEndpoint(_ base: String) {
+        LuckgramSettings.shared.setString(LuckgramAI.endpointKey, base)
+    }
+
+    /// A URL from the server pointing at another API entry is moved to the one in use.
+    public static func rewriteAPIURL(_ url: String) -> String {
+        return LuckgramAI.endpoints.rewrite(url)
+    }
+
+    /// While a backup entry is in use, checks the first one in the background (once per cold
+    /// start, then every 6 hours) and goes back to it when `GET /v1/health` answers 200.
+    static func maybeProbe() {
+        let endpoints = LuckgramAI.endpoints
+        guard endpoints.takeProbe(now: Date()), let url = URL(string: endpoints.primary + LuckgramEndpoints.healthPath) else {
+            return
+        }
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.timeoutIntervalForRequest = 10.0
+        configuration.httpCookieStorage = nil
+        configuration.urlCache = nil
+        let proxy = LuckgramNet.shared.apply(to: configuration)
+        let session = URLSession(configuration: configuration)
+        let start = Date()
+        let primary = endpoints.primary
+        session.dataTask(with: URLRequest(url: url), completionHandler: { _, response, error in
+            let http = response as? HTTPURLResponse
+            LuckgramNet.shared.logHTTP(feature: "endpoint-probe", method: "GET", target: url.absoluteString, status: http?.statusCode ?? 0, error: error, start: start, proxy: proxy, requestId: http?.value(forHTTPHeaderField: "X-Request-Id"), endpoint: url.host)
+            if http?.statusCode == 200 && endpoints.markWorking(primary) {
+                LuckgramAI.rememberEndpoint(primary)
+            }
+        }).resume()
+        session.finishTasksAndInvalidate()
     }
 
     // MARK: - Mock
@@ -348,7 +401,7 @@ public final class LuckgramAI {
     /// token and no payload-hash header: the URL itself carries the authorization (S3). Completes
     /// when the upload was accepted (2xx), fails otherwise.
     public func putPresigned(url: String, contentType: String, body: Data) -> Signal<Void, LuckgramAIError> {
-        guard url.hasPrefix("https://"), let target = URL(string: url) else {
+        guard url.hasPrefix("https://"), let target = URL(string: LuckgramAI.rewriteAPIURL(url)) else {
             return .fail(LuckgramAIError(code: LuckgramAIError.invalidRequest))
         }
         var request = URLRequest(url: target)
@@ -376,7 +429,7 @@ public final class LuckgramAI {
     /// up to 50 MB) instead of holding it in memory. `progress` gets the sent fraction (0…1) on an
     /// arbitrary queue.
     public func putPresigned(url: String, contentType: String, fileUrl: URL, progress: ((Double) -> Void)? = nil) -> Signal<Void, LuckgramAIError> {
-        guard url.hasPrefix("https://"), let target = URL(string: url) else {
+        guard url.hasPrefix("https://"), let target = URL(string: LuckgramAI.rewriteAPIURL(url)) else {
             return .fail(LuckgramAIError(code: LuckgramAIError.invalidRequest))
         }
         var request = URLRequest(url: target)
@@ -432,7 +485,7 @@ public final class LuckgramAI {
         if self.isUsingMock {
             return host == LuckgramAIMock.host
         }
-        return host == URL(string: LuckgramAI.apiBaseURL)?.host?.lowercased()
+        return LuckgramAI.endpoints.isEntryHost(host)
     }
 
     /// Transcribes an audio file; the request body is the audio itself (§3.1 item 5). Files larger
@@ -721,14 +774,53 @@ public final class LuckgramAI {
             signed.setValue(LuckgramAI.sha256Hex(body), forHTTPHeaderField: "x-amz-content-sha256")
         }
         let finalRequest = signed
+        // specs#81: an API request goes to the entry in use; if that one can't be reached the same
+        // request (full body) goes to the next entry.
+        let endpoints = LuckgramAI.endpoints
+        let urlString = finalRequest.url?.absoluteString ?? ""
+        let own: String? = self.isUsingMock ? nil : endpoints.base(of: urlString)
+        let order: [String] = own != nil ? endpoints.attemptOrder() : []
+        if own != nil {
+            LuckgramAI.maybeProbe()
+        }
         return Signal { subscriber in
-            let handler = LuckgramHTTPTaskHandler(subscriber: subscriber, feature: feature, method: finalRequest.httpMethod, target: finalRequest.url?.absoluteString)
-            let session = self.session(delegate: handler)
-            let task = session.dataTask(with: finalRequest)
-            task.resume()
-            session.finishTasksAndInvalidate()
+            let current = LuckgramTaskBox()
+            func attempt(_ index: Int) {
+                var req = finalRequest
+                var entry: String?
+                if let own, index < order.count {
+                    entry = order[index]
+                    req.url = URL(string: order[index] + String(urlString.dropFirst(own.count)))
+                }
+                let handler = LuckgramHTTPTaskHandler(subscriber: subscriber, feature: feature, method: req.httpMethod, target: req.url?.absoluteString)
+                if let entry {
+                    handler.endpoint = req.url?.host
+                    handler.switched = index > 0
+                    handler.onResponse = {
+                        if index > 0 && endpoints.markWorking(entry) {
+                            LuckgramAI.rememberEndpoint(entry)
+                        }
+                    }
+                    if index + 1 < order.count {
+                        let hasBody = req.httpBody != nil
+                        handler.retry = { error, bodyBytesSent in
+                            guard !current.isCancelled, LuckgramEndpoints.shouldSwitch(domain: error.domain, code: error.code, hasBody: hasBody, bodyBytesSent: bodyBytesSent) else {
+                                return false
+                            }
+                            attempt(index + 1)
+                            return true
+                        }
+                    }
+                }
+                let session = self.session(delegate: handler)
+                let task = session.dataTask(with: req)
+                current.set(task)
+                task.resume()
+                session.finishTasksAndInvalidate()
+            }
+            attempt(0)
             return ActionDisposable {
-                task.cancel()
+                current.cancel()
             }
         }
     }
@@ -801,6 +893,38 @@ public final class LuckgramAI {
     }
 }
 
+/// The task of a request that may move to another API entry (specs#81): cancelling cancels
+/// whichever attempt is running, and stops further attempts.
+private final class LuckgramTaskBox {
+    private let lock = NSLock()
+    private var task: URLSessionTask?
+    private var cancelled = false
+
+    var isCancelled: Bool {
+        self.lock.lock()
+        defer { self.lock.unlock() }
+        return self.cancelled
+    }
+
+    func set(_ task: URLSessionTask) {
+        self.lock.lock()
+        let cancelled = self.cancelled
+        self.task = task
+        self.lock.unlock()
+        if cancelled {
+            task.cancel()
+        }
+    }
+
+    func cancel() {
+        self.lock.lock()
+        self.cancelled = true
+        let task = self.task
+        self.lock.unlock()
+        task?.cancel()
+    }
+}
+
 /// URLSession delegate for one request: buffers JSON bodies, parses `text/event-stream` incrementally.
 private final class LuckgramHTTPTaskHandler: NSObject, URLSessionDataDelegate {
     private let subscriber: Subscriber<LuckgramAI.HTTPEvent, LuckgramAIError>
@@ -819,6 +943,14 @@ private final class LuckgramHTTPTaskHandler: NSObject, URLSessionDataDelegate {
     private let start = Date()
     var proxy: String?
     private var requestId: String?
+    /// specs#81: API entry host used, and whether an earlier entry failed.
+    var endpoint: String?
+    var switched = false
+    /// Called once an HTTP response arrives (the entry works).
+    var onResponse: (() -> Void)?
+    /// Called when no response arrived; returns true if the request was sent to the next entry,
+    /// in which case this handler reports nothing to the subscriber.
+    var retry: ((NSError, Int64) -> Bool)?
 
     init(subscriber: Subscriber<LuckgramAI.HTTPEvent, LuckgramAIError>, feature: String? = nil, method: String? = nil, target: String? = nil) {
         self.subscriber = subscriber
@@ -831,6 +963,8 @@ private final class LuckgramHTTPTaskHandler: NSObject, URLSessionDataDelegate {
         if let response = response as? HTTPURLResponse {
             self.status = response.statusCode
             self.requestId = response.value(forHTTPHeaderField: "X-Request-Id")
+            self.onResponse?()
+            self.onResponse = nil
             let contentType = (response.value(forHTTPHeaderField: "Content-Type") ?? "").lowercased()
             self.isEventStream = self.status < 300 && contentType.hasPrefix("text/event-stream")
         }
@@ -903,7 +1037,12 @@ private final class LuckgramHTTPTaskHandler: NSObject, URLSessionDataDelegate {
         if (task.response as? HTTPURLResponse) != nil && self.status == 0 {
             self.status = (task.response as? HTTPURLResponse)?.statusCode ?? 0
         }
-        LuckgramNet.shared.logHTTP(feature: self.feature, method: self.method, target: self.target, status: self.status, error: self.status > 0 ? nil : error, start: self.start, proxy: self.proxy, requestId: self.requestId ?? (task.response as? HTTPURLResponse)?.value(forHTTPHeaderField: "X-Request-Id"))
+        if self.status == 0, let error = error as NSError?, let retry = self.retry, retry(error, task.countOfBytesSent) {
+            // logged as its own line; the next entry's line says switched=1
+            LuckgramNet.shared.logHTTP(feature: "endpoint-switch", method: self.method, target: self.target, status: 0, error: error, start: self.start, proxy: self.proxy, requestId: nil, endpoint: self.endpoint, switched: self.switched)
+            return
+        }
+        LuckgramNet.shared.logHTTP(feature: self.feature, method: self.method, target: self.target, status: self.status, error: self.status > 0 ? nil : error, start: self.start, proxy: self.proxy, requestId: self.requestId ?? (task.response as? HTTPURLResponse)?.value(forHTTPHeaderField: "X-Request-Id"), endpoint: self.endpoint, switched: self.switched)
         if self.failed {
             return
         }

@@ -136,7 +136,7 @@ final class LuckgramSquareVideoItemNode: ListViewItemNode {
     }
 
     private func startPlayback(url: String) {
-        guard self.player == nil, let target = URL(string: url) else {
+        guard self.player == nil, let target = URL(string: LuckgramAI.rewriteAPIURL(url)) else {
             return
         }
         let item = AVPlayerItem(url: target)
@@ -312,7 +312,7 @@ final class LuckgramSquareVideoItemNode: ListViewItemNode {
 /// Full-screen playback with sound (spec 26 item 3), through the system player.
 enum LuckgramSquareVideoPlayer {
     static func present(_ video: SquareLogic.Video, context: AccountContext, fallback: ((UIViewController) -> Void)?) {
-        guard let url = URL(string: video.url) else {
+        guard let url = URL(string: LuckgramAI.rewriteAPIURL(video.url)) else {
             return
         }
         let controller = AVPlayerViewController()
