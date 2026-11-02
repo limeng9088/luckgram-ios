@@ -309,15 +309,26 @@ public final class LuckgramChatSummaryModel {
         |> castError(LuckgramAIError.self)
         |> mapToSignal { messages -> Signal<[LuckgramChatSummaryLogic.Line], LuckgramAIError> in
             if messages.isEmpty {
-                // Offline the search just returns nothing: report it as a network error.
-                return context.account.networkState
+                // The search turns Telegram errors into an empty result (specs#72): ask Telegram
+                // once more for the reason. No answer in time -> a real network error.
+                let method = threadId != nil ? "messages.getReplies" : "messages.getHistory"
+                return luckgramProbeHistoryError(account: context.account, peerId: peerId, threadId: threadId)
+                |> map { value -> (code: Int, text: String)?? in
+                    return .some(value)
+                }
+                |> timeout(15.0, queue: Queue.concurrentDefaultQueue(), alternate: .single(nil))
                 |> take(1)
                 |> castError(LuckgramAIError.self)
-                |> mapToSignal { state -> Signal<[LuckgramChatSummaryLogic.Line], LuckgramAIError> in
-                    if case .online = state {
+                |> mapToSignal { probe -> Signal<[LuckgramChatSummaryLogic.Line], LuckgramAIError> in
+                    guard let probe else {
+                        LuckgramNet.shared.logTelegram(feature: "summary", method: method, code: 0, text: "timeout")
+                        return .fail(LuckgramAIError(code: LuckgramAIError.networkError))
+                    }
+                    guard let failure = probe else {
                         return .single([])
                     }
-                    return .fail(LuckgramAIError(code: LuckgramAIError.networkError))
+                    LuckgramNet.shared.logTelegram(feature: "summary", method: method, code: failure.code, text: failure.text)
+                    return .fail(LuckgramAIError.fromTelegram(code: failure.code, text: failure.text))
                 }
             }
             let sorted = messages.sorted(by: { $0.id.id < $1.id.id }).prefix(count)

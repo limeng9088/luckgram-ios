@@ -58,8 +58,9 @@ private final class LuckgramSettingsArguments {
     let consentCheck: () -> Void
     let resetToken: () -> Void
     let openAccount: (Bool) -> Void // false: Account (S6), true: Luckgram Pro (S7)
+    let exportDiag: () -> Void
 
-    init(toggle: @escaping (String, Bool) -> Void, openSubpage: @escaping (String) -> Void, consent: @escaping () -> Void, setMock: @escaping (Bool) -> Void, selfTest: @escaping () -> Void, consentCheck: @escaping () -> Void, resetToken: @escaping () -> Void, openAccount: @escaping (Bool) -> Void) {
+    init(toggle: @escaping (String, Bool) -> Void, openSubpage: @escaping (String) -> Void, consent: @escaping () -> Void, setMock: @escaping (Bool) -> Void, selfTest: @escaping () -> Void, consentCheck: @escaping () -> Void, resetToken: @escaping () -> Void, openAccount: @escaping (Bool) -> Void, exportDiag: @escaping () -> Void) {
         self.toggle = toggle
         self.openSubpage = openSubpage
         self.consent = consent
@@ -68,6 +69,7 @@ private final class LuckgramSettingsArguments {
         self.consentCheck = consentCheck
         self.resetToken = resetToken
         self.openAccount = openAccount
+        self.exportDiag = exportDiag
     }
 }
 
@@ -81,9 +83,12 @@ private enum LuckgramSettingsEntry: ItemListNodeEntry {
     case debugMock(String, Bool)
     case debugAction(index: Int, String)
     case debugInfo(String)
+    case diagExport(String)
+    case diagInfo(String)
     case footer(String)
 
     private static let debugSection = Int32(LuckgramFeature.Group.debug.rawValue)
+    private static let diagSection: Int32 = 99
     private static let footerSection: Int32 = 100
 
     var section: ItemListSectionId {
@@ -96,6 +101,8 @@ private enum LuckgramSettingsEntry: ItemListNodeEntry {
             return Int32(LuckgramFeature.Group.ai.rawValue)
         case .debugMock, .debugAction, .debugInfo:
             return LuckgramSettingsEntry.debugSection
+        case .diagExport, .diagInfo:
+            return LuckgramSettingsEntry.diagSection
         case .footer:
             return LuckgramSettingsEntry.footerSection
         }
@@ -121,6 +128,10 @@ private enum LuckgramSettingsEntry: ItemListNodeEntry {
             return LuckgramSettingsEntry.debugSection * 10000 + 9100 + Int32(index)
         case .debugInfo:
             return LuckgramSettingsEntry.debugSection * 10000 + 9900
+        case .diagExport:
+            return LuckgramSettingsEntry.diagSection * 10000
+        case .diagInfo:
+            return LuckgramSettingsEntry.diagSection * 10000 + 1
         case .footer:
             return LuckgramSettingsEntry.footerSection * 10000
         }
@@ -145,6 +156,10 @@ private enum LuckgramSettingsEntry: ItemListNodeEntry {
         case let (.debugAction(a1, a2), .debugAction(b1, b2)):
             return a1 == b1 && a2 == b2
         case let (.debugInfo(a), .debugInfo(b)):
+            return a == b
+        case let (.diagExport(a), .diagExport(b)):
+            return a == b
+        case let (.diagInfo(a), .diagInfo(b)):
             return a == b
         case let (.footer(a), .footer(b)):
             return a == b
@@ -199,6 +214,12 @@ private enum LuckgramSettingsEntry: ItemListNodeEntry {
             })
         case let .debugInfo(text):
             return ItemListTextItem(presentationData: presentationData, text: .plain(text), sectionId: self.section)
+        case let .diagExport(title):
+            return ItemListActionItem(presentationData: presentationData, systemStyle: .glass, title: title, kind: .generic, alignment: .natural, sectionId: self.section, style: .blocks, action: {
+                arguments.exportDiag()
+            })
+        case let .diagInfo(text):
+            return ItemListTextItem(presentationData: presentationData, text: .plain(text), sectionId: self.section)
         case let .footer(text):
             return ItemListTextItem(presentationData: presentationData, text: .plain(text), sectionId: self.section, textAlignment: .center)
         }
@@ -251,6 +272,10 @@ private func luckgramSettingsEntries() -> [LuckgramSettingsEntry] {
         entries.append(.debugAction(index: 2, LuckgramStrings.pick("清除设备令牌", "Clear device token")))
         entries.append(.debugInfo(LuckgramStrings.pick("服务器：", "Server: ") + (LuckgramAI.shared.isUsingMock ? "mock" : LuckgramAI.apiBaseURL)))
     }
+
+    // specs#72: local diagnostic log (metadata only), exported as .txt.
+    entries.append(.diagExport(LuckgramStrings.exportDiagLog))
+    entries.append(.diagInfo(LuckgramStrings.exportDiagLogInfo))
 
     let info = Bundle.main.infoDictionary ?? [:]
     let version = "\((info["CFBundleShortVersionString"] as? String) ?? "") (\((info["CFBundleVersion"] as? String) ?? ""))"
@@ -317,6 +342,21 @@ public func luckgramSettingsController(context: AccountContext) -> ViewControlle
         },
         openAccount: { pro in
             pushImpl?(pro ? luckgramProController(context: context) : luckgramAccountController(context: context))
+        },
+        exportDiag: {
+            LuckgramNet.shared.exportFile { url in
+                guard let url else {
+                    let presentationData = context.sharedContext.currentPresentationData.with { $0 }
+                    presentImpl?(UndoOverlayController(presentationData: presentationData, content: .info(title: nil, text: LuckgramStrings.diagLogEmpty, timeout: nil, customUndoText: nil), elevatedLayout: false, action: { _ in return false }))
+                    return
+                }
+                let activityController = UIActivityViewController(activityItems: [url], applicationActivities: nil)
+                if let window = context.sharedContext.mainWindow?.viewController?.view.window {
+                    activityController.popoverPresentationController?.sourceView = window
+                    activityController.popoverPresentationController?.sourceRect = CGRect(origin: CGPoint(x: window.bounds.width / 2.0, y: window.bounds.size.height - 1.0), size: CGSize(width: 1.0, height: 1.0))
+                }
+                context.sharedContext.applicationBindings.presentNativeController(activityController)
+            }
         }
     )
 

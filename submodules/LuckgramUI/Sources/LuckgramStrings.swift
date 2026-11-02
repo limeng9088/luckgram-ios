@@ -69,6 +69,40 @@ public enum LuckgramStrings {
     public static var cancel: String { pick("取消", "Cancel") }
     public static var ok: String { pick("好", "OK") }
 
+    /// specs#72: the reason Telegram gave, instead of "network error".
+    public static func telegramErrorMessage(code: Int, text: String?) -> String {
+        switch LuckgramTelegramErrorKind.of(code: code, text: text) {
+        case .noPermission:
+            return pick("你没有权限读取这里的消息。", "You don't have permission to read messages here.")
+        case .floodWait:
+            let s = LuckgramTelegramErrorKind.floodWaitSeconds(text)
+            return s > 0
+                ? pick("Telegram 限制了请求频率，请 \(s) 秒后重试。", "Telegram is limiting requests. Please try again in \(s) seconds.")
+                : pick("Telegram 限制了请求频率，请稍后重试。", "Telegram is limiting requests. Please try again later.")
+        case .privateChat:
+            return pick("这个频道或群组是私有的，或你已不在其中。", "This channel or group is private, or you're no longer a member.")
+        case .notFound:
+            return pick("这个话题或消息已不存在。", "This topic or message no longer exists.")
+        case .network:
+            return errorMessage(LuckgramAIError.networkError)
+        case .other:
+            return pick("Telegram 返回错误：", "Telegram returned an error: ") + "\(code) \(text ?? "")"
+        }
+    }
+
+    public static var exportDiagLog: String {
+        return pick("导出诊断日志", "Export diagnostic log")
+    }
+
+    public static var exportDiagLogInfo: String {
+        return pick("只记录请求的时间、功能、状态和耗时，不含消息内容。出问题时可以导出发给我们。",
+            "Only the time, feature, status and duration of requests are recorded, never message content. Export it and send it to us if something goes wrong.")
+    }
+
+    public static var diagLogEmpty: String {
+        return pick("还没有诊断日志。", "There's no diagnostic log yet.")
+    }
+
     public static func errorMessage(_ code: String) -> String {
         switch code {
         case LuckgramAIError.quotaExceeded:

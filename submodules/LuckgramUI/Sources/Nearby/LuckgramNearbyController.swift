@@ -203,18 +203,18 @@ public func luckgramNearbyController(context: AccountContext) -> ViewController 
             state.people = people
             refresh()
             for p in people where state.avatars[p.id] == nil {
-                guard let s = p.avatarUrl, let url = URL(string: s) else {
+                guard let s = p.avatarUrl, URL(string: s) != nil else {
                     continue
                 }
-                URLSession.shared.dataTask(with: url) { data, _, _ in
-                    guard let data, let image = nearbyAvatarImage(data) else {
+                // specs#72: through LuckgramAI so it follows the in-app proxy and is logged.
+                let _ = (LuckgramAI.shared.fetchData(url: s)
+                |> deliverOnMainQueue).start(next: { data in
+                    guard let image = nearbyAvatarImage(data) else {
                         return
                     }
-                    Queue.mainQueue().async {
-                        state.avatars[p.id] = image
-                        refresh()
-                    }
-                }.resume()
+                    state.avatars[p.id] = image
+                    refresh()
+                })
             }
         }, error: { error in
             state.loadingList = false

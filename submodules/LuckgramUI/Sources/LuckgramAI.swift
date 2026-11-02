@@ -21,19 +21,40 @@ public struct LuckgramAIError: Error, Equatable, CustomStringConvertible {
     /// The user declined (or has not given) consent; nothing was sent.
     public static let consentDenied = "consent_denied"
     public static let cancelled = "cancelled"
+    /// Telegram refused a request made before the AI call (specs#72), e.g. loading history for a
+    /// summary; `telegramCode` and `telegramText` say why.
+    public static let telegramError = "telegram_error"
 
     public let code: String
     public let httpStatus: Int
     /// `error.retry_after_seconds` on 429 responses (S10/S11); 0 if absent.
     public var retryAfterSeconds: Int = 0
+    /// For `telegramError`: Telegram's error code and text (e.g. 400, CHANNEL_PRIVATE).
+    public var telegramCode: Int = 0
+    public var telegramText: String?
 
     public init(code: String, httpStatus: Int = 0) {
         self.code = code
         self.httpStatus = httpStatus
     }
 
+    /// The error for a failed Telegram request: `telegramError` when Telegram answered with an
+    /// error, `networkError` only when no answer came (specs#72).
+    public static func fromTelegram(code: Int, text: String?) -> LuckgramAIError {
+        if LuckgramTelegramErrorKind.of(code: code, text: text) == .network {
+            return LuckgramAIError(code: LuckgramAIError.networkError)
+        }
+        var error = LuckgramAIError(code: LuckgramAIError.telegramError)
+        error.telegramCode = code
+        error.telegramText = text
+        return error
+    }
+
     /// User-facing message in the current language.
     public var localizedMessage: String {
+        if self.code == LuckgramAIError.telegramError {
+            return LuckgramStrings.telegramErrorMessage(code: self.telegramCode, text: self.telegramText)
+        }
         return LuckgramStrings.errorMessage(self.code)
     }
 
@@ -240,11 +261,19 @@ public final class LuckgramAI {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.httpCookieStorage = nil
         configuration.urlCache = nil
+        let proxy: String
         if useMock {
             configuration.protocolClasses = [LuckgramAIMockURLProtocol.self]
+            proxy = "mock"
+        } else {
+            proxy = LuckgramNet.shared.apply(to: configuration)
         }
         let session = URLSession(configuration: configuration)
-        session.dataTask(with: request).resume()
+        let start = Date()
+        session.dataTask(with: request, completionHandler: { _, response, error in
+            let http = response as? HTTPURLResponse
+            LuckgramNet.shared.logHTTP(feature: nil, method: method, target: url.absoluteString, status: http?.statusCode ?? 0, error: error, start: start, proxy: proxy, requestId: http?.value(forHTTPHeaderField: "X-Request-Id"))
+        }).resume()
         session.finishTasksAndInvalidate()
     }
 
@@ -266,7 +295,7 @@ public final class LuckgramAI {
         guard let payload = try? JSONSerialization.data(withJSONObject: body) else {
             return .fail(LuckgramAIError(code: LuckgramAIError.invalidRequest))
         }
-        return self.withConsent(context: context, present: present, self.authorized(method: "POST", path: "/v1/ai/chat", contentType: "application/json", body: payload, accept: stream ? "text/event-stream" : "application/json")
+        return self.withConsent(context: context, present: present, self.authorized(method: "POST", path: "/v1/ai/chat", contentType: "application/json", body: payload, accept: stream ? "text/event-stream" : "application/json", feature: task.rawValue)
         |> mapToSignal { event -> Signal<ChatEvent, LuckgramAIError> in
             switch event {
             case let .delta(delta, text):
@@ -285,7 +314,7 @@ public final class LuckgramAI {
         guard let payload = try? JSONSerialization.data(withJSONObject: ["prompt": prompt]) else {
             return .fail(LuckgramAIError(code: LuckgramAIError.invalidRequest))
         }
-        return self.withConsent(context: context, present: present, self.authorized(method: "POST", path: "/v1/ai/image", contentType: "application/json", body: payload, accept: "application/json")
+        return self.withConsent(context: context, present: present, self.authorized(method: "POST", path: "/v1/ai/image", contentType: "application/json", body: payload, accept: "application/json", feature: "image")
         |> mapToSignal { event -> Signal<Image, LuckgramAIError> in
             // docs/api-server.md §3.1: {"url","mime","expires_at"}
             guard case let .body(data) = event, let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else {
@@ -327,7 +356,7 @@ public final class LuckgramAI {
         request.setValue(contentType, forHTTPHeaderField: "Content-Type")
         request.httpBody = body
         return Signal { subscriber in
-            let handler = LuckgramHTTPTaskHandler(subscriber: subscriber)
+            let handler = LuckgramHTTPTaskHandler(subscriber: subscriber, feature: "square-upload", method: "PUT", target: url)
             let session = self.session(delegate: handler)
             let task = session.dataTask(with: request)
             task.resume()
@@ -354,7 +383,7 @@ public final class LuckgramAI {
         request.httpMethod = "PUT"
         request.setValue(contentType, forHTTPHeaderField: "Content-Type")
         return Signal { subscriber in
-            let handler = LuckgramHTTPTaskHandler(subscriber: subscriber)
+            let handler = LuckgramHTTPTaskHandler(subscriber: subscriber, feature: "square-upload", method: "PUT", target: url)
             let session = self.session(delegate: handler)
             let task = session.uploadTask(with: request, fromFile: fileUrl)
             var observation: NSKeyValueObservation?
@@ -381,9 +410,9 @@ public final class LuckgramAI {
     private func download(_ url: String) -> Signal<Data, LuckgramAIError> {
         let signal: Signal<HTTPEvent, LuckgramAIError>
         if self.isAPIHost(url) {
-            signal = self.authorized(method: "GET", path: url, contentType: nil, body: nil, accept: "*/*")
+            signal = self.authorized(method: "GET", path: url, contentType: nil, body: nil, accept: "*/*", feature: "media")
         } else if let target = URL(string: url) {
-            signal = self.send(URLRequest(url: target))
+            signal = self.send(URLRequest(url: target), feature: "media")
         } else {
             return .fail(LuckgramAIError(code: LuckgramAIError.upstreamUnavailable))
         }
@@ -433,7 +462,7 @@ public final class LuckgramAI {
             if index >= segments.count {
                 return .single(acc)
             }
-            return (self.authorized(method: "POST", path: requestPath, contentType: mimeType, body: segments[index], accept: "application/json")
+            return (self.authorized(method: "POST", path: requestPath, contentType: mimeType, body: segments[index], accept: "application/json", feature: "transcribe")
             |> mapToSignal { event -> Signal<Transcription, LuckgramAIError> in
                 guard case let .body(data) = event, let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else {
                     return .complete()
@@ -527,13 +556,17 @@ public final class LuckgramAI {
         |> deliverOnMainQueue
     }
 
-    private func session(delegate: URLSessionDataDelegate) -> URLSession {
+    private func session(delegate: LuckgramHTTPTaskHandler) -> URLSession {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.timeoutIntervalForRequest = 120.0
         configuration.httpCookieStorage = nil
         configuration.urlCache = nil
         if self.isUsingMock {
             configuration.protocolClasses = [LuckgramAIMockURLProtocol.self]
+            delegate.proxy = "mock"
+        } else {
+            // specs#72: through the in-app SOCKS5 proxy when one is on.
+            delegate.proxy = LuckgramNet.shared.apply(to: configuration)
         }
         return URLSession(configuration: configuration, delegate: delegate, delegateQueue: nil)
     }
@@ -589,7 +622,7 @@ public final class LuckgramAI {
         |> deliverOnMainQueue
     }
 
-    private func authorized(method: String, path: String, contentType: String?, body: Data?, accept: String, extraHeaders: [String: String] = [:]) -> Signal<HTTPEvent, LuckgramAIError> {
+    private func authorized(method: String, path: String, contentType: String?, body: Data?, accept: String, extraHeaders: [String: String] = [:], feature: String? = nil) -> Signal<HTTPEvent, LuckgramAIError> {
         func attempt(_ retry: Bool) -> Signal<HTTPEvent, LuckgramAIError> {
             return self.ensureToken()
             |> mapToSignal { token -> Signal<HTTPEvent, LuckgramAIError> in
@@ -607,7 +640,7 @@ public final class LuckgramAI {
                     request.setValue(value, forHTTPHeaderField: name)
                 }
                 request.httpBody = body
-                return self.send(request)
+                return self.send(request, feature: feature)
                 |> `catch` { error -> Signal<HTTPEvent, LuckgramAIError> in
                     if retry && error.httpStatus == 401 {
                         self.queue.async {
@@ -681,7 +714,7 @@ public final class LuckgramAI {
         }
     }
 
-    private func send(_ request: URLRequest) -> Signal<HTTPEvent, LuckgramAIError> {
+    private func send(_ request: URLRequest, feature: String? = nil) -> Signal<HTTPEvent, LuckgramAIError> {
         var signed = request
         if let body = signed.httpBody {
             // CloudFront OAC -> Lambda Function URL requires the payload hash (docs/api-server.md §3.1 item 1).
@@ -689,7 +722,7 @@ public final class LuckgramAI {
         }
         let finalRequest = signed
         return Signal { subscriber in
-            let handler = LuckgramHTTPTaskHandler(subscriber: subscriber)
+            let handler = LuckgramHTTPTaskHandler(subscriber: subscriber, feature: feature, method: finalRequest.httpMethod, target: finalRequest.url?.absoluteString)
             let session = self.session(delegate: handler)
             let task = session.dataTask(with: finalRequest)
             task.resume()
@@ -779,14 +812,25 @@ private final class LuckgramHTTPTaskHandler: NSObject, URLSessionDataDelegate {
     private var eventData = ""
     private var fullText = ""
     private var failed = false
+    // specs#72: what the diagnostic log records about this request (never the body).
+    private let feature: String?
+    private let method: String?
+    private let target: String?
+    private let start = Date()
+    var proxy: String?
+    private var requestId: String?
 
-    init(subscriber: Subscriber<LuckgramAI.HTTPEvent, LuckgramAIError>) {
+    init(subscriber: Subscriber<LuckgramAI.HTTPEvent, LuckgramAIError>, feature: String? = nil, method: String? = nil, target: String? = nil) {
         self.subscriber = subscriber
+        self.feature = feature
+        self.method = method
+        self.target = target
     }
 
     func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive response: URLResponse, completionHandler: @escaping (URLSession.ResponseDisposition) -> Void) {
         if let response = response as? HTTPURLResponse {
             self.status = response.statusCode
+            self.requestId = response.value(forHTTPHeaderField: "X-Request-Id")
             let contentType = (response.value(forHTTPHeaderField: "Content-Type") ?? "").lowercased()
             self.isEventStream = self.status < 300 && contentType.hasPrefix("text/event-stream")
         }
@@ -856,6 +900,10 @@ private final class LuckgramHTTPTaskHandler: NSObject, URLSessionDataDelegate {
     }
 
     func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
+        if (task.response as? HTTPURLResponse) != nil && self.status == 0 {
+            self.status = (task.response as? HTTPURLResponse)?.statusCode ?? 0
+        }
+        LuckgramNet.shared.logHTTP(feature: self.feature, method: self.method, target: self.target, status: self.status, error: self.status > 0 ? nil : error, start: self.start, proxy: self.proxy, requestId: self.requestId ?? (task.response as? HTTPURLResponse)?.value(forHTTPHeaderField: "X-Request-Id"))
         if self.failed {
             return
         }
