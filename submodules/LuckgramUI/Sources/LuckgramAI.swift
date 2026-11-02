@@ -84,7 +84,7 @@ public final class LuckgramAI {
         case writing
         case agent
         case post
-        /// specs#82: translation fallback; the request carries `to_lang`.
+        /// spec 01: translation when Telegram's fails; the request carries `to_lang`.
         case translate
     }
 
@@ -281,22 +281,46 @@ public final class LuckgramAI {
 
     /// - Parameter effect: only for `.writing`: one of `polish, formal, friendly, shorter, grammar,
     ///   dictation` (server prompts/writing-*.md), or nil for the default.
-    /// specs#82: translates `text` into `toLang` (ISO 639-1, e.g. `en`, `zh`, `zh-Hant`) with
-    /// `AITask.translate`. Counts against the AI quota. Emits the translation once.
-    public func translate(context: AccountContext?, present: ((ViewController) -> Void)?, text: String, toLang: String) -> Signal<String, LuckgramAIError> {
-        return self.chat(context: context, present: present, task: .translate, toLang: toLang, messages: [.user(text)], stream: false)
-        |> mapToSignal { event -> Signal<String, LuckgramAIError> in
-            guard case let .completed(result) = event else {
+    /// spec 01: result of `translate`.
+    public struct Translation: Equatable {
+        public let text: String
+        /// Source language detected by the server (ISO 639-1), or nil.
+        public let fromLang: String?
+    }
+
+    /// spec 01: translates `text` into `toLang` (ISO 639-1, e.g. `en`, `zh`, `zh-Hant`) via
+    /// `/v1/ai/chat` task=translate. Counts against the translation quota. Emits once.
+    public func translate(context: AccountContext?, present: ((ViewController) -> Void)?, text: String, toLang: String, fromLang: String? = nil) -> Signal<Translation, LuckgramAIError> {
+        if text.count > LuckgramSettings.shared.remoteInt("ai.max_input_chars", default: 60000) {
+            return .fail(LuckgramAIError(code: LuckgramAIError.inputTooLarge))
+        }
+        var body: [String: Any] = [
+            "task": AITask.translate.rawValue,
+            "to_lang": toLang,
+            "messages": [["role": "user", "content": text]],
+            "stream": false
+        ]
+        if let fromLang {
+            body["from_lang"] = fromLang
+        }
+        guard let payload = try? JSONSerialization.data(withJSONObject: body) else {
+            return .fail(LuckgramAIError(code: LuckgramAIError.invalidRequest))
+        }
+        return self.withConsent(context: context, present: present, self.authorized(method: "POST", path: "/v1/ai/chat", contentType: "application/json", body: payload, accept: "application/json", feature: AITask.translate.rawValue)
+        |> mapToSignal { event -> Signal<Translation, LuckgramAIError> in
+            guard case let .body(data) = event else {
                 return .complete()
             }
+            let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+            let result = (object?["text"] as? String) ?? ""
             if result.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 return .fail(LuckgramAIError(code: LuckgramAIError.upstreamUnavailable))
             }
-            return .single(result)
-        }
+            return .single(Translation(text: result, fromLang: object?["from_lang"] as? String))
+        })
     }
 
-    public func chat(context: AccountContext?, present: ((ViewController) -> Void)?, task: AITask, effect: String? = nil, toLang: String? = nil, messages: [Message], stream: Bool) -> Signal<ChatEvent, LuckgramAIError> {
+    public func chat(context: AccountContext?, present: ((ViewController) -> Void)?, task: AITask, effect: String? = nil, messages: [Message], stream: Bool) -> Signal<ChatEvent, LuckgramAIError> {
         let chars = messages.reduce(0) { $0 + $1.content.count }
         if chars > LuckgramSettings.shared.remoteInt("ai.max_input_chars", default: 60000) {
             return .fail(LuckgramAIError(code: LuckgramAIError.inputTooLarge))
@@ -308,9 +332,6 @@ public final class LuckgramAI {
         ]
         if let effect, task == .writing {
             body["effect"] = effect
-        }
-        if let toLang, task == .translate {
-            body["to_lang"] = toLang
         }
         guard let payload = try? JSONSerialization.data(withJSONObject: body) else {
             return .fail(LuckgramAIError(code: LuckgramAIError.invalidRequest))

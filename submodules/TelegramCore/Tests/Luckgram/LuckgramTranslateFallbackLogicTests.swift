@@ -53,10 +53,12 @@ final class LuckgramTranslateFallbackLogicTests: XCTestCase {
     }
 
     func testFailureMessagesSayWhy() {
-        XCTAssertTrue(L.failureMessage(.network, chinese: true).contains("网络"))
-        XCTAssertTrue(L.failureMessage(.quota, chinese: true).contains("额度"))
-        XCTAssertTrue(L.failureMessage(.tooLong, chinese: true).contains("太长"))
-        XCTAssertTrue(L.failureMessage(.quota, chinese: false).contains("quota"))
+        XCTAssertEqual(L.failureMessage(.network, chinese: true), "网络不通，请检查网络或代理")
+        XCTAssertEqual(L.failureMessage(.quota, chinese: true), "今日翻译次数已用完，明天再来")
+        XCTAssertEqual(L.failureMessage(.tooLong, chinese: true), "这段文字太长，无法翻译")
+        XCTAssertEqual(L.failureMessage(.other, chinese: true), "翻译失败，请稍后再试")
+        // declining AI consent means "Telegram only": generic message
+        XCTAssertEqual(L.failureMessage(.consent, chinese: true), L.failureMessage(.other, chinese: true))
         XCTAssertNotEqual(L.failureMessage(.network, chinese: false), L.failureMessage(.other, chinese: false))
     }
 }

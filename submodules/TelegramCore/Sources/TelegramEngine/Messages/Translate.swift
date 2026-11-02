@@ -47,7 +47,7 @@ func _internal_translate(network: Network, text: String, toLang: String, entitie
 
     return network.request(Api.functions.messages.translateText(flags: flags, peer: peer, id: messageId.flatMap { [$0] }, text: apiText, toLang: toLang, tone: tone.rawValue))
     |> mapError { error -> TranslationError in
-        // Luckgram specs#82: record Telegram's actual error (e.g. TRANSLATIONS_DISABLED_ALT) in the diagnostic log
+        // Luckgram spec 01: record Telegram's actual error (e.g. TRANSLATIONS_DISABLED_ALT) in the diagnostic log
         luckgramTranslationFallback?.logTelegramFailure(source: "translate_text", code: Int(error.errorCode), text: error.errorDescription)
         if error.errorDescription.hasPrefix("FLOOD_WAIT") {
             return .limitExceeded
@@ -385,21 +385,6 @@ private func _internal_translateMessagesByPeerId(account: Account, peerId: Engin
             } else {
                 msgs = account.network.request(Api.functions.messages.translateText(flags: flags, peer: inputPeer, id: id, text: nil, toLang: toLang, tone: tone != .neutral ? tone.rawValue : nil))
                 |> map(Optional.init)
-                |> `catch` { error -> Signal<Api.messages.TranslatedText?, MTRpcError> in
-                    // Luckgram specs#82: Telegram failed (TRANSLATIONS_DISABLED_ALT, FLOOD_WAIT, …) → Luckgram AI
-                    guard let fallback = luckgramTranslationFallback else {
-                        return .fail(error)
-                    }
-                    fallback.logTelegramFailure(source: LuckgramTranslateFallbackLogic.sourceChat, code: Int(error.errorCode), text: error.errorDescription)
-                    return luckgramFallbackTranslateMessages(account: account, fallback: fallback, messageIds: plainMessageIds, toLang: toLang)
-                    |> castError(MTRpcError.self)
-                    |> mapToSignal { result -> Signal<Api.messages.TranslatedText?, MTRpcError> in
-                        guard let result else {
-                            return .fail(error)
-                        }
-                        return .single(result)
-                    }
-                }
                 |> mapError { error -> TranslationError in
                     if error.errorDescription.hasPrefix("FLOOD_WAIT") {
                         return .limitExceeded
@@ -935,7 +920,7 @@ func _internal_composeAIMessage(account: Account, text: ComposedRichMessage, mod
         return account.network.request(Api.functions.messages.composeMessageWithAI(flags: flags, text: inputText, translateToLang: translateToLang, tone: changeTone))
         |> `catch` { error -> Signal<Api.messages.ComposedMessageWithAI, TelegramAIComposeMessageError> in
             if translateToLang != nil {
-                // Luckgram specs#82: record why Telegram's translation failed in the diagnostic log
+                // Luckgram spec 01: record why Telegram's translation failed in the diagnostic log
                 luckgramTranslationFallback?.logTelegramFailure(source: LuckgramTranslateFallbackLogic.sourceMessage, code: Int(error.errorCode), text: error.errorDescription)
             }
             if error.errorDescription == "AICOMPOSE_FLOOD_PREMIUM" {
@@ -1320,46 +1305,4 @@ func managedSynchronizeCloudAITextStyles(postbox: Postbox, network: Network) -> 
         )
     )
     |> restart
-}
-
-/// Luckgram specs#82: translates the given messages one by one with Luckgram AI after Telegram
-/// failed. Messages that fail keep their text (shown untranslated); nil when none succeeded, after
-/// telling the user why once.
-private func luckgramFallbackTranslateMessages(account: Account, fallback: LuckgramTranslationFallbackService, messageIds: [MessageId], toLang: String) -> Signal<Api.messages.TranslatedText?, NoError> {
-    return account.postbox.transaction { transaction -> [(MessageId, String)] in
-        return messageIds.map { id in (id, transaction.getMessage(id)?.text ?? "") }
-    }
-    |> mapToSignal { texts -> Signal<Api.messages.TranslatedText?, NoError> in
-        if !texts.contains(where: { !$0.1.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) {
-            return .single(nil)
-        }
-        var firstError: LuckgramTranslationFallbackError?
-        let signals: [Signal<String?, NoError>] = texts.map { item -> Signal<String?, NoError> in
-            let text = item.1
-            if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                return .single(nil)
-            }
-            return fallback.translate(source: LuckgramTranslateFallbackLogic.sourceChat, text: text, toLang: toLang)
-            |> map(Optional.init)
-            |> `catch` { error -> Signal<String?, NoError> in
-                if firstError == nil {
-                    firstError = error
-                }
-                return .single(nil)
-            }
-        }
-        return combineLatest(signals)
-        |> take(1)
-        |> map { results -> Api.messages.TranslatedText? in
-            if !results.contains(where: { $0 != nil }) {
-                fallback.showFailure(firstError ?? LuckgramTranslationFallbackError(code: "upstream_unavailable"))
-                return nil
-            }
-            var items: [Api.TextWithEntities] = []
-            for (index, result) in results.enumerated() {
-                items.append(.textWithEntities(.init(text: result ?? texts[index].1, entities: [])))
-            }
-            return .translateResult(.init(result: items))
-        }
-    }
 }

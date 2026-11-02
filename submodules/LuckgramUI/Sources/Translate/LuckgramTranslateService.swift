@@ -6,8 +6,8 @@ import TelegramCore
 import AccountContext
 import UndoUI
 
-/// Luckgram specs#82: Luckgram AI as the fallback translator when Telegram's translation fails
-/// (translate-before-sending, long-press "Translate", "Translate entire chat"). Installed into
+/// Luckgram spec 01: Luckgram AI as the fallback translator when Telegram's translation fails
+/// (translate-before-sending, long-press "Translate"). Results are cached (spec 01 「翻译服务」5). Installed into
 /// TelegramCore's `luckgramTranslationFallback` by `SharedAccountContext`, because TelegramCore,
 /// TranslateUI and TextProcessingScreen cannot import LuckgramUI.
 public final class LuckgramTranslateService: LuckgramTranslationFallbackService {
@@ -22,6 +22,48 @@ public final class LuckgramTranslateService: LuckgramTranslationFallbackService 
         self.present = present
     }
 
+    private static let cacheQueue = Queue(name: "LuckgramTranslateCache")
+    private static var cacheValue: LuckgramTranslateCache?
+    private static var saveScheduled = false
+
+    private static var cacheURL: URL? {
+        return FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first?.appendingPathComponent("luckgram_translate_cache.json")
+    }
+
+    /// spec 01 「翻译服务」5: the shared result cache (2000 entries, 7 days), loaded on first use.
+    public static var cache: LuckgramTranslateCache {
+        if let value = cacheValue {
+            return value
+        }
+        let value = LuckgramTranslateCache.parse(cacheURL.flatMap { try? Data(contentsOf: $0) }, now: Date().timeIntervalSince1970)
+        cacheValue = value
+        return value
+    }
+
+    /// The cached translation of `text` into `toLang`, or nil.
+    public static func cached(toLang: String, text: String) -> LuckgramTranslateCache.Entry? {
+        return cache.get(LuckgramTranslateCache.key(toLang: toLang, text: text), now: Date().timeIntervalSince1970)
+    }
+
+    /// Stores a translation and writes the cache file a little later (batched).
+    public static func remember(toLang: String, text: String, translated: String, fromLang: String?) {
+        cache.put(LuckgramTranslateCache.key(toLang: toLang, text: text), text: translated, fromLang: fromLang, now: Date().timeIntervalSince1970)
+        if saveScheduled {
+            return
+        }
+        saveScheduled = true
+        cacheQueue.after(2.0) {
+            Queue.mainQueue().async {
+                saveScheduled = false
+            }
+            guard let url = cacheURL else {
+                return
+            }
+            try? FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try? cache.serialize(now: Date().timeIntervalSince1970).write(to: url, options: .atomic)
+        }
+    }
+
     public static func install(context: @escaping () -> AccountContext?, present: @escaping (ViewController) -> Void) {
         luckgramTranslationFallback = LuckgramTranslateService(context: context, present: present)
     }
@@ -29,6 +71,9 @@ public final class LuckgramTranslateService: LuckgramTranslationFallbackService 
     public func translate(source: String, text: String, toLang: String) -> Signal<String, LuckgramTranslationFallbackError> {
         guard let lang = LuckgramTranslateFallbackLogic.aiLanguage(toLang), !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             return .fail(LuckgramTranslationFallbackError(code: LuckgramAIError.invalidRequest))
+        }
+        if let hit = LuckgramTranslateService.cached(toLang: lang, text: text) {
+            return .single(hit.text)
         }
         let present = self.present
         // The consent dialog (first AI use only) must be presented on the main queue.
@@ -41,6 +86,11 @@ public final class LuckgramTranslateService: LuckgramTranslationFallbackService 
         |> castError(LuckgramAIError.self)
         |> mapToSignal { context -> Signal<String, LuckgramAIError> in
             return LuckgramAI.shared.translate(context: context, present: present, text: text, toLang: lang)
+            |> deliverOnMainQueue
+            |> map { translation -> String in
+                LuckgramTranslateService.remember(toLang: lang, text: text, translated: translation.text, fromLang: LuckgramTranslateFallbackLogic.aiLanguage(translation.fromLang))
+                return translation.text
+            }
         })
         |> mapError { error -> LuckgramTranslationFallbackError in
             return LuckgramTranslationFallbackError(code: error.code)
