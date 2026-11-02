@@ -168,6 +168,13 @@ class BazelCommandLine:
                 # Always build universal Watch binaries.
                 '--watchos_cpus=arm64_32'
             ] + self.common_debug_args
+        elif configuration == 'debug_sim_x86_64':
+            # Luckgram QA: Intel Mac simulators (mac-local runner)
+            self.configuration_args = [
+                '-c', 'dbg',
+                '--ios_multi_cpus=x86_64',
+                '--watchos_cpus=arm64_32'
+            ] + self.common_debug_args
         elif configuration == 'release_sim_arm64':
             self.configuration_args = [
                 # bazel optimized build configuration
@@ -1030,6 +1037,7 @@ if __name__ == '__main__':
         choices=[
             'debug_arm64',
             'debug_sim_arm64',
+            'debug_sim_x86_64',
             'release_sim_arm64',
             'release_arm64',
         ],

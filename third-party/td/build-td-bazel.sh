@@ -34,6 +34,10 @@ elif [ "$ARCH" = "sim_arm64" ]; then
   IOS_PLATFORMDIR="$(xcode-select -p)/Platforms/iPhoneSimulator.platform"
   IOS_SYSROOT=($IOS_PLATFORMDIR/Developer/SDKs/iPhoneSimulator*.sdk)
   export CFLAGS="-arch arm64 --target=arm64-apple-ios13.0-simulator -miphonesimulator-version-min=13.0 -w"
+elif [ "$ARCH" = "sim_x86_64" ]; then
+  IOS_PLATFORMDIR="$(xcode-select -p)/Platforms/iPhoneSimulator.platform"
+  IOS_SYSROOT=($IOS_PLATFORMDIR/Developer/SDKs/iPhoneSimulator*.sdk)
+  export CFLAGS="-arch x86_64 --target=x86_64-apple-ios13.0-simulator -mios-simulator-version-min=13.0 -w"
 elif [ "$ARCH" = "macos_arm64" ]; then
   IOS_PLATFORMDIR="$(xcode-select -p)/Platforms/MacOSX.platform"
   IOS_SYSROOT=($IOS_PLATFORMDIR/Developer/SDKs/MacOSX*.sdk)
@@ -50,7 +54,11 @@ cd build
 
 touch toolchain.cmake
 echo "set(CMAKE_SYSTEM_NAME Darwin)" >> toolchain.cmake
-echo "set(CMAKE_SYSTEM_PROCESSOR aarch64)" >> toolchain.cmake
+if [ "$ARCH" = "sim_x86_64" ]; then
+  echo "set(CMAKE_SYSTEM_PROCESSOR x86_64)" >> toolchain.cmake
+else
+  echo "set(CMAKE_SYSTEM_PROCESSOR aarch64)" >> toolchain.cmake
+fi
 echo "set(CMAKE_C_COMPILER $(xcode-select -p)/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang)" >> toolchain.cmake
 
 cmake -G"Unix Makefiles" -DCMAKE_TOOLCHAIN_FILE=toolchain.cmake -DCMAKE_OSX_SYSROOT=${IOS_SYSROOT[0]} ../td $options
