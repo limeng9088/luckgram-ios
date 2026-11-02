@@ -70,7 +70,12 @@ final class LuckgramWelcomeLogicTests: XCTestCase {
         XCTAssertEqual(zh.secondary(.ai), "暂不开启")
         XCTAssertNil(en.secondary(.summary))
         XCTAssertNil(en.question(.discover))
-        XCTAssertEqual(en.subscribe(stars: 250, days: 30), "Subscribe · 250 ⭐ / 30 days")
+        XCTAssertEqual(en.subscribe(stars: 500, days: 30), "Subscribe · 500 ⭐ / month")
+        XCTAssertEqual(zh.subscribe(stars: 500, days: 30), "订阅 · 500 ⭐ / 月")
+        XCTAssertEqual(zh.price(stars: 500, days: 30), "500 ⭐ / 月")
+        XCTAssertEqual(en.price(stars: 3000, days: 365), "3000 ⭐ / year")
+        XCTAssertEqual(zh.price(stars: 100, days: 7), "100 ⭐ / 7 天")
+        XCTAssertEqual(zh.price(stars: 0, days: 30), "")
         XCTAssertEqual(zh.subscribe(stars: 0, days: 30), "订阅")
         for s in LuckgramWelcomeLogic.Step.allCases {
             XCTAssertFalse(zh.title(s).isEmpty)

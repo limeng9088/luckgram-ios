@@ -7,15 +7,16 @@ import SwiftSignalKit
 /// specs#76: onboarding steps between the welcome page and login: "n/N"
 /// and a progress bar on top, a big title, text, an optional bold question, an illustration card
 /// (built in code, made-up content) and a white button with a "not now" text button under it.
-/// The two buttons write the step's feature switches. The Pro step is always last: while
-/// billing.enabled its "Subscribe" is remembered and the Pro page opens after login (paying needs a
-/// Telegram account); otherwise the button shows "Coming soon", disabled, and nothing is requested.
+/// The two buttons write the step's feature switches. The Pro step is always last and shows the price
+/// from /v1/billing/plans (e.g. "500 ⭐ / 月"); while billing is enabled its "Subscribe" is remembered
+/// and the Pro page opens after login (paying needs a Telegram account), otherwise the button shows
+/// "Coming soon", disabled, and no payment is started.
 public final class LuckgramOnboardingController: ViewController {
     private let finish: () -> Void
     private let texts = LuckgramWelcomeLogic.Texts(zh: LuckgramStrings.isChinese)
     private let steps: [LuckgramWelcomeLogic.Step]
     private var index = 0
-    private let billingEnabled: Bool
+    private var billingEnabled: Bool
     private var cheapestPlan: LuckgramAccountLogic.Plan?
     private var plansDisposable: Disposable?
 
@@ -26,19 +27,19 @@ public final class LuckgramOnboardingController: ViewController {
         super.init(navigationBarPresentationData: nil)
         self.supportedOrientations = ViewControllerSupportedOrientations(regularSize: .all, compactSize: .portrait)
         self.statusBar.statusBarStyle = .White
-        if self.billingEnabled {
-            self.plansDisposable = (LuckgramAI.shared.requestJSON(method: "GET", path: "/v1/billing/plans")
-            |> deliverOnMainQueue).start(next: { [weak self] json in
-                guard let self else {
-                    return
-                }
-                let billing = LuckgramAccountLogic.parseBilling(json)
-                self.cheapestPlan = billing.plans.min(by: { $0.stars < $1.stars })
-                if self.isNodeLoaded, self.steps[self.index] == .pro, let plan = self.cheapestPlan {
-                    self.pageView.setPrimaryTitle(self.texts.subscribe(stars: plan.stars, days: plan.days))
-                }
-            })
-        }
+        // Price shown even before purchases open; no payment is started here.
+        self.plansDisposable = (LuckgramAI.shared.requestJSON(method: "GET", path: "/v1/billing/plans")
+        |> deliverOnMainQueue).start(next: { [weak self] json in
+            guard let self else {
+                return
+            }
+            let billing = LuckgramAccountLogic.parseBilling(json)
+            self.billingEnabled = billing.enabled // the server decides whether purchases are open
+            self.cheapestPlan = billing.plans.min(by: { $0.stars < $1.stars })
+            if self.isNodeLoaded, self.steps[self.index] == .pro {
+                self.bind(animated: false)
+            }
+        })
     }
 
     required init(coder aDecoder: NSCoder) {
@@ -110,7 +111,7 @@ public final class LuckgramOnboardingController: ViewController {
             title: self.texts.title(step),
             body: self.texts.body(step),
             question: self.texts.question(step),
-            card: LuckgramOnboardingCards.card(step, texts: self.texts),
+            card: LuckgramOnboardingCards.card(step, texts: self.texts, price: self.cheapestPlan.map { self.texts.price(stars: $0.stars, days: $0.days) }),
             primary: primary,
             secondary: self.texts.secondary(step),
             primaryEnabled: !comingSoon,
@@ -325,7 +326,7 @@ private enum LuckgramOnboardingCards {
     static let cardLight = UIColor(rgb: 0x2C2C2E)
     static let secondary = UIColor(rgb: 0x8E8E93)
 
-    static func card(_ step: LuckgramWelcomeLogic.Step, texts: LuckgramWelcomeLogic.Texts) -> UIView {
+    static func card(_ step: LuckgramWelcomeLogic.Step, texts: LuckgramWelcomeLogic.Texts, price: String?) -> UIView {
         switch step {
         case .ai:
             return aiCard(texts)
@@ -336,7 +337,7 @@ private enum LuckgramOnboardingCards {
         case .discover:
             return discoverCard(texts)
         case .pro:
-            return proCard(texts)
+            return proCard(texts, price: price)
         }
     }
 
@@ -444,10 +445,13 @@ private enum LuckgramOnboardingCards {
         return panel(rows)
     }
 
-    static func proCard(_ t: LuckgramWelcomeLogic.Texts) -> UIView {
+    static func proCard(_ t: LuckgramWelcomeLogic.Texts, price: String?) -> UIView {
         let icons = ["✦", "⇄", "⭐"]
         let colors = [UIColor(rgb: 0x5E5CE6), UIColor(rgb: 0x0A84FF), UIColor(rgb: 0xFF9F0A)]
         var rows: [UIView] = []
+        if let price, !price.isEmpty {
+            rows.append(label(price, size: 22.0, bold: true, center: true))
+        }
         for (i, feature) in t.proFeatures.enumerated() {
             let icon = label(icons[i % icons.count], size: 16.0, center: true)
             icon.backgroundColor = colors[i % colors.count]

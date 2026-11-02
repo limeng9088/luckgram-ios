@@ -199,15 +199,30 @@ public enum LuckgramWelcomeLogic {
 
         public var comingSoon: String { t("即将推出", "Coming soon") }
 
-        /// The Pro button with the cheapest plan, e.g. "订阅 · 250 ⭐ / 30 天".
+        /// A plan's price from /v1/billing/plans, e.g. "500 ⭐ / 月" for 30 days; never written into the app.
+        public func price(stars: Int, days: Int) -> String {
+            if stars <= 0 {
+                return ""
+            }
+            let per: String
+            if days == 30 || days == 31 {
+                per = t("月", "month")
+            } else if days == 365 || days == 366 {
+                per = t("年", "year")
+            } else if days > 0 {
+                per = t("\(days) 天", "\(days) days")
+            } else {
+                return "\(stars) ⭐"
+            }
+            return "\(stars) ⭐ / \(per)"
+        }
+
+        /// The Pro button with a plan, e.g. "订阅 · 500 ⭐ / 月".
         public func subscribe(stars: Int, days: Int) -> String {
             if stars <= 0 {
                 return primary(.pro)
             }
-            if days > 0 {
-                return t("订阅 · \(stars) ⭐ / \(days) 天", "Subscribe · \(stars) ⭐ / \(days) days")
-            }
-            return t("订阅 · \(stars) ⭐", "Subscribe · \(stars) ⭐")
+            return t("订阅 · ", "Subscribe · ") + price(stars: stars, days: days)
         }
 
         public func secondary(_ s: Step) -> String? {
