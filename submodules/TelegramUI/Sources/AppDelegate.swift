@@ -1436,8 +1436,8 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
                     self.mainWindow.viewController = context.rootController
                     // Luckgram specs#78: "privacy policy updated" once when app.privacy_version goes up.
                     Queue.mainQueue().after(1.5) {
-                        LuckgramPrivacyAlert.checkUpdate(context: context.context, present: { [weak self] c in
-                            self?.mainWindow.present(c, on: .root)
+                        LuckgramPrivacyAlert.checkUpdate(context: context.context, present: { c in
+                            self.mainWindow.present(c, on: .root)
                         })
                     }
                     // Luckgram specs#76: "Subscribe" on the onboarding Pro step -> the Pro page once logged in.
