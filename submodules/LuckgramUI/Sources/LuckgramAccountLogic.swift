@@ -68,6 +68,8 @@ public enum LuckgramAccountLogic {
 
     /// The bot's "linked" reply can arrive after the chat was cleared: clear it again after these delays.
     public static let botCleanupDelays: [TimeInterval] = [5, 15]
+    /// After linking, any new incoming message in the bot chat within this window is deleted on arrival.
+    public static let botWatchSeconds: TimeInterval = 2 * 60
 
     /// The message the app sends to the bot on the user's behalf.
     public static func startCommand(_ nonce: String) -> String {

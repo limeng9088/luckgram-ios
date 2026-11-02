@@ -69,6 +69,9 @@ final class LuckgramSilentLinkLogicTests: XCTestCase {
 
     func testBotCleanupDelays() {
         let d = LuckgramAccountLogic.botCleanupDelays
+        // The watch for late replies outlasts the fixed clears (review P2: replies after 15 s).
+        XCTAssertEqual(LuckgramAccountLogic.botWatchSeconds, 120)
+        XCTAssertGreaterThan(LuckgramAccountLogic.botWatchSeconds, d.last ?? 0)
         XCTAssertFalse(d.isEmpty)
         XCTAssertEqual(d, d.sorted())
         XCTAssertTrue(d.allSatisfy { $0 > 0 && $0 < 60 })

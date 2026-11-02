@@ -142,6 +142,17 @@ public enum LuckgramSilentLink {
                 clear()
             })
         }
+        // The reply can come later still (review P2): watch the bot chat for a while and delete
+        // whatever the bot sends there right away.
+        let watch = (context.engine.data.subscribe(TelegramEngine.EngineData.Item.Messages.TopMessage(id: botPeerId))
+        |> deliverOnMainQueue).start(next: { message in
+            if let message, message.flags.contains(.Incoming) {
+                clear()
+            }
+        })
+        let _ = (Signal<Void, NoError>.single(Void()) |> delay(LuckgramAccountLogic.botWatchSeconds, queue: .mainQueue())).start(next: {
+            watch.dispose()
+        })
     }
 
     private static func finish(_ ok: Bool) {
