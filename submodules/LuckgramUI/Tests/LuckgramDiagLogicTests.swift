@@ -71,6 +71,21 @@ final class LuckgramDiagLogicTests: XCTestCase {
         XCTAssertTrue(LuckgramDiagLog.format(e, apiHost: api).hasSuffix("exception=NSURLErrorDomain-1001 proxy=mtproto-direct"))
     }
 
+    func testFormatEndpointAndSwitch() {
+        // specs#81: the entry actually used and whether the request moved there after a failure
+        var e = LuckgramDiagLog.Entry()
+        e.timeMs = 1761955200000
+        e.feature = "transcribe"
+        e.method = "POST"
+        e.target = "/v1/ai/transcribe"
+        e.status = 200
+        e.endpoint = "backup.luckgram.cc"
+        e.switched = true
+        XCTAssertTrue(LuckgramDiagLog.format(e, apiHost: api).hasSuffix("route=POST /v1/ai/transcribe status=200 endpoint=backup.luckgram.cc switched=1"))
+        e.switched = false
+        XCTAssertTrue(LuckgramDiagLog.format(e, apiHost: api).hasSuffix("endpoint=backup.luckgram.cc"))
+    }
+
     // MARK: - Retention
 
     func testTrimDropsOldLinesAndKeepsNewestWithinSize() {

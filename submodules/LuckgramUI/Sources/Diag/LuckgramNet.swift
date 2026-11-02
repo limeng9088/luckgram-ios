@@ -94,9 +94,16 @@ public final class LuckgramNet {
         return URL(string: LuckgramAI.apiBaseURL)?.host
     }
 
+    /// Whether `url` is on one of the Luckgram API entries (specs#81).
+    public static func isAPIURL(_ url: String) -> Bool {
+        return LuckgramAI.endpoints.isEntryHost(URL(string: url)?.host)
+    }
+
     /// Logs one finished Luckgram API request.
-    public func logHTTP(feature: String?, method: String?, target: String?, status: Int, error: Error?, start: Date, proxy: String?, requestId: String?) {
+    public func logHTTP(feature: String?, method: String?, target: String?, status: Int, error: Error?, start: Date, proxy: String?, requestId: String?, endpoint: String? = nil, switched: Bool = false) {
         var e = LuckgramDiagLog.Entry()
+        e.endpoint = endpoint
+        e.switched = switched
         e.timeMs = Int64(start.timeIntervalSince1970 * 1000)
         e.feature = feature
         e.method = method
