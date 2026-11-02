@@ -39,6 +39,7 @@ jobs:
           LuckgramUI|submodules/LuckgramUI/Sources/LuckgramUpdateLogic.swift|submodules/LuckgramUI/Tests/LuckgramUpdateLogicTests.swift
           TelegramCore|submodules/TelegramCore/Sources/Luckgram/LuckgramStoreRestrictions.swift|submodules/TelegramCore/Tests/Luckgram/LuckgramStoreRestrictionsTests.swift
           LuckgramUI|submodules/LuckgramUI/Sources/Writing/LuckgramAIWritingEntities.swift|submodules/LuckgramUI/Tests/LuckgramAIWritingEntitiesTests.swift
+          LuckgramUI|submodules/LuckgramUI/Sources/Onboarding/LuckgramWelcomeLogic.swift|submodules/LuckgramUI/Tests/LuckgramWelcomeLogicTests.swift
           LuckgramUI|submodules/LuckgramUI/Sources/Diag/LuckgramDiagLogic.swift|submodules/LuckgramUI/Tests/LuckgramDiagLogicTests.swift
           "
           ran=0
