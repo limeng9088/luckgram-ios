@@ -1541,6 +1541,11 @@ private func uploadedMediaFileContent(network: Network, postbox: Postbox, auxili
                         if !file.isVideo && file.mimeType.hasPrefix("video/") {
                             flags |= 1 << 4
                         }
+                        // Luckgram specs#79: a named audio/ogg file that isn't a voice note (call
+                        // recordings) stays a file; without force_file the server makes it a voice message.
+                        if file.mimeType == "audio/ogg" && !file.isVoice && file.fileName != nil {
+                            flags |= 1 << 4
+                        }
                         
                         var stickers: [Api.InputDocument]?
                         for attribute in attributes {
