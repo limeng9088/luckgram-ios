@@ -27,6 +27,7 @@ import ImageCompression
 import TextFormat
 import MediaEditor
 import PeerInfoScreen
+import LuckgramUI
 import PeerInfoStoryGridScreen
 import ShareWithPeersScreen
 import ChatEmptyNode
@@ -79,7 +80,12 @@ public final class TelegramRootController: NavigationController, TelegramRootCon
     public var contactsController: ContactsController?
     public var callListController: CallListController?
     public var chatListController: ChatListController?
+    /// Luckgram 27: no longer a tab. Pushed from the Profile tab's Settings button and every other settings entry.
     public var accountSettingsController: PeerInfoScreen?
+    /// Luckgram 27: the Profile tab (my profile, with a Settings button).
+    public var luckgramProfileController: PeerInfoScreenImpl?
+    /// Luckgram 27: the Discover tab.
+    public var luckgramDiscoverController: ViewController?
     public var newsController: NewsScreen?
     
     private var permissionsDisposable: Disposable?
@@ -207,21 +213,18 @@ public final class TelegramRootController: NavigationController, TelegramRootCon
         // Created even when hidden, like the calls tab: `updateRootControllers` shows and hides it.
         let newsController = NewsScreen(context: self.context)
         
-        var controllers: [ViewController] = []
-        
         let contactsController = ContactsController(context: self.context)
         contactsController.switchToChatsController = {  [weak self] in
             self?.openChatsController(activateSearch: false)
         }
-        controllers.append(contactsController)
         
-        if showCallsTab {
-            controllers.append(callListController)
-        }
-        controllers.append(chatListController)
-        if showNewsTab {
-            controllers.append(newsController)
-        }
+        // Luckgram 27: tabs are Chats, Contacts, Discover, Profile. The calls tab is gone (Recent Calls
+        // stays in Settings); Settings is pushed from the Profile tab.
+        let discoverController = LuckgramUI.luckgramDiscoverController(context: self.context)
+        let profileController = PeerInfoScreenImpl(context: self.context, updatedPresentationData: nil, peerId: self.context.account.peerId, avatarInitiallyExpanded: false, isOpenedFromChat: false, reactionSourceMessageId: nil, callMessages: [], isMyProfile: true)
+        profileController.parentController = self
+        profileController.luckgramIsProfileTab = true
+        let controllers = self.luckgramTabs(chatList: chatListController, contacts: contactsController, discover: discoverController, news: showNewsTab ? newsController : nil, profile: profileController)
         
         var restoreSettignsController: (ViewController & SettingsController)?
         if let sharedContext = self.context.sharedContext as? SharedAccountContextImpl {
@@ -240,7 +243,6 @@ public final class TelegramRootController: NavigationController, TelegramRootCon
             strongSelf.pushViewController(debugController(sharedContext: strongSelf.context.sharedContext, context: strongSelf.context))
         }
         accountSettingsController.parentController = self
-        controllers.append(accountSettingsController)
                 
         let chatsIndex = controllers.firstIndex(where: { $0 === chatListController }) ?? 0
         tabBarController.setControllers(controllers, selectedIndex: restoreSettignsController != nil ? (controllers.count - 1) : chatsIndex)
@@ -250,6 +252,8 @@ public final class TelegramRootController: NavigationController, TelegramRootCon
         self.newsController = newsController
         self.chatListController = chatListController
         self.accountSettingsController = accountSettingsController
+        self.luckgramProfileController = profileController
+        self.luckgramDiscoverController = discoverController
         self.rootTabController = tabBarController
         self.pushViewController(tabBarController, animated: false)
     }
@@ -258,16 +262,11 @@ public final class TelegramRootController: NavigationController, TelegramRootCon
         guard let rootTabController = self.rootTabController as? TabBarControllerImpl else {
             return
         }
-        var controllers: [ViewController] = []
-        controllers.append(self.contactsController!)
-        if showCallsTab {
-            controllers.append(self.callListController!)
+        guard let chatListController = self.chatListController, let contactsController = self.contactsController, let discoverController = self.luckgramDiscoverController, let profileController = self.luckgramProfileController else {
+            return
         }
-        controllers.append(self.chatListController!)
-        if showNewsTab, let newsController = self.newsController {
-            controllers.append(newsController)
-        }
-        controllers.append(self.accountSettingsController!)
+        // Luckgram 27: `showCallsTab` no longer adds a tab.
+        let controllers = self.luckgramTabs(chatList: chatListController, contacts: contactsController, discover: discoverController, news: showNewsTab ? self.newsController : nil, profile: profileController)
 
         // A removed selected tab would otherwise fall back to index 0 (Contacts): select Chats instead.
         var selectedIndex: Int?
@@ -275,6 +274,37 @@ public final class TelegramRootController: NavigationController, TelegramRootCon
             selectedIndex = controllers.firstIndex(where: { $0 === self.chatListController })
         }
         rootTabController.setControllers(controllers, selectedIndex: selectedIndex)
+    }
+    
+    private func luckgramTabs(chatList: ViewController, contacts: ViewController, discover: ViewController, news: ViewController?, profile: ViewController) -> [ViewController] {
+        var controllers: [ViewController] = [chatList, contacts, discover]
+        if let news {
+            controllers.append(news)
+        }
+        controllers.append(profile)
+        return controllers
+    }
+    
+    /// Luckgram 27: selects the Profile tab (popping to the root first).
+    private func luckgramSelectProfileTab() {
+        guard let rootTabController = self.rootTabController else {
+            return
+        }
+        self.popToRoot(animated: false)
+        if let profileController = self.luckgramProfileController, let index = rootTabController.controllers.firstIndex(where: { $0 === profileController }) {
+            rootTabController.selectedIndex = index
+        }
+    }
+    
+    /// Luckgram 27: Profile tab → Settings. Pushes the settings page unless it is already open.
+    public func luckgramPushSettings(animated: Bool) {
+        guard let accountSettingsController = self.accountSettingsController else {
+            return
+        }
+        if self.viewControllers.contains(where: { $0 === accountSettingsController }) {
+            return
+        }
+        self.pushViewController(accountSettingsController, animated: animated)
     }
     
     public func openChatsController(activateSearch: Bool, filter: ChatListSearchFilter = .chats, query: String? = nil) {
@@ -308,18 +338,17 @@ public final class TelegramRootController: NavigationController, TelegramRootCon
     }
     
     public func openAppIcon() {
-        guard let rootTabController = self.rootTabController else {
+        guard self.rootTabController != nil else {
             return
         }
         
-        self.popToRoot(animated: false)
-        
-        if let index = rootTabController.controllers.firstIndex(where: { $0 is PeerInfoScreenImpl }) {
-            rootTabController.selectedIndex = index
-        }
+        self.luckgramSelectProfileTab()
         
         let themeController = themeSettingsController(context: self.context, focusOnItemTag: .icon)
         var controllers: [UIViewController] = Array(self.viewControllers.prefix(1))
+        if let accountSettingsController = self.accountSettingsController {
+            controllers.append(accountSettingsController)
+        }
         controllers.append(themeController)
         self.setViewControllers(controllers, animated: true)
     }
@@ -829,38 +858,40 @@ public final class TelegramRootController: NavigationController, TelegramRootCon
     }
         
     public func openSettings(edit: Bool) {
-        guard let rootTabController = self.rootTabController else {
-            return
-        }
-        
-        self.popToRoot(animated: false)
-    
-        if let index = rootTabController.controllers.firstIndex(where: { $0 is PeerInfoScreenImpl }) {
-            rootTabController.selectedIndex = index
-        }
-        
+        // Luckgram 27: editing the name / bio / photo happens on the Profile tab; Settings is a pushed page.
+        self.luckgramSelectProfileTab()
         if edit {
-            self.accountSettingsController?.activateEdit()
+            self.luckgramProfileController?.activateEdit()
+        } else {
+            self.luckgramPushSettings(animated: false)
         }
     }
     
     public func openBirthdaySetup() {
-        self.accountSettingsController?.openBirthdaySetup()
+        self.luckgramSelectProfileTab()
+        self.luckgramProfileController?.openBirthdaySetup()
     }
     
     public func openPhotoSetup(completedWithUploadingImage: @escaping (UIImage, Signal<PeerInfoAvatarUploadStatus, NoError>) -> UIView?) {
-        self.accountSettingsController?.openAvatarSetup(completedWithUploadingImage: completedWithUploadingImage)
+        self.luckgramSelectProfileTab()
+        self.luckgramProfileController?.openAvatarSetup(completedWithUploadingImage: completedWithUploadingImage)
     }
     
     public func openAvatars() {
-        if let accountSettingsController = self.accountSettingsController {
-            self.rootTabController?.updateControllerLayout(controller: accountSettingsController)
-            accountSettingsController.openAvatars()
+        if let profileController = self.luckgramProfileController {
+            self.luckgramSelectProfileTab()
+            self.rootTabController?.updateControllerLayout(controller: profileController)
+            profileController.openAvatars()
         }
     }
     
     public func startNewCall() {
-        self.callListController?.tabBarActivateSearch()
+        // Luckgram 27: no calls tab any more; open the call list as a page.
+        self.luckgramOpenRecentCalls()
+    }
+    
+    public func luckgramOpenRecentCalls() {
+        self.pushViewController(CallListController(context: self.context, mode: .navigation))
     }
 }
 

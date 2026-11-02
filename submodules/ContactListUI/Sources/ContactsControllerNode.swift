@@ -98,20 +98,18 @@ final class ContactsControllerNode: ASDisplayNode, ASGestureRecognizerDelegate {
         self.stringsPromise.set(.single(self.presentationData.strings))
         
         var inviteImpl: (() -> Void)?
-        var luckgramOpenImpl: ((LuckgramDiscoverEntry) -> Void)?
         
-        let presentation = combineLatest(sortOrder, self.stringsPromise.get(), LuckgramDiscoverEntries.enabled())
-        |> map { sortOrder, strings, discoverEntries -> ContactListPresentation in
+        // Luckgram 27: People Nearby and Square moved from here to the Discover tab; the calls tab is gone,
+        // so Recent Calls sits right after Invite Friends (same order as Android).
+        let presentation = combineLatest(sortOrder, self.stringsPromise.get())
+        |> map { sortOrder, strings -> ContactListPresentation in
             var options = [ContactListAdditionalOption(title: strings.Contacts_InviteFriends, icon: .generic(UIImage(bundleImageName: "Contact List/AddMemberIcon")!), action: {
                 inviteImpl?()
             })]
-            // Luckgram "Discover" entries (25 People Nearby, 26 Square), each shown while its switch is on
-            for entry in discoverEntries {
-                if let icon = UIImage(bundleImageName: entry.iconName) {
-                    options.append(ContactListAdditionalOption(title: entry.title(), icon: .generic(icon), action: {
-                        luckgramOpenImpl?(entry)
-                    }))
-                }
+            if let callsIcon = UIImage(bundleImageName: "Chat List/Tabs/IconCalls") {
+                options.append(ContactListAdditionalOption(title: strings.CallSettings_RecentCalls, icon: .generic(callsIcon), action: {
+                    (context.sharedContext.mainWindow?.viewController as? TelegramRootControllerInterface)?.luckgramOpenRecentCalls()
+                }))
             }
             switch sortOrder {
                 case .presence:
@@ -162,12 +160,6 @@ final class ContactsControllerNode: ASDisplayNode, ASGestureRecognizerDelegate {
             if let strongSelf = self {
                 strongSelf.openInvite?()
             }
-        }
-        luckgramOpenImpl = { [weak self] entry in
-            guard let self, entry.isEnabled() else {
-                return
-            }
-            (self.controller?.navigationController as? NavigationController)?.pushViewController(entry.make(self.context))
         }
         
         contextAction = { [weak self] peer, node, gesture, location, isStories in
