@@ -27,6 +27,8 @@ public enum SendMessageActionSheetControllerParams {
         public let isMonoforum: Bool
         /// Luckgram: additional send option (title, action) shown first in the menu.
         public let luckgramExtraAction: (title: String, action: () -> Void)?
+        /// Luckgram spec 01 C.2: 「翻译成…」 / 「翻译」 for the text in the input field.
+        public let luckgramTranslateActions: [(title: String, action: () -> Void)]
         
         public init(
             isScheduledMessages: Bool,
@@ -41,7 +43,8 @@ public enum SendMessageActionSheetControllerParams {
             hasTimers: Bool,
             sendPaidMessageStars: StarsAmount?,
             isMonoforum: Bool,
-            luckgramExtraAction: (title: String, action: () -> Void)? = nil
+            luckgramExtraAction: (title: String, action: () -> Void)? = nil,
+            luckgramTranslateActions: [(title: String, action: () -> Void)] = []
         ) {
             self.isScheduledMessages = isScheduledMessages
             self.mediaPreview = mediaPreview
@@ -56,6 +59,7 @@ public enum SendMessageActionSheetControllerParams {
             self.sendPaidMessageStars = sendPaidMessageStars
             self.isMonoforum = isMonoforum
             self.luckgramExtraAction = luckgramExtraAction
+            self.luckgramTranslateActions = luckgramTranslateActions
         }
     }
     

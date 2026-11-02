@@ -353,7 +353,7 @@ public class ChatMessageTextBubbleContentNode: ChatMessageBubbleContentNode {
                 }
                 
                 var rawText: String
-                let attributedText: NSAttributedString
+                var attributedText: NSAttributedString
                 var messageEntities: [MessageTextEntity]?
                 
                 var mediaDuration: Double? = nil
@@ -603,6 +603,17 @@ public class ChatMessageTextBubbleContentNode: ChatMessageBubbleContentNode {
                     attributedText = NSAttributedString(string: rawText, font: textFont, textColor: messageTheme.primaryTextColor)
                 } else {
                     attributedText = NSAttributedString(string: " ", font: textFont, textColor: messageTheme.primaryTextColor)
+                }
+
+                // Luckgram spec 01 A.1: a translation started from the long-press menu or the one-tap
+                // button shows below the original, in the same bubble, under 「已翻译 · 英语 → 中文」 and a line.
+                if let service = luckgramTranslateIn, service.isEnabled, !item.message.text.isEmpty, rawText == item.message.text, !item.presentationData.isPreview, let entry = LuckgramMessageTranslations.shared.entry(accountPeerId: item.context.account.peerId, messageId: item.message.id, text: item.message.text) {
+                    let smallFont = Font.regular(floor(textFont.pointSize * 0.8))
+                    let combined = NSMutableAttributedString(attributedString: attributedText)
+                    combined.append(NSAttributedString(string: "\n" + service.header(fromLang: entry.fromLang, toLang: entry.toLang) + "\n", font: smallFont, textColor: messageTheme.secondaryTextColor))
+                    combined.append(NSAttributedString(string: String(repeating: "\u{2500}", count: 14) + "\n", font: smallFont, textColor: messageTheme.secondaryTextColor.withAlphaComponent(0.5)))
+                    combined.append(NSAttributedString(string: entry.text, font: textFont, textColor: messageTheme.primaryTextColor))
+                    attributedText = combined
                 }
                 
                 // The custom-emoji attribute is not re-applied here: `stringWithAppliedEntities`

@@ -569,6 +569,21 @@ final class ChatSendMessageContextScreenComponent: Component {
                         }
                     )))
                 }
+                for (index, translateAction) in sendMessage.luckgramTranslateActions.enumerated() {
+                    items.append(.action(ContextMenuActionItem(
+                        id: AnyHashable("luckgramTranslate\(index)"),
+                        text: translateAction.title,
+                        icon: { theme in
+                            return generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Translate"), color: theme.contextMenu.primaryColor)
+                        }, action: { [weak self] _, _ in
+                            guard let self else {
+                                return
+                            }
+                            self.environment?.controller()?.dismiss()
+                            translateAction.action()
+                        }
+                    )))
+                }
                 if !reminders {
                     items.append(.action(ContextMenuActionItem(
                         id: AnyHashable("silent"),

@@ -33,6 +33,7 @@ public class ChatMessageShareButton: ASDisplayNode {
     private var isReplies: Bool = false
     private var hasMore: Bool = false
     private var isExpand: Bool = false
+    private var isLuckgramTranslate: Bool = false
     
     private var textNode: ImmediateTextNode?
     
@@ -106,7 +107,7 @@ public class ChatMessageShareButton: ASDisplayNode {
         self.morePressed?()
     }
     
-    public func update(presentationData: ChatPresentationData, controllerInteraction: ChatControllerInteraction, chatLocation: ChatLocation, subject: ChatControllerSubject?, message: EngineMessage, accountPeerId: EnginePeer.Id, disableComments: Bool = false, isSummarize: Bool = false) -> CGSize {
+    public func update(presentationData: ChatPresentationData, controllerInteraction: ChatControllerInteraction, chatLocation: ChatLocation, subject: ChatControllerSubject?, message: EngineMessage, accountPeerId: EnginePeer.Id, disableComments: Bool = false, isSummarize: Bool = false, isLuckgramTranslate: Bool = false) -> CGSize {
         var isReplies = false
         var isNavigate = false
         var replyCount = 0
@@ -142,8 +143,9 @@ public class ChatMessageShareButton: ASDisplayNode {
             isExpand = true
         }
         
-        if self.theme !== presentationData.theme.theme || self.isReplies != isReplies || self.hasMore != hasMore || self.isExpand != isExpand {
+        if self.theme !== presentationData.theme.theme || self.isReplies != isReplies || self.hasMore != hasMore || self.isExpand != isExpand || self.isLuckgramTranslate != isLuckgramTranslate {
             self.theme = presentationData.theme.theme
+            self.isLuckgramTranslate = isLuckgramTranslate
             self.isReplies = isReplies
             self.hasMore = hasMore
             self.isExpand = isExpand
@@ -151,7 +153,10 @@ public class ChatMessageShareButton: ASDisplayNode {
             var updatedIconImage: UIImage?
             var updatedBottomIconImage: UIImage?
             var updatedIconOffset = CGPoint()
-            if isSummarize {
+            if isLuckgramTranslate {
+                // Luckgram spec 01 A.2: the one-tap translate button
+                updatedIconImage = generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Translate"), color: bubbleVariableColor(variableColor: presentationData.theme.theme.chat.message.shareButtonForegroundColor, wallpaper: presentationData.theme.wallpaper))
+            } else if isSummarize {
                 if isExpand {
                     updatedIconImage = PresentationResourcesChat.chatFreeExpandButtonIcon(presentationData.theme.theme, wallpaper: presentationData.theme.wallpaper)
                 } else {

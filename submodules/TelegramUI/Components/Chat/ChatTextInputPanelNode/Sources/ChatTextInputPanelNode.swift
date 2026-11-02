@@ -6017,6 +6017,32 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
         return (peerId, interfaceState.chatLocation.threadId)
     }
 
+    /// Luckgram spec 01 C.2: 「翻译成…」 / 「翻译」 in the send button's long-press menu, when translate-before-
+    /// sending applies (feature on, text in the field, not a secret chat, not editing).
+    public func luckgramTranslateOutMenuActions() -> [(title: String, action: () -> Void)] {
+        guard LuckgramTranslateOut.isEnabled, !self.translateOutIsBusy, let interfaceState = self.presentationInterfaceState, self.translateOutPeer() != nil else {
+            return []
+        }
+        if interfaceState.interfaceState.editMessage != nil {
+            return []
+        }
+        if let peerId = interfaceState.chatLocation.peerId, peerId.namespace == Namespaces.Peer.SecretChat {
+            return []
+        }
+        if interfaceState.interfaceState.composeInputState.inputText.string.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return []
+        }
+        let strings = LuckgramTranslateOut.Strings(interfaceState.strings)
+        return [
+            (strings.chinese ? "翻译成…" : "Translate to…", { [weak self] in
+                self?.showTranslateOutLanguages()
+            }),
+            (strings.button, { [weak self] in
+                self?.translateOutPressed(language: nil)
+            })
+        ]
+    }
+
     private func translateOutPressed(language: String?) {
         guard !self.translateOutIsBusy, let context = self.context, let interfaceState = self.presentationInterfaceState, let peer = self.translateOutPeer() else {
             return
