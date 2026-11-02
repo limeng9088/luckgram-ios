@@ -39,6 +39,23 @@ elif [ "$ARCH" = "sim_arm64" ]; then
 
   cmake -G"Unix Makefiles" -DCMAKE_TOOLCHAIN_FILE=toolchain.cmake -DCMAKE_OSX_SYSROOT=${IOS_SYSROOT[0]} -DPNG_SUPPORTED=FALSE -DENABLE_SHARED=FALSE -DWITH_JPEG8=1 -DBUILD=10000 -DCMAKE_POLICY_VERSION_MINIMUM=3.5 ../mozjpeg
   make
+elif [ "$ARCH" = "x86_64" ]; then
+  # Luckgram QA: Intel simulator. SIMD needs nasm (not installed on the build Mac) -> WITH_SIMD=0
+  IOS_PLATFORMDIR="$(xcode-select -p)/Platforms/iPhoneSimulator.platform"
+  IOS_SYSROOT=($IOS_PLATFORMDIR/Developer/SDKs/iPhoneSimulator*.sdk)
+  export CFLAGS="-Wall -arch x86_64 --target=x86_64-apple-ios13.0-simulator -mios-simulator-version-min=13.0 -funwind-tables"
+
+  cd "$BUILD_DIR"
+  mkdir build
+  cd build
+
+  touch toolchain.cmake
+  echo "set(CMAKE_SYSTEM_NAME Darwin)" >> toolchain.cmake
+  echo "set(CMAKE_SYSTEM_PROCESSOR x86_64)" >> toolchain.cmake
+  echo "set(CMAKE_C_COMPILER $(xcode-select -p)/Toolchains/XcodeDefault.xctoolchain/usr/bin/clang)" >> toolchain.cmake
+
+  cmake -G"Unix Makefiles" -DCMAKE_TOOLCHAIN_FILE=toolchain.cmake -DCMAKE_OSX_SYSROOT=${IOS_SYSROOT[0]} -DPNG_SUPPORTED=FALSE -DENABLE_SHARED=FALSE -DWITH_JPEG8=1 -DWITH_SIMD=0 -DBUILD=10000 -DCMAKE_POLICY_VERSION_MINIMUM=3.5 ../mozjpeg
+  make
 elif [ "$ARCH" = "macos_arm64" ]; then
   IOS_PLATFORMDIR="$(xcode-select -p)/Platforms/MacOSX.platform"
   IOS_SYSROOT=($IOS_PLATFORMDIR/Developer/SDKs/MacOSX*.sdk)

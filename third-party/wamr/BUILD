@@ -41,10 +41,12 @@ wamr_copts = [
     "-DWASM_DISABLE_STACK_HW_BOUND_CHECK=1",
     "-DBH_MALLOC=wasm_runtime_malloc",
     "-DBH_FREE=wasm_runtime_free",
-    "-DBUILD_TARGET_AARCH64=1",
-    "-DBUILD_TARGET=\\\"AARCH64\\\"",
     "-w",
 ] + select({
+    # Luckgram QA: Intel Mac simulators (debug_sim_x86_64)
+    "@build_bazel_rules_apple//apple:ios_x86_64": ["-DBUILD_TARGET_X86_64=1", "-DBUILD_TARGET=\\\"X86_64\\\""],
+    "//conditions:default": ["-DBUILD_TARGET_AARCH64=1", "-DBUILD_TARGET=\\\"AARCH64\\\""],
+}) + select({
     "@platforms//os:linux": ["-DBH_PLATFORM_LINUX", "-Ithird-party/wamr/core/shared/platform/linux"],
     "//conditions:default": ["-DBH_PLATFORM_DARWIN", "-Ithird-party/wamr/core/shared/platform/darwin"],
 })
@@ -65,8 +67,10 @@ cc_library(
         "core/iwasm/interpreter/wasm_interp_fast.c",
         "core/iwasm/interpreter/wasm_loader.c",
         "core/iwasm/interpreter/wasm_runtime.c",
-        "core/iwasm/common/arch/invokeNative_aarch64.s",
     ] + select({
+        "@build_bazel_rules_apple//apple:ios_x86_64": ["core/iwasm/common/arch/invokeNative_em64.s"],
+        "//conditions:default": ["core/iwasm/common/arch/invokeNative_aarch64.s"],
+    }) + select({
         "@platforms//os:linux": ["core/shared/platform/linux/platform_init.c"],
         "//conditions:default": ["core/shared/platform/darwin/platform_init.c"],
     }),

@@ -1,0 +1,150 @@
+name: iOS simulator (x86_64)
+
+# x86_64 simulator package (debug_sim_x86_64) for acceptance on Intel Macs (mac-local),
+# which cannot install the arm64 device IPA. Runs next to build.yml on every master push.
+# - Own concurrency group and own bazel cache key (bazel-sim-x86-master-*), so it never
+#   waits for or evicts the device IPA build cache (bazel-master-*).
+# - master: the .ipa is uploaded to the rolling pre-release "ios-sim-latest" (never "Latest").
+#   Branches (workflow_dispatch): artifact only.
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  build:
+    runs-on: xcode-27
+    timeout-minutes: 180
+    concurrency:
+      group: luckgram-ios-sim-${{ github.ref }}
+      cancel-in-progress: false
+    env:
+      SOURCE_DIR: /Users/Shared/telegram-ios
+      BAZEL_USER_ROOT: /private/var/tmp/_bazel_containerhost
+      CACHE_DIR: /Users/runner/telegram-bazel-cache-sim
+    steps:
+      - name: Checkout (with submodules)
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+          path: src
+
+      - name: Select Xcode from versions.json
+        run: |
+          XCODE_VERSION=$(python3 -c 'import json;print(json.load(open("src/versions.json"))["xcode"])')
+          echo "Xcode $XCODE_VERSION"
+          sudo xcode-select -s "/Applications/Xcode_${XCODE_VERSION}.app/Contents/Developer"
+          xcodebuild -version
+          sudo rm -rf /Applications/Xcode.app
+          sudo ln -s "$(readlink -f /Applications/Xcode_${XCODE_VERSION}.app)" /Applications/Xcode.app
+          df -h /
+
+      - name: Inject Telegram API credentials
+        working-directory: src
+        env:
+          TG_API_ID: ${{ secrets.TG_API_ID }}
+          TG_API_HASH: ${{ secrets.TG_API_HASH }}
+        run: |
+          python3 - <<'PY'
+          import json, os, re, sys
+          api_id, api_hash = os.environ.get("TG_API_ID", ""), os.environ.get("TG_API_HASH", "")
+          if not re.fullmatch(r"[0-9]+", api_id) or not re.fullmatch(r"[0-9a-f]{32}", api_hash):
+              sys.exit("::error::TG_API_ID / TG_API_HASH secrets missing or malformed")
+          p = "build-system/appstore-configuration.json"
+          d = json.load(open(p))
+          d["api_id"], d["api_hash"] = api_id, api_hash
+          open(p, "w").write(json.dumps(d, indent="\t") + "\n")
+          print("api credentials injected")
+          PY
+
+      - name: Canonical source directory
+        run: |
+          sudo mkdir -p /Users/Shared
+          sudo chown "$USER" /Users/Shared
+          rm -rf "$SOURCE_DIR"
+          mv "$GITHUB_WORKSPACE/src" "$SOURCE_DIR"
+
+      - name: Restore bazel cache (simulator)
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ env.CACHE_DIR }}
+          key: bazel-sim-x86-master-${{ github.run_id }}
+          restore-keys: |
+            bazel-sim-x86-master-
+
+      - name: Build debug_sim_x86_64
+        working-directory: ${{ env.SOURCE_DIR }}
+        run: |
+          # Real build number (same formula as build.yml, own run number), not the default 10000
+          BUILD_NUMBER=$(( $(cat build_number_offset) + $(git rev-list --count HEAD) + GITHUB_RUN_NUMBER ))
+          echo "BUILD_NUMBER=$BUILD_NUMBER" >> "$GITHUB_ENV"
+          set -x
+          python3 build-system/Make/ImportCertificates.py --path build-system/fake-codesigning/certs
+          python3 -u build-system/Make/Make.py \
+            --bazelUserRoot="$BAZEL_USER_ROOT" \
+            --cacheDir="$CACHE_DIR" \
+            --overrideXcodeVersion \
+            build \
+            --configurationPath=build-system/appstore-configuration.json \
+            --codesigningInformationPath=build-system/fake-codesigning \
+            --configuration=debug_sim_x86_64 \
+            --continueOnError \
+            --buildNumber="$BUILD_NUMBER"
+
+          mkdir -p "$GITHUB_WORKSPACE/app"
+          IPA=$(ls bazel-bin/Telegram/Telegram.ipa bazel-out/*/bin/Telegram/Telegram.ipa 2>/dev/null | head -1)
+          test -n "$IPA"
+          cp -L "$IPA" "$GITHUB_WORKSPACE/app/Luckgram-sim-x86_64-${BUILD_NUMBER}-$(git rev-parse --short HEAD).ipa"
+
+      # luckgram-specs#57：iOS 26 以下没有 libswiftWebKit，链接了就启动闪退
+      - name: Check linked dylibs (no libswiftWebKit)
+        working-directory: ${{ env.SOURCE_DIR }}
+        run: bash ci/check_ios_links.sh "$(ls "$GITHUB_WORKSPACE"/app/*.ipa | head -1)"
+
+      # Actions cache limit is 10 GB: only master saves, one simulator cache kept; branches read only.
+      - name: Save bazel cache (simulator, master only)
+        if: always() && github.ref == 'refs/heads/master'
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ env.CACHE_DIR }}
+          key: bazel-sim-x86-master-${{ github.run_id }}
+
+      - name: Delete older simulator caches (master only)
+        if: always() && github.ref == 'refs/heads/master'
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh cache list -R "$GITHUB_REPOSITORY" --key bazel-sim-x86-master- --json key -q '.[].key' --limit 100 \
+            | grep -v -x "bazel-sim-x86-master-${GITHUB_RUN_ID}" \
+            | while read -r k; do gh cache delete "$k" -R "$GITHUB_REPOSITORY" || true; done
+
+      - name: Upload simulator app
+        uses: actions/upload-artifact@v4
+        with:
+          name: luckgram-ios-sim-x86_64-${{ github.run_number }}
+          path: app/*.ipa
+          if-no-files-found: error
+
+      - name: Publish to pre-release ios-sim-latest (master only)
+        if: github.ref == 'refs/heads/master'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG=ios-sim-latest
+          NOTES="x86_64 simulator build of master ${GITHUB_SHA::10} (build ${BUILD_NUMBER}). For Intel Mac simulators only: xcrun simctl install <udid> Payload/Telegram.app"
+          if ! gh release view "$TAG" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release create "$TAG" -R "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" --prerelease --latest=false \
+              --title "Luckgram iOS simulator (x86_64) - latest master" --notes "$NOTES"
+          else
+            gh release edit "$TAG" -R "$GITHUB_REPOSITORY" --prerelease --latest=false --notes "$NOTES"
+            # drop the previous build so only the newest .ipa is attached
+            gh release view "$TAG" -R "$GITHUB_REPOSITORY" --json assets -q '.assets[].name' \
+              | while read -r a; do gh release delete-asset "$TAG" "$a" -R "$GITHUB_REPOSITORY" -y; done
+          fi
+          gh release upload "$TAG" app/*.ipa -R "$GITHUB_REPOSITORY" --clobber
