@@ -23,6 +23,7 @@ import AlertUI
 import InAppPurchaseManager
 import ObjectiveC
 import AVFoundation
+import LuckgramUI
 
 private var ObjCKey_Delegate: Int?
 
@@ -1242,6 +1243,24 @@ public final class AuthorizationSequenceController: NavigationController, ASAuth
         return controller
     }
     
+    /// Luckgram specs#76: welcome page + privacy policy instead of Telegram's splash for the first account.
+    private func luckgramWelcomeController() -> LuckgramWelcomeController {
+        for c in self.viewControllers {
+            if let c = c as? LuckgramWelcomeController {
+                return c
+            }
+        }
+        return LuckgramWelcomeController(sharedContext: self.sharedContext, openUrl: { [weak self] url in
+            self?.openUrl(url)
+        }, getStarted: { [weak self] in
+            guard let self else {
+                return
+            }
+            let countryCode = AuthorizationSequenceCountrySelectionController.defaultCountryCode()
+            let _ = self.engine.auth.setState(state: UnauthorizedAccountState(isTestingEnvironment: self.account.testingEnvironment, masterDatacenterId: self.account.masterDatacenterId, contents: .phoneEntry(countryCode: countryCode, number: ""))).startStandalone()
+        })
+    }
+
     private func updateState(state: InnerState) {
         switch state {
         case .authorized:
@@ -1250,9 +1269,12 @@ public final class AuthorizationSequenceController: NavigationController, ASAuth
             switch state {
                 case .empty:
                     if let _ = self.viewControllers.last as? AuthorizationSequenceSplashController {
+                    } else if let _ = self.viewControllers.last as? LuckgramWelcomeController {
                     } else {
                         var controllers: [ViewController] = []
-                        if self.otherAccountPhoneNumbers.1.isEmpty {
+                        if LuckgramWelcomeLogic.shouldShowWelcome(otherAccounts: self.otherAccountPhoneNumbers.1.count) {
+                            controllers.append(self.luckgramWelcomeController())
+                        } else if self.otherAccountPhoneNumbers.1.isEmpty {
                             controllers.append(self.splashController())
                         } else {
                             controllers.append(self.phoneEntryController(countryCode: AuthorizationSequenceCountrySelectionController.defaultCountryCode(), number: "", splashController: nil))

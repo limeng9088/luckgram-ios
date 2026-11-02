@@ -1434,6 +1434,19 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
 
                     self.mainWindow.debugAction = nil
                     self.mainWindow.viewController = context.rootController
+                    // Luckgram specs#78: "privacy policy updated" once when app.privacy_version goes up.
+                    Queue.mainQueue().after(1.5) {
+                        LuckgramPrivacyAlert.checkUpdate(context: context.context, present: { c in
+                            self.mainWindow.present(c, on: .root)
+                        })
+                    }
+                    // Luckgram specs#76: "Subscribe" on the onboarding Pro step -> the Pro page once logged in.
+                    if LuckgramSettings.shared.bool(LuckgramWelcomeLogic.openProAfterLoginKey, default: false) {
+                        LuckgramSettings.shared.setBool(LuckgramWelcomeLogic.openProAfterLoginKey, false)
+                        Queue.mainQueue().after(1.5) {
+                            context.rootController.pushViewController(luckgramProController(context: context.context))
+                        }
+                    }
                     
                     if firstTime {
                         let layer = context.rootController.view.layer
