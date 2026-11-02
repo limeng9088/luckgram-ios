@@ -121,6 +121,7 @@ import UrlWhitelist
 import SideColumnLayout
 import NavigationBarNode
 import NavigationExpansionTransition
+import LuckgramUI
 
 public enum PeerInfoAvatarEditingMode {
     case generic
@@ -2132,6 +2133,9 @@ final class PeerInfoScreenNode: ViewControllerTracingNode, PeerInfoScreenNodePro
                 }
             case .qrCode:
                 strongSelf.openQrCode(fromNavigationButton: true)
+            case .settings:
+                // Luckgram 27: Profile tab → Settings
+                strongSelf.controller?.parentController?.luckgramPushSettings(animated: true)
             case .postStory:
                 var sourceFrame: CGRect?
                 if let source {
@@ -5515,7 +5519,9 @@ final class PeerInfoScreenNode: ViewControllerTracingNode, PeerInfoScreenNodePro
             standaloneSearchImage: PresentationResourcesRootController.navigationCompactSearchWhiteIcon(theme),
             searchWithTagsImage: PresentationResourcesRootController.navigationCompactTagsSearchWhiteIcon(theme),
             searchLabel: strings.Common_Search,
-            moreLabel: strings.Common_More
+            moreLabel: strings.Common_More,
+            settingsImage: UIImage(systemName: "gearshape", withConfiguration: UIImage.SymbolConfiguration(pointSize: 19.0, weight: .medium)),
+            settingsLabel: strings.Settings_Title
         )
         self.cachedNavigationItemResources = (theme, strings, resources)
         return resources
@@ -5976,7 +5982,8 @@ final class PeerInfoScreenNode: ViewControllerTracingNode, PeerInfoScreenNodePro
             contentHeight = max(contentHeight, layout.size.height + 140.0 - layout.intrinsicInsets.bottom)
         }
         self.scrollNode.view.contentSize = CGSize(width: layout.size.width, height: contentHeight)
-        if self.isSettings {
+        if self.isSettings || self.controller?.luckgramIsProfileTab == true {
+            // Luckgram 27: the Profile tab scrolls clear of the tab bar like the old Settings tab
             self.scrollNode.view.contentInset = UIEdgeInsets(top: 0.0, left: 0.0, bottom: layout.intrinsicInsets.bottom, right: 0.0)
         }
         if let restoreContentOffset = restoreContentOffset {
@@ -6116,7 +6123,9 @@ final class PeerInfoScreenNode: ViewControllerTracingNode, PeerInfoScreenNodePro
             var navigationFlags = PeerInfoNavigationFlags()
             navigationFlags.isEditing = self.state.isEditing
             navigationFlags.isSettings = self.isSettings
+            navigationFlags.isSettingsPushed = self.isSettings && !(self.controller?.parent is TabBarController)
             navigationFlags.isMyProfile = self.isMyProfile
+            navigationFlags.isProfileTab = self.controller?.luckgramIsProfileTab ?? false
             navigationFlags.canEdit = peerInfoCanEdit(peer: self.data?.peer, chatLocation: self.chatLocation, threadData: self.data?.threadData, cachedData: self.data?.cachedData, isContact: self.data?.isContact)
             if let data = self.data, !data.isPremiumRequiredForStoryPosting || data.accountIsPremium, case let .channel(channel) = data.peer, channel.hasPermission(.postStories) {
                 navigationFlags.channelCanPostStories = true
@@ -6550,6 +6559,8 @@ public final class PeerInfoScreenImpl: ViewController, PeerInfoScreen, KeyShortc
     private let chatLocationContextHolder = Atomic<ChatLocationContextHolder?>(value: nil)
     
     public weak var parentController: TelegramRootControllerInterface?
+    /// Luckgram 27: this my-profile screen is the Profile tab (set by `TelegramRootController`).
+    public var luckgramIsProfileTab = false
     
     private(set) var presentationData: PresentationData
     private var presentationDataDisposable: Disposable?
@@ -6838,10 +6849,23 @@ public final class PeerInfoScreenImpl: ViewController, PeerInfoScreen, KeyShortc
             }
             
             let icon: UIImage?
-            if useSpecialTabBarIcons() {
+            var selectedIcon: UIImage?
+            if isMyProfile {
+                // Luckgram 27: the Profile tab (person outline / filled; the account avatar when several accounts)
+                let configuration = UIImage.SymbolConfiguration(pointSize: 22.0, weight: .regular)
+                icon = UIImage(systemName: "person.crop.circle", withConfiguration: configuration)?.withRenderingMode(.alwaysTemplate)
+                selectedIcon = UIImage(systemName: "person.crop.circle.fill", withConfiguration: configuration)?.withRenderingMode(.alwaysTemplate)
+            } else if useSpecialTabBarIcons() {
                 icon = UIImage(bundleImageName: "Chat List/Tabs/Holiday/IconSettings")
             } else {
                 icon = UIImage(bundleImageName: "Chat List/Tabs/IconSettings")
+            }
+            let tabTitle: (PresentationData) -> String = { presentationData in
+                if isMyProfile {
+                    LuckgramStrings.appLanguageCode = presentationData.strings.primaryComponent.languageCode
+                    return LuckgramStrings.pick("个人资料", "Profile")
+                }
+                return presentationData.strings.Settings_Title
             }
             
             let tabBarItem: Signal<(String, UIImage?, UIImage?, String?, Bool, Bool), NoError> = combineLatest(queue: .mainQueue(), self.context.sharedContext.presentationData, notificationsAuthorizationStatus.get(), notificationsWarningSuppressed.get(), context.engine.notices.getServerProvidedSuggestions(), accountTabBarAvatar, accountTabBarAvatarBadge)
@@ -6853,7 +6877,7 @@ public final class PeerInfoScreenImpl: ViewController, PeerInfoScreen, KeyShortc
                 if accountTabBarAvatarBadge > 0 {
                     otherAccountsBadge = compactNumericCountString(Int(accountTabBarAvatarBadge), decimalSeparator: presentationData.dateTimeFormat.decimalSeparator)
                 }
-                return (presentationData.strings.Settings_Title, accountTabBarAvatar?.0 ?? icon, accountTabBarAvatar?.1 ?? icon, notificationsWarning || phoneNumberWarning || passwordWarning ? "!" : otherAccountsBadge, accountTabBarAvatar != nil, presentationData.reduceMotion)
+                return (tabTitle(presentationData), accountTabBarAvatar?.0 ?? icon, accountTabBarAvatar?.1 ?? selectedIcon ?? icon, notificationsWarning || phoneNumberWarning || passwordWarning ? "!" : otherAccountsBadge, accountTabBarAvatar != nil, presentationData.reduceMotion)
             }
             
             self.tabBarItemDisposable = (tabBarItem |> deliverOnMainQueue).startStrict(next: { [weak self] title, image, selectedImage, badgeValue, isAvatar, reduceMotion in
@@ -6861,7 +6885,7 @@ public final class PeerInfoScreenImpl: ViewController, PeerInfoScreen, KeyShortc
                     strongSelf.tabBarItem.title = title
                     strongSelf.tabBarItem.image = image
                     strongSelf.tabBarItem.selectedImage = selectedImage
-                    strongSelf.tabBarItem.animationName = isAvatar || reduceMotion ? nil : "TabSettings"
+                    strongSelf.tabBarItem.animationName = isAvatar || reduceMotion || isMyProfile ? nil : "TabSettings"
                     strongSelf.tabBarItem.ringSelection = isAvatar
                     strongSelf.tabBarItem.badgeValue = badgeValue
                 }

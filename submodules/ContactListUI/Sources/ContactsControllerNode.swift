@@ -98,21 +98,13 @@ final class ContactsControllerNode: ASDisplayNode, ASGestureRecognizerDelegate {
         self.stringsPromise.set(.single(self.presentationData.strings))
         
         var inviteImpl: (() -> Void)?
-        var luckgramOpenImpl: ((LuckgramDiscoverEntry) -> Void)?
         
-        let presentation = combineLatest(sortOrder, self.stringsPromise.get(), LuckgramDiscoverEntries.enabled())
-        |> map { sortOrder, strings, discoverEntries -> ContactListPresentation in
-            var options = [ContactListAdditionalOption(title: strings.Contacts_InviteFriends, icon: .generic(UIImage(bundleImageName: "Contact List/AddMemberIcon")!), action: {
+        // Luckgram 27: People Nearby and Square moved from here to the Discover tab.
+        let presentation = combineLatest(sortOrder, self.stringsPromise.get())
+        |> map { sortOrder, strings -> ContactListPresentation in
+            let options = [ContactListAdditionalOption(title: strings.Contacts_InviteFriends, icon: .generic(UIImage(bundleImageName: "Contact List/AddMemberIcon")!), action: {
                 inviteImpl?()
             })]
-            // Luckgram "Discover" entries (25 People Nearby, 26 Square), each shown while its switch is on
-            for entry in discoverEntries {
-                if let icon = UIImage(bundleImageName: entry.iconName) {
-                    options.append(ContactListAdditionalOption(title: entry.title(), icon: .generic(icon), action: {
-                        luckgramOpenImpl?(entry)
-                    }))
-                }
-            }
             switch sortOrder {
                 case .presence:
                     return .orderedByPresence(options: options)
@@ -162,12 +154,6 @@ final class ContactsControllerNode: ASDisplayNode, ASGestureRecognizerDelegate {
             if let strongSelf = self {
                 strongSelf.openInvite?()
             }
-        }
-        luckgramOpenImpl = { [weak self] entry in
-            guard let self, entry.isEnabled() else {
-                return
-            }
-            (self.controller?.navigationController as? NavigationController)?.pushViewController(entry.make(self.context))
         }
         
         contextAction = { [weak self] peer, node, gesture, location, isStories in

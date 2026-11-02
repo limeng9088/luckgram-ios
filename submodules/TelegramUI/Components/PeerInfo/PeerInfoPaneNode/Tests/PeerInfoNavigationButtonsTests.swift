@@ -10,6 +10,17 @@ final class PeerInfoNavigationButtonSetsTests: XCTestCase {
         return peerInfoNavigationButtonSets(flags)
     }
 
+    /// Luckgram 27: Settings pushed from the Profile tab keeps its back button (no QR in the left slot).
+    func test_settingsPushed_hasNoQrCode() {
+        XCTAssertEqual(self.sets({ $0.isSettings = true; $0.isSettingsPushed = true }).normal, PeerInfoNavigationButtonSet(left: [], right: [.search, .edit]))
+    }
+
+    /// Luckgram 27: my profile as the Profile tab has a Settings button; pushed, it has its back button.
+    func test_profileTab_hasSettingsButton() {
+        XCTAssertEqual(self.sets({ $0.isMyProfile = true; $0.isProfileTab = true }).normal, PeerInfoNavigationButtonSet(left: [.settings], right: [.postStory, .edit]))
+        XCTAssertEqual(self.sets({ $0.isMyProfile = true }).normal.left, [])
+    }
+
     func test_profile_editable_andNot() {
         XCTAssertEqual(self.sets({ $0.canEdit = true }).normal, PeerInfoNavigationButtonSet(left: [], right: [.edit]))
         XCTAssertEqual(self.sets({ _ in }).normal, PeerInfoNavigationButtonSet(left: [], right: []))

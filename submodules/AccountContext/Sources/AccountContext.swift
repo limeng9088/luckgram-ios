@@ -1114,6 +1114,8 @@ public protocol TelegramRootControllerInterface: NavigationController {
         
     func openContacts()
     func openSettings(edit: Bool)
+    /// Luckgram 27: push the Settings page (Profile tab → Settings).
+    func luckgramPushSettings(animated: Bool)
     func openBirthdaySetup()
     func openPhotoSetup(completedWithUploadingImage: @escaping (UIImage, Signal<PeerInfoAvatarUploadStatus, NoError>) -> UIView?)
     func openAvatars()

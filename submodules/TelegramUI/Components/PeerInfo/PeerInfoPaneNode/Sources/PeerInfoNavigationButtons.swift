@@ -21,13 +21,15 @@ public enum PeerInfoHeaderNavigationButtonKey {
     case qrCode
     case moreSearchSort
     case postStory
+    /// Luckgram 27: the Profile tab's Settings button.
+    case settings
 }
 
 /// iPhone Duo: whether a navigation button is an icon (it goes into the side column); text buttons stay in the row
 /// (Apple: text-only items stay horizontal).
 public func peerInfoNavigationButtonIsIcon(_ key: PeerInfoHeaderNavigationButtonKey) -> Bool {
     switch key {
-    case .back, .qrCode, .search, .searchWithTags, .standaloneSearch, .more, .sort, .moreSearchSort, .postStory:
+    case .back, .qrCode, .search, .searchWithTags, .standaloneSearch, .more, .sort, .moreSearchSort, .postStory, .settings:
         return true
     case .edit, .done, .cancel, .select, .selectionDone, .editPhoto, .editVideo:
         return false
@@ -59,7 +61,11 @@ public struct PeerInfoNavigationButtonSet: Equatable {
 public struct PeerInfoNavigationFlags: Equatable {
     public var isEditing = false
     public var isSettings = false
+    /// Luckgram 27: Settings pushed from the Profile tab (not a tab): the bar's back button replaces the QR button.
+    public var isSettingsPushed = false
     public var isMyProfile = false
+    /// Luckgram 27: my profile shown as the Profile tab: a Settings button where a pushed page has its back button.
+    public var isProfileTab = false
     /// `peerInfoCanEdit(...)`.
     public var canEdit = false
     /// A channel the account may post stories to (and Premium allows it).
@@ -89,10 +95,15 @@ public func peerInfoNavigationButtonSets(_ flags: PeerInfoNavigationFlags) -> (n
         return (normal, expanded)
     }
     if flags.isSettings {
-        normal.left.append(.qrCode)
+        if !flags.isSettingsPushed {
+            normal.left.append(.qrCode)
+        }
         normal.right.append(.search)
         normal.right.append(.edit)
     } else if flags.isMyProfile || flags.canEdit {
+        if flags.isMyProfile && flags.isProfileTab {
+            normal.left.append(.settings)
+        }
         normal.right.append(.edit)
     }
     if flags.channelCanPostStories || flags.isMyProfile {
