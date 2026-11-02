@@ -31,10 +31,13 @@ final class LuckgramWelcomeLogicTests: XCTestCase {
         XCTAssertEqual(LuckgramWelcomeLogic.privacyURL(" https://luckgram.cc/legal/privacy ", zh: true), "https://luckgram.cc/legal/privacy")
     }
 
-    func testProStepOnlyWhenBillingEnabled() {
-        XCTAssertEqual(LuckgramWelcomeLogic.steps(billingEnabled: false), [.ai, .agents, .summary, .discover])
-        XCTAssertEqual(LuckgramWelcomeLogic.steps(billingEnabled: true).count, 5)
-        XCTAssertEqual(LuckgramWelcomeLogic.steps(billingEnabled: true).last, .pro)
+    func testProStepAlwaysLastAndSubscribeOnlyWithBilling() {
+        XCTAssertEqual(LuckgramWelcomeLogic.steps(), [.ai, .agents, .summary, .discover, .pro])
+        XCTAssertTrue(LuckgramWelcomeLogic.canSubscribe(.pro, billingEnabled: true))
+        XCTAssertFalse(LuckgramWelcomeLogic.canSubscribe(.pro, billingEnabled: false))
+        XCTAssertFalse(LuckgramWelcomeLogic.canSubscribe(.ai, billingEnabled: true))
+        XCTAssertEqual(LuckgramWelcomeLogic.Texts(zh: true).comingSoon, "即将推出")
+        XCTAssertEqual(LuckgramWelcomeLogic.Texts(zh: false).comingSoon, "Coming soon")
     }
 
     func testProgressCountsShownSteps() {

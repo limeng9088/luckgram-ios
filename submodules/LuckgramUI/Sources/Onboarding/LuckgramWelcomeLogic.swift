@@ -36,7 +36,7 @@ public enum LuckgramWelcomeLogic {
         case summary
         /// 25 people nearby + 26 square.
         case discover
-        /// S7 Luckgram Pro, only while billing.enabled.
+        /// S7 Luckgram Pro: always the last step; "Coming soon" while billing is off.
         case pro
     }
 
@@ -71,13 +71,15 @@ public enum LuckgramWelcomeLogic {
         return zh ? defaultPrivacyURLZh : defaultPrivacyURLEn
     }
 
-    /// The steps shown, in order; the Pro step only while billing is enabled.
-    public static func steps(billingEnabled: Bool) -> [Step] {
-        var result: [Step] = [.ai, .agents, .summary, .discover]
-        if billingEnabled {
-            result.append(.pro)
-        }
-        return result
+    /// The steps shown, in order; the Pro page is always the last one (user decision 2026-11-02).
+    public static func steps() -> [Step] {
+        return [.ai, .agents, .summary, .discover, .pro]
+    }
+
+    /// Whether the Pro step's subscribe button works. With billing off it shows "Coming soon",
+    /// disabled; only "not now" can be tapped and nothing is requested from the server.
+    public static func canSubscribe(_ step: Step, billingEnabled: Bool) -> Bool {
+        return step == .pro && billingEnabled
     }
 
     /// "n/N" over the steps actually shown; `index` is 0-based.
@@ -194,6 +196,8 @@ public enum LuckgramWelcomeLogic {
             default: return t("继续", "Continue")
             }
         }
+
+        public var comingSoon: String { t("即将推出", "Coming soon") }
 
         /// The Pro button with the cheapest plan, e.g. "订阅 · 250 ⭐ / 30 天".
         public func subscribe(stars: Int, days: Int) -> String {

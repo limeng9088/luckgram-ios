@@ -6,7 +6,7 @@ import AccountContext
 import PresentationDataUtils
 
 /// specs#76: first-launch welcome page shown instead of Telegram's splash while no account is
-/// logged in. Dark page with a tile pattern, the Luckgram logo, a short intro and a "Get Started"
+/// logged in. Dark page with a tile pattern (no logo), "Welcome to" + Luckgram, a short intro and a "Get Started"
 /// button. The privacy policy alert opens by itself until the user taps Continue; Get Started then
 /// goes on to the usual phone-number login (`getStarted`).
 public final class LuckgramWelcomeController: ViewController {
@@ -99,14 +99,13 @@ public final class LuckgramWelcomeController: ViewController {
     }
 }
 
-/// Dark page: rounded tiles drawn in code (no image assets), the logo, intro text, white button.
+/// Dark page: rounded tiles drawn in code (no image assets, no logo), texts, white button.
 private final class LuckgramWelcomeView: UIView {
     var startPressed: (() -> Void)?
     var safeInsets: UIEdgeInsets = .zero
 
     private let tiles = LuckgramWelcomeTilesView()
     private let fade = CAGradientLayer()
-    private let logo = UIImageView()
     private let welcomeTo = UILabel()
     private let name = UILabel()
     private let intro = UILabel()
@@ -119,10 +118,6 @@ private final class LuckgramWelcomeView: UIView {
         self.fade.colors = [UIColor.black.withAlphaComponent(0.0).cgColor, UIColor.black.cgColor]
         self.layer.addSublayer(self.fade)
 
-        self.logo.image = LuckgramWelcomeView.logoImage
-        self.logo.contentMode = .scaleAspectFit
-        self.logo.accessibilityLabel = "Luckgram"
-        self.addSubview(self.logo)
 
         self.welcomeTo.text = texts.welcomeTo
         self.welcomeTo.textColor = UIColor(rgb: 0x8E8E93)
@@ -187,48 +182,12 @@ private final class LuckgramWelcomeView: UIView {
         let welcomeY = nameY - 2.0 - 20.0
         self.welcomeTo.frame = CGRect(x: left + side, y: welcomeY, width: width - side * 2.0, height: 20.0)
 
-        let logoSide: CGFloat = 200.0
-        let logoCenterY = max(self.safeInsets.top + logoSide / 2.0, min(size.height * 0.28, welcomeY - logoSide / 2.0 - 24.0))
-        self.logo.frame = CGRect(x: floor((size.width - logoSide) / 2.0), y: floor(logoCenterY - logoSide / 2.0), width: logoSide, height: logoSide)
         self.tiles.centerX = size.width / 2.0
         self.tiles.setNeedsDisplay()
     }
-
-    /// The Luckgram paper plane with speed lines (same outline as Android `luckgram_icon_monochrome`,
-    /// in percent of a 108-unit adaptive-icon canvas), white on transparent.
-    static let logoImage: UIImage? = {
-        let size = CGSize(width: 220.0, height: 220.0)
-        let shapes: [[(CGFloat, CGFloat)]] = [
-            [(70.02, 29.51), (71.88, 29.51), (72.34, 31.60), (58.45, 67.48), (57.75, 67.94), (56.60, 67.71), (48.26, 60.30), (45.25, 64.47), (44.10, 64.93), (43.40, 63.31), (43.17, 56.83), (64.00, 36.69), (62.85, 36.69), (53.82, 42.94), (40.39, 54.05), (39.00, 53.82), (31.13, 48.26), (30.44, 47.11), (30.90, 45.72)],
-            [(37.62, 55.67), (38.54, 55.90), (37.85, 57.06), (26.04, 65.39)],
-            [(40.39, 59.38), (41.32, 59.61), (40.62, 60.76), (31.13, 67.71)]
-        ]
-        let renderer = UIGraphicsImageRenderer(size: size)
-        return renderer.image { context in
-            let cg = context.cgContext
-            cg.setFillColor(UIColor.white.cgColor)
-            cg.setStrokeColor(UIColor.white.cgColor)
-            cg.setLineJoin(.round)
-            cg.setLineWidth(2.0)
-            for shape in shapes {
-                let path = UIBezierPath()
-                for (index, point) in shape.enumerated() {
-                    let p = CGPoint(x: point.0 / 100.0 * size.width, y: point.1 / 100.0 * size.height)
-                    if index == 0 {
-                        path.move(to: p)
-                    } else {
-                        path.addLine(to: p)
-                    }
-                }
-                path.close()
-                cg.addPath(path.cgPath)
-                cg.drawPath(using: .fillStroke)
-            }
-        }
-    }()
 }
 
-/// Rounded tiles behind the logo; columns centred so the middle tile sits behind it.
+/// Rounded tiles at the top of the page; columns centred on the page.
 private final class LuckgramWelcomeTilesView: UIView {
     var centerX: CGFloat = 0.0
 

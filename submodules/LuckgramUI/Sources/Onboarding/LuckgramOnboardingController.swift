@@ -7,23 +7,26 @@ import SwiftSignalKit
 /// specs#76: onboarding steps between the welcome page and login: "n/N"
 /// and a progress bar on top, a big title, text, an optional bold question, an illustration card
 /// (built in code, made-up content) and a white button with a "not now" text button under it.
-/// The two buttons write the step's feature switches; the Pro step (only while billing.enabled)
-/// remembers "Subscribe" and the Pro page opens after login, since paying needs a Telegram account.
+/// The two buttons write the step's feature switches. The Pro step is always last: while
+/// billing.enabled its "Subscribe" is remembered and the Pro page opens after login (paying needs a
+/// Telegram account); otherwise the button shows "Coming soon", disabled, and nothing is requested.
 public final class LuckgramOnboardingController: ViewController {
     private let finish: () -> Void
     private let texts = LuckgramWelcomeLogic.Texts(zh: LuckgramStrings.isChinese)
     private let steps: [LuckgramWelcomeLogic.Step]
     private var index = 0
+    private let billingEnabled: Bool
     private var cheapestPlan: LuckgramAccountLogic.Plan?
     private var plansDisposable: Disposable?
 
     public init(finish: @escaping () -> Void) {
         self.finish = finish
-        self.steps = LuckgramWelcomeLogic.steps(billingEnabled: LuckgramSettings.shared.remoteConfig.bool("billing.enabled", default: false))
+        self.steps = LuckgramWelcomeLogic.steps()
+        self.billingEnabled = LuckgramSettings.shared.remoteConfig.bool("billing.enabled", default: false)
         super.init(navigationBarPresentationData: nil)
         self.supportedOrientations = ViewControllerSupportedOrientations(regularSize: .all, compactSize: .portrait)
         self.statusBar.statusBarStyle = .White
-        if self.steps.contains(.pro) {
+        if self.billingEnabled {
             self.plansDisposable = (LuckgramAI.shared.requestJSON(method: "GET", path: "/v1/billing/plans")
             |> deliverOnMainQueue).start(next: { [weak self] json in
                 guard let self else {
@@ -75,6 +78,9 @@ public final class LuckgramOnboardingController: ViewController {
         if !primary && !LuckgramWelcomeLogic.hasSecondary(step) {
             return
         }
+        if primary && step == .pro && !LuckgramWelcomeLogic.canSubscribe(step, billingEnabled: self.billingEnabled) {
+            return // "Coming soon"
+        }
         for key in LuckgramWelcomeLogic.toggles(step) {
             LuckgramSettings.shared.setEnabled(key, primary)
         }
@@ -92,7 +98,10 @@ public final class LuckgramOnboardingController: ViewController {
     private func bind(animated: Bool) {
         let step = self.steps[self.index]
         var primary = self.texts.primary(step)
-        if step == .pro, let plan = self.cheapestPlan {
+        let comingSoon = step == .pro && !LuckgramWelcomeLogic.canSubscribe(step, billingEnabled: self.billingEnabled)
+        if comingSoon {
+            primary = self.texts.comingSoon
+        } else if step == .pro, let plan = self.cheapestPlan {
             primary = self.texts.subscribe(stars: plan.stars, days: plan.days)
         }
         self.pageView.show(
@@ -104,6 +113,7 @@ public final class LuckgramOnboardingController: ViewController {
             card: LuckgramOnboardingCards.card(step, texts: self.texts),
             primary: primary,
             secondary: self.texts.secondary(step),
+            primaryEnabled: !comingSoon,
             animated: animated
         )
     }
@@ -226,7 +236,7 @@ private final class LuckgramOnboardingView: UIView {
         self.primaryButton.setTitle(title, for: .normal)
     }
 
-    func show(progress: String, fraction: CGFloat, title: String, body: String, question: String?, card: UIView, primary: String, secondary: String?, animated: Bool) {
+    func show(progress: String, fraction: CGFloat, title: String, body: String, question: String?, card: UIView, primary: String, secondary: String?, primaryEnabled: Bool, animated: Bool) {
         self.progressLabel.text = progress
         self.progressBar.setFraction(fraction, animated: animated)
         let apply = {
@@ -246,6 +256,8 @@ private final class LuckgramOnboardingView: UIView {
                 card.trailingAnchor.constraint(equalTo: self.cardContainer.trailingAnchor)
             ])
             self.primaryButton.setTitle(primary, for: .normal)
+            self.primaryButton.isEnabled = primaryEnabled
+            self.primaryButton.alpha = primaryEnabled ? 1.0 : 0.45
             self.secondaryButton.setTitle(secondary, for: .normal)
             self.secondaryButton.isHidden = secondary == nil
         }
