@@ -130,23 +130,32 @@ jobs:
       - name: Check linked dylibs (no libswiftWebKit)
         run: bash "$SOURCE_DIR/ci/check_ios_links.sh" out/*.ipa
 
+      # Not on cancel: a cancelled run's cache upload is aborted and nothing is saved.
       - name: Save bazel cache
-        if: always() && github.ref == 'refs/heads/master'
+        if: (success() || failure()) && github.ref == 'refs/heads/master'
         uses: actions/cache/save@v4
         with:
           path: ${{ env.CACHE_DIR }}
           key: bazel-master-${{ github.run_id }}
 
       # Keep only the cache just saved, so the next master build cannot lose it to the 10GB limit.
+      # Only bazel-master-* (sim-build.yml keeps its own bazel-sim-x86-master-*), and only after
+      # this run's cache is really there; otherwise the old one stays.
       - name: Delete older master caches
-        if: always() && github.ref == 'refs/heads/master'
+        if: (success() || failure()) && github.ref == 'refs/heads/master'
         continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh cache list --repo "$GITHUB_REPOSITORY" --key bazel- --limit 100 --json id,key \
-            --jq ".[] | select(.key != \"bazel-master-${GITHUB_RUN_ID}\") | .id" |
-          while read -r id; do gh cache delete "$id" --repo "$GITHUB_REPOSITORY"; done
+          KEEP="bazel-master-${GITHUB_RUN_ID}"
+          KEYS=$(gh cache list --repo "$GITHUB_REPOSITORY" --key bazel-master- --limit 100 --json key --jq '.[].key')
+          if ! grep -qx "$KEEP" <<<"$KEYS"; then
+            echo "::warning::$KEEP was not saved; keeping older master caches"
+            exit 0
+          fi
+          grep -vx "$KEEP" <<<"$KEYS" | while read -r k; do
+            [ -n "$k" ] && gh cache delete "$k" --repo "$GITHUB_REPOSITORY"
+          done
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4

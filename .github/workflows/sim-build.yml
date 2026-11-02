@@ -108,21 +108,27 @@ jobs:
 
       # Actions cache limit is 10 GB: only master saves, one simulator cache kept; branches read only.
       - name: Save bazel cache (simulator, master only)
-        if: always() && github.ref == 'refs/heads/master'
+        if: (success() || failure()) && github.ref == 'refs/heads/master'
         uses: actions/cache/save@v4
         with:
           path: ${{ env.CACHE_DIR }}
           key: bazel-sim-x86-master-${{ github.run_id }}
 
       - name: Delete older simulator caches (master only)
-        if: always() && github.ref == 'refs/heads/master'
+        if: (success() || failure()) && github.ref == 'refs/heads/master'
         continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh cache list -R "$GITHUB_REPOSITORY" --key bazel-sim-x86-master- --json key -q '.[].key' --limit 100 \
-            | grep -v -x "bazel-sim-x86-master-${GITHUB_RUN_ID}" \
-            | while read -r k; do gh cache delete "$k" -R "$GITHUB_REPOSITORY" || true; done
+          KEEP="bazel-sim-x86-master-${GITHUB_RUN_ID}"
+          KEYS=$(gh cache list -R "$GITHUB_REPOSITORY" --key bazel-sim-x86-master- --limit 100 --json key -q '.[].key')
+          if ! grep -qx "$KEEP" <<<"$KEYS"; then
+            echo "::warning::$KEEP was not saved; keeping older simulator caches"
+            exit 0
+          fi
+          grep -vx "$KEEP" <<<"$KEYS" | while read -r k; do
+            [ -n "$k" ] && gh cache delete "$k" -R "$GITHUB_REPOSITORY" || true
+          done
 
       - name: Upload simulator app
         uses: actions/upload-artifact@v4
