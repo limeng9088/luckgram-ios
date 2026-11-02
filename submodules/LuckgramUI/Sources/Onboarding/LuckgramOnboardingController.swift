@@ -111,7 +111,7 @@ public final class LuckgramOnboardingController: ViewController {
             title: self.texts.title(step),
             body: self.texts.body(step),
             question: self.texts.question(step),
-            card: LuckgramOnboardingCards.card(step, texts: self.texts, price: self.cheapestPlan.map { self.texts.price(stars: $0.stars, days: $0.days) }),
+            card: LuckgramOnboardingCards.card(step, texts: self.texts, price: self.cheapestPlan.map { self.texts.price(stars: $0.stars, days: $0.days) }, canSubscribe: LuckgramWelcomeLogic.canSubscribe(.pro, billingEnabled: self.billingEnabled)),
             primary: primary,
             secondary: self.texts.secondary(step),
             primaryEnabled: !comingSoon,
@@ -326,7 +326,7 @@ private enum LuckgramOnboardingCards {
     static let cardLight = UIColor(rgb: 0x2C2C2E)
     static let secondary = UIColor(rgb: 0x8E8E93)
 
-    static func card(_ step: LuckgramWelcomeLogic.Step, texts: LuckgramWelcomeLogic.Texts, price: String?) -> UIView {
+    static func card(_ step: LuckgramWelcomeLogic.Step, texts: LuckgramWelcomeLogic.Texts, price: String?, canSubscribe: Bool) -> UIView {
         switch step {
         case .ai:
             return aiCard(texts)
@@ -337,7 +337,7 @@ private enum LuckgramOnboardingCards {
         case .discover:
             return discoverCard(texts)
         case .pro:
-            return proCard(texts, price: price)
+            return proCard(texts, price: price, canSubscribe: canSubscribe)
         }
     }
 
@@ -445,7 +445,7 @@ private enum LuckgramOnboardingCards {
         return panel(rows)
     }
 
-    static func proCard(_ t: LuckgramWelcomeLogic.Texts, price: String?) -> UIView {
+    static func proCard(_ t: LuckgramWelcomeLogic.Texts, price: String?, canSubscribe: Bool) -> UIView {
         let icons = ["✦", "⇄", "⭐"]
         let colors = [UIColor(rgb: 0x5E5CE6), UIColor(rgb: 0x0A84FF), UIColor(rgb: 0xFF9F0A)]
         var rows: [UIView] = []
@@ -463,7 +463,10 @@ private enum LuckgramOnboardingCards {
             let text = stack([label(feature.0, size: 15.0, bold: true), label(feature.1, size: 13.0, color: secondary)], spacing: 2.0)
             rows.append(box(stack([icon, text], spacing: 12.0, axis: .horizontal, alignment: .top), color: card, radius: 16.0, padding: UIEdgeInsets(top: 12.0, left: 12.0, bottom: 12.0, right: 12.0)))
         }
-        rows.append(label(t.proFootnote, size: 12.0, color: secondary, center: true))
+        if canSubscribe {
+            // "Pay after logging in" only when buying is possible, not under "Coming soon".
+            rows.append(label(t.proFootnote, size: 12.0, color: secondary, center: true))
+        }
         return stack(rows, spacing: 8.0)
     }
 }
