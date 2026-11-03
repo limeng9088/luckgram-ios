@@ -1,12 +1,18 @@
 {
-  "images" : [
+  "images": [
     {
-      "filename" : "ic_qrlogo.pdf",
-      "idiom" : "universal"
+      "idiom": "universal",
+      "filename": "QrLogo@2x.png",
+      "scale": "2x"
+    },
+    {
+      "idiom": "universal",
+      "filename": "QrLogo@3x.png",
+      "scale": "3x"
     }
   ],
-  "info" : {
-    "author" : "xcode",
-    "version" : 1
+  "info": {
+    "author": "xcode",
+    "version": 1
   }
 }

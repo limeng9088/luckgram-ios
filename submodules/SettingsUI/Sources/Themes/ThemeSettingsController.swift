@@ -534,6 +534,8 @@ public func themeSettingsController(context: AccountContext, focusOnItemTag: The
     if premiumConfiguration.isPremiumDisabled || context.account.testingEnvironment {
         appIcons = appIcons.filter { !$0.isPremium } 
     }
+    // Luckgram: there is one app icon; Telegram's alternate-icon picker is not shown (#95).
+    appIcons = []
     
     let availableAppIcons: Signal<[PresentationAppIcon], NoError> = .single(appIcons)
     let currentAppIconName = ValuePromise<String?>()
