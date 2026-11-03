@@ -506,6 +506,12 @@ public final class SharedAccountContextImpl: SharedAccountContext {
             }
         })
         
+        // Luckgram specs#82: Luckgram AI translates when Telegram's translation fails.
+        LuckgramTranslateService.install(context: { [weak self] in
+            return self?.activeAccountsValue?.primary
+        }, present: { [weak self] controller in
+            self?.mainWindow?.present(controller, on: .root)
+        })
         self.mediaManager.overlayMediaManager.updatePossibleEmbeddingItem = { [weak self] item in
             guard let strongSelf = self else {
                 return

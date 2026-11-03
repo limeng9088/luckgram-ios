@@ -47,6 +47,8 @@ func _internal_translate(network: Network, text: String, toLang: String, entitie
 
     return network.request(Api.functions.messages.translateText(flags: flags, peer: peer, id: messageId.flatMap { [$0] }, text: apiText, toLang: toLang, tone: tone.rawValue))
     |> mapError { error -> TranslationError in
+        // Luckgram spec 01: record Telegram's actual error (e.g. TRANSLATIONS_DISABLED_ALT) in the diagnostic log
+        luckgramTranslationFallback?.logTelegramFailure(source: "translate_text", code: Int(error.errorCode), text: error.errorDescription)
         if error.errorDescription.hasPrefix("FLOOD_WAIT") {
             return .limitExceeded
         } else if error.errorDescription == "MSG_ID_INVALID" {
@@ -917,6 +919,10 @@ func _internal_composeAIMessage(account: Account, text: ComposedRichMessage, mod
         
         return account.network.request(Api.functions.messages.composeMessageWithAI(flags: flags, text: inputText, translateToLang: translateToLang, tone: changeTone))
         |> `catch` { error -> Signal<Api.messages.ComposedMessageWithAI, TelegramAIComposeMessageError> in
+            if translateToLang != nil {
+                // Luckgram spec 01: record why Telegram's translation failed in the diagnostic log
+                luckgramTranslationFallback?.logTelegramFailure(source: LuckgramTranslateFallbackLogic.sourceMessage, code: Int(error.errorCode), text: error.errorDescription)
+            }
             if error.errorDescription == "AICOMPOSE_FLOOD_PREMIUM" {
                 return .fail(.nonPremiumFlood)
             } else {

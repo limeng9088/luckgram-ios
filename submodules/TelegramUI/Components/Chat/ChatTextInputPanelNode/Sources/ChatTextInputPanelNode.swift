@@ -6040,20 +6040,24 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
         self.translateOutIsBusy = true
         self.translateOutDisposable?.dispose()
         self.translateOutDisposable = (languageSignal
-        |> mapToSignal { toLang -> Signal<(String, NSAttributedString?), NoError> in
+        |> mapToSignal { toLang -> Signal<(String, LuckgramTranslateOut.Outcome), NoError> in
             return LuckgramTranslateOut.translate(context: context, text: sourceText, toLang: toLang)
             |> map { result in
                 return (toLang, result)
             }
         }
-        |> deliverOnMainQueue).startStrict(next: { [weak self] toLang, result in
+        |> deliverOnMainQueue).startStrict(next: { [weak self] toLang, outcome in
             guard let self else {
                 return
             }
             self.translateOutIsBusy = false
             let presentationData = context.sharedContext.currentPresentationData.with { $0 }
-            guard let result else {
-                self.interfaceInteraction?.presentController(UndoOverlayController(presentationData: presentationData, content: .info(title: nil, text: strings.failed, timeout: nil, customUndoText: nil), elevatedLayout: false, action: { _ in return false }), nil)
+            let result: NSAttributedString
+            switch outcome {
+            case let .translated(value):
+                result = value
+            case let .failed(reason):
+                self.interfaceInteraction?.presentController(UndoOverlayController(presentationData: presentationData, content: .info(title: nil, text: reason ?? strings.failed, timeout: nil, customUndoText: nil), elevatedLayout: false, action: { _ in return false }), nil)
                 return
             }
             // Don't overwrite what the user typed meanwhile.

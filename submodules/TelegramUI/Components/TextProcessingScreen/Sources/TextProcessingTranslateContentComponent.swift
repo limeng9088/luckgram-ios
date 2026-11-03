@@ -295,6 +295,31 @@ final class TextProcessingTranslateContentComponent: Component {
                         guard let self, let component = self.component else {
                             return
                         }
+                        // Luckgram specs#82: Telegram's translation failed (the error is in the diagnostic
+                        // log) → translate the plain text with Luckgram AI instead of showing nothing.
+                        if case .translate = mappedMode, case let .plain(sourceText, _) = component.inputText, let fallback = luckgramTranslationFallback {
+                            self.processDisposable = (fallback.translate(source: LuckgramTranslateFallbackLogic.sourceMessage, text: sourceText, toLang: result.language)
+                            |> deliverOnMainQueue).startStrict(next: { [weak self] translated in
+                                guard let self, let component = self.component else {
+                                    return
+                                }
+                                component.externalState.isProcessing = false
+                                component.externalState.result = (result.language, .plain(text: translated, entities: []), [])
+                                if !self.isUpdating {
+                                    self.state?.updated(transition: .spring(duration: 0.4))
+                                }
+                            }, error: { [weak self] fallbackError in
+                                guard let self, let component = self.component else {
+                                    return
+                                }
+                                component.externalState.isProcessing = false
+                                fallback.showFailure(fallbackError)
+                                if !self.isUpdating {
+                                    self.state?.updated(transition: .spring(duration: 0.4))
+                                }
+                            })
+                            return
+                        }
                         component.externalState.isProcessing = false
                         if case .nonPremiumFlood = error {
                             component.externalState.nonPremiumFloodTriggered = true
