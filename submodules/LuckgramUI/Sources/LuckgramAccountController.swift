@@ -292,7 +292,7 @@ public func luckgramAccountController(context: AccountContext) -> ViewController
 
 // MARK: - Luckgram Pro (S7)
 
-private final class LuckgramProState {
+private final class LuckgramProPageState {
     var billing: LuckgramAccountLogic.Billing?
     var loading = true
     var busy = false
@@ -305,7 +305,7 @@ private final class LuckgramProState {
 /// `GET /v1/billing/plans` when it reappears and a few more times until the end date moves.
 public func luckgramProController(context: AccountContext) -> ViewController {
     let tx = LuckgramAccountLogic.Texts(zh: LuckgramStrings.isChinese)
-    let state = LuckgramProState()
+    let state = LuckgramProPageState()
     let updated = ValuePromise<Int>(0, ignoreRepeated: false)
     var version = 0
     let refresh = {
