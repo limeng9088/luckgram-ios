@@ -30,6 +30,7 @@ enum SettingsSection: Int, CaseIterable {
     case payment
     case extra
     case support
+    case luckgramVersion
 }
 
 func settingsItems(data: PeerInfoScreenData?, context: AccountContext, presentationData: PresentationData, interaction: PeerInfoInteraction, isExpanded: Bool) -> [(AnyHashable, [PeerInfoScreenItem])] {
@@ -388,6 +389,13 @@ func settingsItems(data: PeerInfoScreenData?, context: AccountContext, presentat
     }))
     items[.support]!.append(PeerInfoScreenDisclosureItem(id: 2, text: presentationData.strings.Settings_Tips, icon: PresentationResourcesSettings.tips, action: {
         interaction.openSettings(.tips)
+    }))
+    
+    // Luckgram 28: version line under everything else; tap copies, long press opens the debug page (internal builds).
+    items[.luckgramVersion]!.append(PeerInfoScreenLuckgramVersionItem(id: 0, text: LuckgramVersionLine.current(), action: {
+        interaction.openSettings(.luckgramVersionCopy)
+    }, longTapAction: GlobalExperimentalSettings.isAppStoreBuild ? nil : {
+        interaction.openSettings(.luckgramDebug)
     }))
     
     var result: [(AnyHashable, [PeerInfoScreenItem])] = []

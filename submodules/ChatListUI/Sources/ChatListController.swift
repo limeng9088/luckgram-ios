@@ -753,11 +753,9 @@ public class ChatListControllerImpl: TelegramBaseController, ChatListController 
             })
         }
         
-        if enableDebugActions {
-            self.tabBarItemDebugTapAction = {
-                preconditionFailure("debug tap")
-            }
-        }
+        // Luckgram 28: tapping the Chats tab 10 times used to crash on purpose (Telegram's crash test).
+        // Testers hit it by accident, so it now does nothing; the debug page opens from a long press on
+        // the version line in Settings instead.
         
         if case .chatList(.root) = self.location {
             self.chatListDisplayNode.mainContainerNode.currentItemFilterUpdated = { [weak self] filter, fraction, transition, force in

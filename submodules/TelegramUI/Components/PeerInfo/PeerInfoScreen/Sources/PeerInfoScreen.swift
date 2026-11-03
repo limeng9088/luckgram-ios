@@ -200,6 +200,8 @@ enum PeerInfoSettingsSection {
     case wallet
     case luckgram
     case luckgramAccounts
+    case luckgramVersionCopy
+    case luckgramDebug
 }
 
 enum PeerInfoReportType {

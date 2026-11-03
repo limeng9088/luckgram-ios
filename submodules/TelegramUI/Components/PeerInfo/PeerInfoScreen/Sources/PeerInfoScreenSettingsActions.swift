@@ -296,6 +296,17 @@ extension PeerInfoScreenNode {
             push(luckgramSettingsController(context: self.context))
         case .luckgramAccounts:
             push(luckgramAccountsController(context: self.context))
+        case .luckgramVersionCopy:
+            UIPasteboard.general.string = LuckgramVersionLine.current()
+            let presentationData = self.context.sharedContext.currentPresentationData.with { $0 }
+            self.controller?.present(UndoOverlayController(presentationData: presentationData, content: .copy(text: LuckgramStrings.pick("已复制", "Copied")), elevatedLayout: false, animateInAsReplacement: false, action: { _ in return false }), in: .current)
+        case .luckgramDebug:
+            if GlobalExperimentalSettings.isAppStoreBuild {
+                return
+            }
+            if let controller = self.context.sharedContext.makeDebugSettingsController(context: self.context) {
+                push(controller)
+            }
         }
     }
 

@@ -19,6 +19,42 @@ import GenerateProfiles
 import PostboxImportCheck
 
 
+# Luckgram 28: Settings shows "Luckgram <version> (<CFBundleVersion>) · <commit>".
+LUCKGRAM_PLACEHOLDER_BUILD_NUMBER = '10000'
+
+
+def luckgram_git_commit():
+    """Short commit written to Info.plist (LuckgramGitCommit); never fails the build."""
+    sha = os.environ.get('GITHUB_SHA', '').strip().lower()
+    if 7 <= len(sha) <= 40 and all(c in '0123456789abcdef' for c in sha):
+        return sha[:7]
+    try:
+        out = subprocess.check_output(['git', 'rev-parse', '--short=7', 'HEAD'], stderr=subprocess.DEVNULL).decode('utf-8').strip().lower()
+        if 7 <= len(out) <= 40 and all(c in '0123456789abcdef' for c in out):
+            return out[:7]
+    except Exception:
+        pass
+    return 'unknown'
+
+
+def luckgram_build_number(requested):
+    """10000 is Make.py's placeholder; simulator/QA builds passed it verbatim and the app showed (10000).
+    Replace it with build.yml's formula: build_number_offset + commit count (+ GITHUB_RUN_NUMBER on CI)."""
+    if str(requested) != LUCKGRAM_PLACEHOLDER_BUILD_NUMBER:
+        return requested
+    try:
+        with open('build_number_offset') as file:
+            offset = int(file.read().strip())
+        count = int(subprocess.check_output(['git', 'rev-list', '--count', 'HEAD'], stderr=subprocess.DEVNULL).decode('utf-8').strip())
+    except Exception:
+        return requested
+    run_number = os.environ.get('GITHUB_RUN_NUMBER', '0').strip()
+    run_number = int(run_number) if run_number.isdigit() else 0
+    resolved = str(offset + count + run_number)
+    print('TelegramBuild: build number {} -> {}'.format(requested, resolved))
+    return resolved
+
+
 class ResolvedCodesigningData:
     def __init__(self, aps_environment, use_xcode_managed_codesigning):
         self.aps_environment = aps_environment
@@ -235,6 +271,7 @@ class BazelCommandLine:
     def get_define_arguments(self):
         args = [
             '--define=buildNumber={}'.format(self.build_number),
+            '--define=luckgramGitCommit={}'.format(luckgram_git_commit()),
         ]
         if self.embed_watch_app:
             args += ['--//Telegram:embedWatchApp']
@@ -528,7 +565,7 @@ def generate_project(bazel, arguments):
         additional_codesigning_output_path=None
     )
 
-    bazel_command_line.set_build_number(arguments.buildNumber)
+    bazel_command_line.set_build_number(luckgram_build_number(arguments.buildNumber))
 
     disable_extensions = False
     disable_provisioning_profiles = False
@@ -651,7 +688,7 @@ def build(bazel, arguments):
             )
         else:
             print('TelegramBuild: warning: --embedWatchApp requires a device configuration (debug_arm64 or release_arm64); ignored for simulator builds.')
-    bazel_command_line.set_build_number(arguments.buildNumber)
+    bazel_command_line.set_build_number(luckgram_build_number(arguments.buildNumber))
     bazel_command_line.set_custom_target(arguments.target)
     bazel_command_line.set_continue_on_error(arguments.continueOnError)
     bazel_command_line.set_show_actions(arguments.showActions)
