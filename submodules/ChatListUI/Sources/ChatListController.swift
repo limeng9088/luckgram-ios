@@ -6982,10 +6982,18 @@ private final class ChatListLocationContext {
     var storyButton: NavigationBarComponent.Button?
     /// Luckgram: AI assistant button (feature 18).
     var luckgramAIButton: NavigationBarComponent.Button?
+    fileprivate static let luckgramPlusIcon: UIImage? = UIImage(systemName: "plus", withConfiguration: UIImage.SymbolConfiguration(pointSize: 19.0, weight: .medium))?.withRenderingMode(.alwaysTemplate)
     private static let luckgramAIIcon: UIImage? = UIImage(systemName: "sparkles", withConfiguration: UIImage.SymbolConfiguration(pointSize: 19.0, weight: .medium))?.withRenderingMode(.alwaysTemplate)
     
+    /// Luckgram (specs#92): 「+」 menu (扫一扫 / 代理配置), rightmost.
+    var luckgramPlusButton: NavigationBarComponent.Button?
+    var luckgramProxyState: LuckgramScanLogic.ProxyState = .off
+
     var rightButtons: [NavigationBarComponent.Button] {
         var result: [NavigationBarComponent.Button] = []
+        if let luckgramPlusButton = self.luckgramPlusButton {
+            result.append(luckgramPlusButton)
+        }
         if let rightButton = self.rightButton {
             result.append(rightButton)
         }
@@ -7384,6 +7392,7 @@ private final class ChatListLocationContext {
                 self.rightButton = nil
                 self.storyButton = nil
                 self.proxyButton = nil
+                self.luckgramPlusButton = nil
             }
             let title = !stateAndFilterId.state.selectedPeerIds.isEmpty ? presentationData.strings.ChatList_SelectedChats(Int32(stateAndFilterId.state.selectedPeerIds.count)) : defaultTitle
             
@@ -7400,6 +7409,7 @@ private final class ChatListLocationContext {
                 self.rightButton = nil
                 self.storyButton = nil
                 self.proxyButton = nil
+                self.luckgramPlusButton = nil
             }
             self.leftButton = NavigationBarComponent.Button(id: "done",
                 content: .text(title: presentationData.strings.Common_Done, isBold: true),
@@ -7458,6 +7468,19 @@ private final class ChatListLocationContext {
                     )
                 } else {
                     self.luckgramAIButton = nil
+                }
+                if !isReorderingTabs, LuckgramSettings.shared.isEnabled(LuckgramScanLogic.featureKey) {
+                    self.luckgramPlusButton = NavigationBarComponent.Button(id: "luckgram_plus",
+                        content: .image(ChatListLocationContext.luckgramPlusIcon ?? UIImage()),
+                        action: { [weak self] sourceView in
+                            guard let self, let parentController = self.parentController else {
+                                return
+                            }
+                            luckgramShowChatListPlusMenu(context: self.context, controller: parentController, sourceView: sourceView, proxyState: self.luckgramProxyState)
+                        }
+                    )
+                } else {
+                    self.luckgramPlusButton = nil
                 }
                 
                 if isReorderingTabs {
@@ -7522,6 +7545,12 @@ private final class ChatListLocationContext {
             }
             
             let (hasProxy, connectsViaProxy) = proxy
+            switch networkState {
+            case .online, .updating:
+                self.luckgramProxyState = LuckgramScanLogic.proxyState(enabled: connectsViaProxy, connected: true)
+            default:
+                self.luckgramProxyState = LuckgramScanLogic.proxyState(enabled: connectsViaProxy, connected: false)
+            }
             let (isPasscodeSet, isManuallyLocked) = passcode
             var checkProxy = false
             switch networkState {
