@@ -84,4 +84,19 @@ final class LuckgramWelcomeLogicTests: XCTestCase {
         // Only benefits Luckgram Pro really has (S7): AI quota, device sharing, Stars.
         XCTAssertEqual(en.proFeatures.count, 3)
     }
+
+    // specs#76 P0: "Get Started" always does something.
+    func testStartAlwaysResponds() {
+        typealias L = LuckgramWelcomeLogic
+        // not accepted: the alert again unless it is on screen right now (never stuck on a flag)
+        XCTAssertEqual(L.startAction(accepted: false, privacyOnScreen: false, onboarded: false, canPush: true), .showPrivacy)
+        XCTAssertEqual(L.startAction(accepted: false, privacyOnScreen: false, onboarded: true, canPush: false), .showPrivacy)
+        XCTAssertEqual(L.startAction(accepted: false, privacyOnScreen: true, onboarded: false, canPush: true), .waitForPrivacy)
+        // accepted: steps once, then login; no navigation controller -> login directly
+        XCTAssertEqual(L.startAction(accepted: true, privacyOnScreen: false, onboarded: false, canPush: true), .showSteps)
+        XCTAssertEqual(L.startAction(accepted: true, privacyOnScreen: false, onboarded: false, canPush: false), .login)
+        XCTAssertEqual(L.startAction(accepted: true, privacyOnScreen: false, onboarded: true, canPush: true), .login)
+        // a stale "on screen" after accepting doesn't block
+        XCTAssertEqual(L.startAction(accepted: true, privacyOnScreen: true, onboarded: true, canPush: true), .login)
+    }
 }

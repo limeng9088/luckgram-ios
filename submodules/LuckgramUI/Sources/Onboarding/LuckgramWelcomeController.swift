@@ -2,6 +2,7 @@ import Foundation
 import UIKit
 import AsyncDisplayKit
 import Display
+import SwiftSignalKit
 import AccountContext
 import PresentationDataUtils
 
@@ -15,7 +16,7 @@ public final class LuckgramWelcomeController: ViewController {
     private let getStarted: () -> Void
     private let texts = LuckgramWelcomeLogic.Texts(zh: LuckgramStrings.isChinese)
     private var asked = false
-    private var alertShown = false
+    private weak var privacyAlert: ViewController?
 
     public static var isAccepted: Bool {
         return LuckgramPrivacyAlert.isAccepted
@@ -59,43 +60,114 @@ public final class LuckgramWelcomeController: ViewController {
         super.viewDidAppear(animated)
         if !self.asked && LuckgramWelcomeLogic.shouldAskPrivacy(accepted: LuckgramWelcomeController.isAccepted) {
             self.asked = true
-            self.showPrivacy(thenStart: false)
+            // After the first layout pass: on the first setViewControllers of the auth flow the
+            // page may not be in a window yet and an alert presented now is dropped.
+            DispatchQueue.main.async { [weak self] in
+                guard let self, !LuckgramWelcomeController.isAccepted else {
+                    return
+                }
+                self.showPrivacy(thenStart: false)
+            }
         }
     }
 
+    /// specs#76 P0: "Get Started" always responds. The alert is shown again unless it is really
+    /// on screen (presenting can silently do nothing while this page has no window), and login
+    /// opens directly when the steps can't be pushed.
     private func start() {
-        if LuckgramWelcomeLogic.shouldAskPrivacy(accepted: LuckgramWelcomeController.isAccepted) {
+        let action = LuckgramWelcomeLogic.startAction(
+            accepted: LuckgramWelcomeController.isAccepted,
+            privacyOnScreen: self.privacyOnScreen,
+            onboarded: LuckgramSettings.shared.bool(LuckgramWelcomeLogic.onboardedKey, default: false),
+            canPush: self.navigationController is NavigationController
+        )
+        LuckgramWelcomeController.log("start", "\(action) window=\(self.window != nil) nav=\(self.navigationController is NavigationController)")
+        switch action {
+        case .showPrivacy:
             self.showPrivacy(thenStart: true)
-            return
-        }
-        if LuckgramWelcomeLogic.shouldShowSteps(onboarded: LuckgramSettings.shared.bool(LuckgramWelcomeLogic.onboardedKey, default: false)) {
+        case .waitForPrivacy:
+            break
+        case .showSteps:
             // Steps on top of this page: back from the first step returns here.
             let getStarted = self.getStarted
-            self.push(LuckgramOnboardingController(finish: {
+            let steps = LuckgramOnboardingController(finish: {
                 LuckgramSettings.shared.setBool(LuckgramWelcomeLogic.onboardedKey, true)
                 getStarted()
-            }))
-        } else {
+            })
+            self.push(steps)
+            // The push waits for the steps page to be ready; if this page is still on top a moment
+            // later it didn't happen (or was replaced), so go on to login instead of doing nothing.
+            Queue.mainQueue().after(1.5, { [weak self, weak steps] in
+                guard let self, let nav = self.navigationController, nav.viewControllers.last === self else {
+                    return
+                }
+                if let steps, nav.viewControllers.contains(where: { $0 === steps }) {
+                    return
+                }
+                LuckgramWelcomeController.log("steps", "push-failed")
+                self.getStarted()
+            })
+        case .login:
             self.getStarted()
         }
     }
 
+    private var privacyOnScreen: Bool {
+        guard let alert = self.privacyAlert, alert.isNodeLoaded else {
+            return false
+        }
+        return alert.displayNode.view.window != nil
+    }
+
     private func showPrivacy(thenStart: Bool) {
-        if self.alertShown {
+        if self.privacyOnScreen {
             return
         }
-        self.alertShown = true
+        // An alert that never appeared or was removed some other way: drop it and show a new one.
+        self.privacyAlert?.dismiss()
+        self.privacyAlert = nil
         LuckgramPrivacyAlert.show(sharedContext: self.sharedContext, updated: false, openUrl: self.openUrl, present: { [weak self] c in
-            self?.present(c, in: .window(.root))
+            guard let self else {
+                return
+            }
+            self.privacyAlert = c
+            if let window = self.window {
+                window.present(c, on: .root, blockInteraction: false, completion: {})
+            } else if let window = self.sharedContext.mainWindow {
+                LuckgramWelcomeController.log("privacy", "no-window-fallback")
+                window.present(c, on: .root)
+            } else {
+                LuckgramWelcomeController.log("privacy", "no-window")
+            }
         }, onAccepted: { [weak self] in
             guard let self else {
                 return
             }
-            self.alertShown = false
+            self.privacyAlert = nil
+            LuckgramWelcomeController.log("privacy", "accepted")
             if thenStart {
                 self.start()
             }
         })
+        // Check the alert really came up; if not, the next tap (or this retry) shows it again.
+        Queue.mainQueue().after(1.0, { [weak self] in
+            guard let self, !LuckgramWelcomeController.isAccepted, !self.privacyOnScreen else {
+                return
+            }
+            LuckgramWelcomeController.log("privacy", "not-on-screen window=\(self.window != nil)")
+            if self.window != nil {
+                self.showPrivacy(thenStart: false)
+            }
+        })
+    }
+
+    private static func log(_ step: String, _ detail: String) {
+        var e = LuckgramDiagLog.Entry()
+        e.timeMs = Int64(Date().timeIntervalSince1970 * 1000)
+        e.feature = "welcome"
+        e.target = step
+        e.failure = detail
+        LuckgramNet.shared.log(e)
     }
 }
 

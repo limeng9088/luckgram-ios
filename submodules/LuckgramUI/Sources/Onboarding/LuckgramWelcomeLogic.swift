@@ -58,6 +58,26 @@ public enum LuckgramWelcomeLogic {
     }
 
     /// The onboarding steps run once; later Get Started goes straight to login.
+    /// What "Get Started" does. It always does something: the privacy alert is shown again unless
+    /// it is on screen right now, and login opens directly when the steps can't be pushed.
+    public enum StartAction: Equatable {
+        case showPrivacy
+        /// The alert is on screen (the tap reached the page behind it): nothing to do.
+        case waitForPrivacy
+        case showSteps
+        case login
+    }
+
+    public static func startAction(accepted: Bool, privacyOnScreen: Bool, onboarded: Bool, canPush: Bool) -> StartAction {
+        if shouldAskPrivacy(accepted: accepted) {
+            return privacyOnScreen ? .waitForPrivacy : .showPrivacy
+        }
+        if shouldShowSteps(onboarded: onboarded) && canPush {
+            return .showSteps
+        }
+        return .login
+    }
+
     public static func shouldShowSteps(onboarded: Bool) -> Bool {
         return !onboarded
     }

@@ -1269,7 +1269,8 @@ public final class AuthorizationSequenceController: NavigationController, ASAuth
             switch state {
                 case .empty:
                     if let _ = self.viewControllers.last as? AuthorizationSequenceSplashController {
-                    } else if let _ = self.viewControllers.last as? LuckgramWelcomeController {
+                    } else if self.viewControllers.contains(where: { $0 is LuckgramWelcomeController }) {
+                        // specs#76: keep the welcome page and the steps pushed on top of it
                     } else {
                         var controllers: [ViewController] = []
                         if LuckgramWelcomeLogic.shouldShowWelcome(otherAccounts: self.otherAccountPhoneNumbers.1.count) {
