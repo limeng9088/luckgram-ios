@@ -2,11 +2,14 @@ import Foundation
 import UIKit
 import AccountContext
 
-/// spec 22 需求 1: presets, the user's agents and "创建你自己的智能体".
+/// spec 22 需求 1: presets, the user's agents and "创建你自己的智能体". spec 30: with the market on,
+/// this is the "我的" tab (plus market agents the user has chatted with) next to "市场".
 final class LuckgramAgentsController: UITableViewController {
     private let context: AccountContext
     private weak var host: LuckgramAIChatHost?
     private var custom: [LuckgramAgents.Agent] = []
+    /// spec 30 需求 6: market agents the user has chatted with.
+    private var market: [LuckgramAgents.Agent] = []
 
     private var accountId: Int64 {
         return self.context.account.id.int64
@@ -30,25 +33,39 @@ final class LuckgramAgentsController: UITableViewController {
 
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
+        self.reloadAgents()
+    }
+
+    private func reloadAgents() {
         self.custom = LuckgramAgents.custom(accountId: self.accountId)
+        self.market = LuckgramAgents.marketAgents(accountId: self.accountId)
         self.tableView.reloadData()
     }
 
     override func numberOfSections(in tableView: UITableView) -> Int {
-        return 2
+        return self.market.isEmpty ? 2 : 3
     }
 
     override func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? {
+        if section == 2 {
+            return LuckgramStrings.pick("来自市场", "From the market")
+        }
         return section == 0 ? LuckgramStrings.pick("热门智能体", "Popular agents") : LuckgramStrings.pick("我的智能体", "My agents")
     }
 
     override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
+        if section == 2 {
+            return self.market.count
+        }
         return section == 0 ? LuckgramAgents.presets.count : self.custom.count + 1
     }
 
     private func agent(at indexPath: IndexPath) -> LuckgramAgents.Agent? {
         if indexPath.section == 0 {
             return LuckgramAgents.presets[indexPath.row]
+        }
+        if indexPath.section == 2 {
+            return self.market[indexPath.row]
         }
         return indexPath.row < self.custom.count ? self.custom[indexPath.row] : nil
     }
@@ -92,6 +109,15 @@ final class LuckgramAgentsController: UITableViewController {
                 self.tableView.reloadData()
             }
         ]
+        if let market = agent.market {
+            actions.append(UIAction(title: LuckgramStrings.pick("从「我的」移除", "Remove from My agents"), image: UIImage(systemName: "trash"), attributes: .destructive) { [weak self] _ in
+                guard let self else {
+                    return
+                }
+                LuckgramAgentMarket.remove(market.id, context: self.context)
+                self.reloadAgents()
+            })
+        }
         if !agent.isPreset {
             actions.append(UIAction(title: LuckgramStrings.pick("编辑", "Edit"), image: UIImage(systemName: "pencil")) { [weak self] _ in
                 guard let self else {

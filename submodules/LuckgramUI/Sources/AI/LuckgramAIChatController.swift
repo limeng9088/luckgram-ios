@@ -434,7 +434,7 @@ public final class LuckgramAIChatController: UIViewController, LuckgramAIChatHos
         self.requestDisposable?.dispose()
         self.requestDisposable = (LuckgramAI.shared.chat(context: context, present: { [weak self] c in
             self?.presentAlert(c)
-        }, task: conversation.task, messages: messages, stream: true)
+        }, task: conversation.task, params: conversation.requestParams, messages: messages, stream: true)
         |> deliverOnMainQueue).startStrict(next: { [weak self] event in
             guard let self, self.streaming === reply else {
                 return
