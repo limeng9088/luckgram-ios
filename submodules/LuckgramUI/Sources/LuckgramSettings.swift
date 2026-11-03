@@ -1,5 +1,6 @@
 import Foundation
 import SwiftSignalKit
+import LuckgramAccountsStore
 
 /// Luckgram switch and config storage (same name and keys as Android `org.telegram.luckgram.LuckgramSettings`).
 ///
@@ -27,6 +28,10 @@ public final class LuckgramSettings {
             // earlier installation left behind.
             LuckgramKeychain.delete(account: LuckgramKeychain.deviceTokenAccount)
             self.defaults.set(true, forKey: LuckgramSettings.installMarkerKey)
+        }
+        // Luckgram 32: account limit from remote config + Pro status.
+        LuckgramAccountsStore.maxAccountsProvider = {
+            return luckgramMaxAccounts()
         }
     }
 

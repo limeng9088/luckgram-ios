@@ -5,9 +5,9 @@ import TelegramUIPreferences
 import AccountContext
 import LuckgramAccountsStore
 
-// Luckgram 09 (more accounts): 20 accounts for everyone, no Premium tier.
-public let maximumNumberOfAccounts = LuckgramAccountsStore.maxAccounts
-public let maximumPremiumNumberOfAccounts = LuckgramAccountsStore.maxAccounts
+// Luckgram 09/32 (more accounts): free 20 / Pro 50 from remote config; read on every use.
+public var maximumNumberOfAccounts: Int { LuckgramAccountsStore.maxAccounts }
+public var maximumPremiumNumberOfAccounts: Int { LuckgramAccountsStore.maxAccounts }
 
 /// Luckgram 09: the account as shown in account lists, with its local name in front ("Work (Noah)").
 private func luckgramDisplayPeer(_ peer: EnginePeer, accountId: AccountRecordId) -> EnginePeer {

@@ -107,7 +107,8 @@ public final class AuthorizationSequencePhoneEntryController: ViewController, MF
     }
     
     @objc private func luckgramRestorePressed() {
-        luckgramStartBackupRestore(sharedContext: self.sharedContext, present: { [weak self] controller in
+        // Luckgram 32: file or cloud (cloud needs any account logged in on this device).
+        luckgramPresentRestoreChoice(sharedContext: self.sharedContext, present: { [weak self] controller in
             self?.present(controller, in: .window(.root))
         }, push: { [weak self] controller in
             (self?.navigationController as? NavigationController)?.pushViewController(controller)

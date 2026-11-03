@@ -45,6 +45,8 @@ jobs:
           LuckgramUI|submodules/LuckgramUI/Sources/Writing/LuckgramAIWritingEntities.swift|submodules/LuckgramUI/Tests/LuckgramAIWritingEntitiesTests.swift
           LuckgramUI|submodules/LuckgramUI/Sources/Onboarding/LuckgramWelcomeLogic.swift|submodules/LuckgramUI/Tests/LuckgramWelcomeLogicTests.swift
           LuckgramUI|submodules/LuckgramUI/Sources/Diag/LuckgramDiagLogic.swift|submodules/LuckgramUI/Tests/LuckgramDiagLogicTests.swift
+          LuckgramUI|submodules/LuckgramUI/Sources/LuckgramAccountLimit.swift|submodules/LuckgramUI/Tests/LuckgramAccountLimitTests.swift
+          LuckgramUI|submodules/LuckgramUI/Sources/Backup/LuckgramCloudBackupLogic.swift|submodules/LuckgramUI/Tests/LuckgramCloudBackupLogicTests.swift
           LuckgramUI|submodules/LuckgramUI/Sources/Diag/LuckgramEndpoints.swift|submodules/LuckgramUI/Tests/LuckgramEndpointsTests.swift
           LuckgramUI|submodules/LuckgramUI/Sources/LuckgramVersionLine.swift|submodules/LuckgramUI/Tests/LuckgramVersionLineTests.swift
           "

@@ -37,6 +37,16 @@ public enum LuckgramBackup {
         }
     }
 
+    /// Every logged-in account that can be exported (32: cloud backup covers all accounts).
+    public static func collectAll(accountManager: AccountManager<TelegramAccountManagerTypes>) -> Signal<[LuckgramBackupFormat.Account], NoError> {
+        return accountManager.transaction { transaction -> [AccountRecordId] in
+            return transaction.getRecords().filter { !isLoggedOut($0) && backupData($0) != nil }.map(\.id)
+        }
+        |> mapToSignal { recordIds -> Signal<[LuckgramBackupFormat.Account], NoError> in
+            return collect(accountManager: accountManager, recordIds: recordIds)
+        }
+    }
+
     /// User ids of the accounts logged in on this device.
     public static func loggedInUserIds(accountManager: AccountManager<TelegramAccountManagerTypes>) -> Signal<Set<Int64>, NoError> {
         return accountManager.transaction { transaction -> Set<Int64> in
