@@ -1,4 +1,5 @@
 import Foundation
+import LuckgramUI
 import UIKit
 import Display
 import AsyncDisplayKit
@@ -111,6 +112,16 @@ public final class AuthorizationSequenceCodeEntryController: ViewController {
             self?.openFragment?(url)
         }
         
+        // Luckgram 97: "How can I receive the code?"
+        self.controllerNode.luckgramPresentHelp = { [weak self] sourceView in
+            guard let self else {
+                return
+            }
+            LuckgramStrings.appLanguageCode = self.strings.primaryComponent.languageCode
+            luckgramPresentCodeHelp(present: { [weak self] controller in
+                self?.sharedContext.applicationBindings.presentNativeController(controller)
+            }, sourceView: sourceView)
+        }
         self.controllerNode.requestNextOption = { [weak self] in
             self?.requestNextOption?()
         }
