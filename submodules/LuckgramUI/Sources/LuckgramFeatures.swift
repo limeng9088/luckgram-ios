@@ -123,8 +123,8 @@ public enum LuckgramFeatures {
             description: ("把聊天从列表里藏起来，下拉列表找回", "Hide chats from the list; pull down to find them"))
             .subpage { context in luckgramHiddenChatsSettingsController(context: context) })
         add(.toggle(LuckgramScanLogic.featureKey, group: .profileOrganize, default: true,
-            title: ("聊天列表「+」菜单", "Chat list \"+\" menu"),
-            description: ("聊天列表右上角「+」：扫一扫加好友、代理配置", "The \"+\" at the top right of the chat list: scan to add friends, proxy settings")))
+            title: ("扫一扫和代理配置", "Scan and proxy settings"),
+            description: ("聊天列表右上角「⋯」菜单：扫一扫加好友、代理配置", "The \"⋯\" menu at the top right of the chat list: scan to add friends, proxy settings")))
 
         // ---- 发现 / Discover
         add(.toggle(NearbyLogic.featureKey, group: .discover, default: true,

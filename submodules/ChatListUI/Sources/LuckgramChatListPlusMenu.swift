@@ -26,7 +26,7 @@ private final class LuckgramPlusMenuReferenceSource: ContextReferenceContentSour
     }
 }
 
-/// specs#92: the chat list 「+」 menu: 扫一扫, 代理配置 (with its state).
+/// specs#92 / #99: the chat list 「⋯」 more menu: 扫一扫, 代理配置 (with its state).
 func luckgramShowChatListPlusMenu(context: AccountContext, controller: ChatListControllerImpl, sourceView: UIView, proxyState: LuckgramScanLogic.ProxyState) {
     let presentationData = context.sharedContext.currentPresentationData.with { $0 }
     var items: [ContextMenuItem] = []

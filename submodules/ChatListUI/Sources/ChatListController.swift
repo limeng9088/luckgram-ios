@@ -6982,10 +6982,8 @@ private final class ChatListLocationContext {
     var storyButton: NavigationBarComponent.Button?
     /// Luckgram: AI assistant button (feature 18).
     var luckgramAIButton: NavigationBarComponent.Button?
-    fileprivate static let luckgramPlusIcon: UIImage? = UIImage(systemName: "plus", withConfiguration: UIImage.SymbolConfiguration(pointSize: 19.0, weight: .medium))?.withRenderingMode(.alwaysTemplate)
-    private static let luckgramAIIcon: UIImage? = UIImage(systemName: "sparkles", withConfiguration: UIImage.SymbolConfiguration(pointSize: 19.0, weight: .medium))?.withRenderingMode(.alwaysTemplate)
     
-    /// Luckgram (specs#92): 「+」 menu (扫一扫 / 代理配置), rightmost.
+    /// Luckgram (specs#92 → #99): 「⋯」 more menu (扫一扫 / 代理配置), rightmost.
     var luckgramPlusButton: NavigationBarComponent.Button?
     var luckgramProxyState: LuckgramScanLogic.ProxyState = .off
 
@@ -7456,22 +7454,12 @@ private final class ChatListLocationContext {
                         }
                     )
                 }
-                if !isReorderingTabs, LuckgramAIChatController.isEnabled, let icon = ChatListLocationContext.luckgramAIIcon {
-                    self.luckgramAIButton = NavigationBarComponent.Button(id: "luckgram_ai",
-                        content: .image(icon),
-                        action: { [weak self] _ in
-                            guard let self else {
-                                return
-                            }
-                            LuckgramAIChatController.openLatest(context: self.context)
-                        }
-                    )
-                } else {
-                    self.luckgramAIButton = nil
-                }
+                // specs#99: no ✦ AI button (the pinned 「Luckgram AI」 row stays, 18); 扫一扫 / 代理配置 live in
+                // one 「⋯」 more menu, like Android's 「⋮」 (the root chat list has no other more menu).
+                self.luckgramAIButton = nil
                 if !isReorderingTabs, LuckgramSettings.shared.isEnabled(LuckgramScanLogic.featureKey) {
-                    self.luckgramPlusButton = NavigationBarComponent.Button(id: "luckgram_plus",
-                        content: .image(ChatListLocationContext.luckgramPlusIcon ?? UIImage()),
+                    self.luckgramPlusButton = NavigationBarComponent.Button(id: "luckgram_more",
+                        content: .more,
                         action: { [weak self] sourceView in
                             guard let self, let parentController = self.parentController else {
                                 return
