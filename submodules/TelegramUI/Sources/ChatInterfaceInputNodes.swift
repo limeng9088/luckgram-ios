@@ -11,7 +11,7 @@ import ChatInputPanelNode
 import ChatButtonKeyboardInputNode
 import ChatTextInputPanelNode
 
-func inputNodeForChatPresentationIntefaceState(_ chatPresentationInterfaceState: ChatPresentationInterfaceState, context: AccountContext, currentNode: ChatInputNode?, interfaceInteraction: ChatPanelInterfaceInteraction?, controllerInteraction: ChatControllerInteraction, inputPanelNode: ChatInputPanelNode?, makeMediaInputNode: () -> ChatInputNode?) -> ChatInputNode? {
+func inputNodeForChatPresentationIntefaceState(_ chatPresentationInterfaceState: ChatPresentationInterfaceState, context: AccountContext, currentNode: ChatInputNode?, interfaceInteraction: ChatPanelInterfaceInteraction?, controllerInteraction: ChatControllerInteraction, inputPanelNode: ChatInputPanelNode?, makeMediaInputNode: () -> ChatInputNode?, makeLuckgramPlusNode: () -> ChatInputNode?) -> ChatInputNode? {
     if let inputPanelNode = inputPanelNode, !(inputPanelNode is ChatTextInputPanelNode) {
         return nil
     }
@@ -36,6 +36,12 @@ func inputNodeForChatPresentationIntefaceState(_ chatPresentationInterfaceState:
                 inputNode.interfaceInteraction = interfaceInteraction
                 return inputNode
             }
+        }
+    case .luckgramPlus:
+        if let currentNode = currentNode as? LuckgramPlusPanelInputNode {
+            return currentNode
+        } else {
+            return makeLuckgramPlusNode()
         }
     case .none, .text:
         return nil

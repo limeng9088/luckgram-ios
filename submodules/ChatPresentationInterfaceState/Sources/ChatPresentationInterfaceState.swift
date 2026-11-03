@@ -31,6 +31,8 @@ public enum ChatInputMode: Equatable {
     case text
     case media(mode: ChatMediaInputMode, expanded: ChatMediaInputExpanded?, focused: Bool)
     case inputButtons(persistent: Bool)
+    /// Luckgram specs#94: the 「+」 grid panel in the keyboard's place.
+    case luckgramPlus
 }
 
 public enum ChatTitlePanelContext: Equatable, Comparable {

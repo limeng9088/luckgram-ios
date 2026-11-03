@@ -1886,6 +1886,8 @@ class ChatControllerNode: ASDisplayNode, ASScrollViewDelegate {
         
         let inputNodeForState = inputNodeForChatPresentationIntefaceState(self.chatPresentationInterfaceState, context: self.context, currentNode: self.inputNode, interfaceInteraction: self.interfaceInteraction, controllerInteraction: self.controllerInteraction, inputPanelNode: self.inputPanelNode, makeMediaInputNode: {
             return self.makeMediaInputNode()
+        }, makeLuckgramPlusNode: {
+            return self.makeLuckgramPlusNode()
         })
         
         var insets: UIEdgeInsets
@@ -4154,6 +4156,16 @@ class ChatControllerNode: ASDisplayNode, ASScrollViewDelegate {
         self.setNeedsLayout()
     }
     
+    /// Luckgram specs#94: the 「+」 grid panel.
+    private func makeLuckgramPlusNode() -> ChatInputNode? {
+        let node = LuckgramPlusPanelInputNode(accountPeerId: self.context.account.peerId)
+        node.interfaceInteraction = self.interfaceInteraction
+        node.performAction = { [weak self] action, dimmed in
+            self?.controller?.luckgramPerformPlusAction(action, dimmed: dimmed)
+        }
+        return node
+    }
+
     private func makeMediaInputNode() -> ChatInputNode? {
         guard let inputMediaNodeData = self.inputMediaNodeData else {
             return nil

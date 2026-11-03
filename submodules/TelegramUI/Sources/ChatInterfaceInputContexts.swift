@@ -159,7 +159,7 @@ func inputTextPanelStateForChatPresentationInterfaceState(_ chatPresentationInte
             return ChatTextInputPanelState(accessoryItems: accessoryItems, contextPlaceholder: contextPlaceholder, mediaRecordingState: chatPresentationInterfaceState.inputTextPanelState.mediaRecordingState)
         case .inputButtons:
             return ChatTextInputPanelState(accessoryItems: [.botInput(isEnabled: true, inputMode: .keyboard)], contextPlaceholder: contextPlaceholder, mediaRecordingState: chatPresentationInterfaceState.inputTextPanelState.mediaRecordingState)
-        case .none, .text:
+        case .none, .text, .luckgramPlus:
             if let _ = chatPresentationInterfaceState.interfaceState.editMessage {
                 accessoryItems.append(.input(isEnabled: true, inputMode: .emoji))
                 
@@ -255,7 +255,9 @@ func inputTextPanelStateForChatPresentationInterfaceState(_ chatPresentationInte
                 }
                 
                 // Luckgram: AI writing ✦ button (feature 21): with text, or when an item works on an empty field (20).
-                if canSendTextMessages, !hasForward, LuckgramAIWriting.isEnabled {
+                // Luckgram specs#94: with the compact bar these four live in the 「+」 panel instead.
+                let luckgramCompactBar = LuckgramCompactInput.isEnabled
+                if canSendTextMessages, !hasForward, LuckgramAIWriting.isEnabled, !luckgramCompactBar {
                     if case .customChatContents = chatPresentationInterfaceState.subject {
                     } else if !isTextEmpty || LuckgramAIWriting.hasItemsForEmptyText(peer: chatPresentationInterfaceState.renderedPeer?.peer.flatMap(EnginePeer.init)) {
                         accessoryItems.append(.aiWriting)
@@ -263,7 +265,7 @@ func inputTextPanelStateForChatPresentationInterfaceState(_ chatPresentationInte
                 }
                 
                 // Luckgram: voice input button (feature 17), also while typing: the text goes in at the cursor.
-                if canSendTextMessages, !hasForward, LuckgramSettings.shared.isEnabled(LuckgramFeatures.dictation) {
+                if canSendTextMessages, !hasForward, LuckgramSettings.shared.isEnabled(LuckgramFeatures.dictation), !luckgramCompactBar {
                     if case .customChatContents = chatPresentationInterfaceState.subject {
                     } else {
                         accessoryItems.append(.dictation)
@@ -271,7 +273,7 @@ func inputTextPanelStateForChatPresentationInterfaceState(_ chatPresentationInte
                 }
                 
                 // Luckgram: quick reply templates button (feature 02).
-                if isTextEmpty, canSendTextMessages, !hasForward, LuckgramQuickReplies.isEnabled, chatPresentationInterfaceState.chatLocation.peerId != nil {
+                if isTextEmpty, canSendTextMessages, !hasForward, LuckgramQuickReplies.isEnabled, !luckgramCompactBar, chatPresentationInterfaceState.chatLocation.peerId != nil {
                     var isRegularChat = true
                     if case .customChatContents = chatPresentationInterfaceState.subject {
                         isRegularChat = false
@@ -301,7 +303,7 @@ func inputTextPanelStateForChatPresentationInterfaceState(_ chatPresentationInte
                 }
                 
                 // Luckgram: "translate before sending" sits right next to the send button while there is text.
-                if canSendTextMessages, !chatPresentationInterfaceState.interfaceState.composeInputState.content.isEmptyWhitespaceTrimmed, LuckgramTranslateOut.isEnabled, chatPresentationInterfaceState.chatLocation.peerId != nil, !(chatPresentationInterfaceState.renderedPeer?.peer is TelegramSecretChat) {
+                if canSendTextMessages, !luckgramCompactBar, !chatPresentationInterfaceState.interfaceState.composeInputState.content.isEmptyWhitespaceTrimmed, LuckgramTranslateOut.isEnabled, chatPresentationInterfaceState.chatLocation.peerId != nil, !(chatPresentationInterfaceState.renderedPeer?.peer is TelegramSecretChat) {
                     var isCustomContents = false
                     if case .customChatContents = chatPresentationInterfaceState.subject {
                         isCustomContents = true
