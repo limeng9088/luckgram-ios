@@ -264,7 +264,7 @@ final class LuckgramAgentMarketController: UIViewController, UITableViewDataSour
     private let pageDisposable = MetaDisposable()
     private let categoriesDisposable = MetaDisposable()
     private var generation = 0
-    private var searchTimer: Timer?
+    private var searchTimer: Foundation.Timer?
 
     private var accountId: Int64 {
         return self.context.account.id.int64
@@ -491,7 +491,7 @@ final class LuckgramAgentMarketController: UIViewController, UITableViewDataSour
         }
         self.query = q
         self.searchTimer?.invalidate()
-        self.searchTimer = Timer.scheduledTimer(withTimeInterval: 0.35, repeats: false) { [weak self] _ in
+        self.searchTimer = Foundation.Timer.scheduledTimer(withTimeInterval: 0.35, repeats: false) { [weak self] _ in
             self?.reload()
         }
     }
