@@ -292,7 +292,7 @@ public func luckgramAccountController(context: AccountContext) -> ViewController
 
 // MARK: - Luckgram Pro (S7)
 
-private final class LuckgramProState {
+private final class LuckgramProPageState {
     var billing: LuckgramAccountLogic.Billing?
     var loading = true
     var busy = false
@@ -305,7 +305,7 @@ private final class LuckgramProState {
 /// `GET /v1/billing/plans` when it reappears and a few more times until the end date moves.
 public func luckgramProController(context: AccountContext) -> ViewController {
     let tx = LuckgramAccountLogic.Texts(zh: LuckgramStrings.isChinese)
-    let state = LuckgramProState()
+    let state = LuckgramProPageState()
     let updated = ValuePromise<Int>(0, ignoreRepeated: false)
     var version = 0
     let refresh = {
@@ -343,6 +343,7 @@ public func luckgramProController(context: AccountContext) -> ViewController {
                 if let now = state.billing?.proExpiresAt, now != state.expiresBefore {
                     state.refreshesLeft = 0
                     refresh()
+                    LuckgramPro.shared.refresh() // 29: payment went through
                     luckgramToast(context, tx.proActive, present: presentImpl)
                 } else if state.refreshesLeft > 0 {
                     refreshAfterPurchase()
@@ -423,6 +424,7 @@ public func luckgramProController(context: AccountContext) -> ViewController {
     }
     controller.didAppear = { _ in
         load()
+        LuckgramPro.shared.refresh() // 29: same state everywhere
     }
     return controller
 }
