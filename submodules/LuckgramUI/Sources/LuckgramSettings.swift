@@ -234,6 +234,7 @@ public final class LuckgramSettings {
             LuckgramAIStore.accountRemoved(accountId: accountId)
         }
         if noAccountsLeft {
+            LuckgramCloudBackup.forgetPassword() // 32: the remembered backup password lives in the Keychain
             for key in self.defaults.dictionaryRepresentation().keys where key != LuckgramSettings.installMarkerKey {
                 self.defaults.removeObject(forKey: key)
             }

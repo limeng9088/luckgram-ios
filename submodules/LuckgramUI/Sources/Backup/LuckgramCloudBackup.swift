@@ -9,12 +9,11 @@ public enum LuckgramCloudBackupStrings {
     public static var proOnly: String { LuckgramStrings.pick("Pro 专享：把加密后的账号备份存到云端，换手机后登录任意一个账号即可恢复。", "Pro: keep an encrypted account backup in the cloud and restore it on a new phone after logging in to any one account.") }
     public static var upload: String { LuckgramStrings.pick("备份到云端", "Back up to cloud") }
     public static var restore: String { LuckgramStrings.pick("从云端恢复", "Restore from cloud") }
-    public static var restoreFromFile: String { LuckgramStrings.pick("从文件恢复", "Restore from file") }
     public static var delete: String { LuckgramStrings.pick("删除云备份", "Delete cloud backup") }
     public static var deleteConfirm: String { LuckgramStrings.pick("删除后云端不再保存这份备份，无法撤销。", "The backup will be removed from the cloud. This can't be undone.") }
     public static var auto: String { LuckgramStrings.pick("每周自动备份", "Back up weekly") }
-    public static var autoInfo: String { LuckgramStrings.pick("开启时需要在本机记住备份密码（保存在系统钥匙串，不会上传）。关闭后会从本机删除这个密码。", "Requires remembering the backup password on this device (kept in the system Keychain, never uploaded). Turning it off removes the password from this device.") }
-    public static var remember: String { LuckgramStrings.pick("在本机记住备份密码（存系统钥匙串），用于每周自动备份？", "Remember the backup password on this device (system Keychain) for the weekly backup?") }
+    public static var autoInfo: String { LuckgramStrings.pick("每周把本机所有已登录账号备份一次。需要在本机记住备份密码（保存在系统钥匙串，不会上传）；关闭后会从本机删除这个密码。", "Backs up every account logged in on this device once a week. Needs the backup password remembered on this device (kept in the system Keychain, never uploaded); turning it off removes the password from this device.") }
+    public static var remember: String { LuckgramStrings.pick("在本机记住备份密码（存系统钥匙串），开启每周自动备份？", "Remember the backup password on this device (system Keychain) and back up weekly?") }
     public static var rememberYes: String { LuckgramStrings.pick("记住并开启", "Remember and turn on") }
     public static var rememberNo: String { LuckgramStrings.pick("不记住", "Don't remember") }
     public static var warning: String { LuckgramStrings.pick("云端只保存加密后的数据，Luckgram 无法解密；忘记密码将无法恢复。", "The cloud only keeps encrypted data that Luckgram can't decrypt. If you forget the password, the backup can't be restored.") }
@@ -48,8 +47,8 @@ public enum LuckgramCloudBackupStrings {
     }
 }
 
-/// Luckgram 32: cloud backup (Pro). The 10 backup file is encrypted on this device with the user's
-/// password and only that ciphertext is uploaded to `/v1/backup` (S15). The password is never
+/// Luckgram 32: cloud backup (Pro). The backup is encrypted on this device with the user's
+/// password (`LuckgramBackupFormat`) and only that ciphertext is uploaded to `/v1/backup` (S15). The password is never
 /// sent; it is kept in the Keychain only when the user turns on the weekly automatic backup.
 public enum LuckgramCloudBackup {
     private static let autoKey = "cloud_backup.auto"
@@ -115,10 +114,16 @@ public enum LuckgramCloudBackup {
         }
     }
 
-    /// Encrypts every logged-in account with `password` off the main queue (same file as 10's
-    /// export), wipes the keys, then uploads only the ciphertext.
-    public static func upload(accountManager: AccountManager<TelegramAccountManagerTypes>, context: AccountContext?, password: String) -> Signal<LuckgramCloudBackupLogic.Meta, LuckgramAIError> {
-        return LuckgramBackup.collectAll(accountManager: accountManager)
+    /// Encrypts the accounts of `recordIds` (nil: every logged-in account) with `password` off the
+    /// main queue, wipes the keys, then uploads only the ciphertext. Nothing is written to disk.
+    public static func upload(accountManager: AccountManager<TelegramAccountManagerTypes>, context: AccountContext?, recordIds: [AccountRecordId]?, password: String) -> Signal<LuckgramCloudBackupLogic.Meta, LuckgramAIError> {
+        let collected: Signal<[LuckgramBackupFormat.Account], NoError>
+        if let recordIds {
+            collected = LuckgramBackup.collect(accountManager: accountManager, recordIds: recordIds)
+        } else {
+            collected = LuckgramBackup.collectAll(accountManager: accountManager)
+        }
+        return collected
         |> deliverOn(Queue.concurrentDefaultQueue())
         |> map { items -> (String, Int)? in
             var items = items
@@ -190,6 +195,11 @@ public enum LuckgramCloudBackup {
         }
     }
 
+    /// Last account gone: remove the remembered password from the Keychain (settings are wiped by the caller).
+    public static func forgetPassword() {
+        LuckgramKeychain.delete(account: passwordAccount)
+    }
+
     public static func markUploaded() {
         LuckgramSettings.shared.setInt(lastAutoKey, Int(Date().timeIntervalSince1970))
     }
@@ -214,7 +224,7 @@ public enum LuckgramCloudBackup {
         }
         LuckgramSettings.shared.setInt(lastTryKey, Int(now))
         autoRunning = true
-        let _ = upload(accountManager: accountManager, context: nil, password: password).start(next: { _ in
+        let _ = upload(accountManager: accountManager, context: nil, recordIds: nil, password: password).start(next: { _ in
             autoRunning = false
             markUploaded()
         }, error: { _ in

@@ -41,9 +41,9 @@ public enum LuckgramAccountsStrings {
 
 // MARK: - Limit (32: free 20 / Pro 50 from remote config)
 
-/// Pro status for the account limit. Wired to 29's LuckgramPro.
+/// Pro status for the account limit and cloud backup (29's unified state).
 public func luckgramIsPro() -> Bool {
-    return false
+    return LuckgramPro.shared.isPro
 }
 
 private func luckgramRemoteMaxFree() -> Int {
@@ -67,9 +67,22 @@ func luckgramOfferAccountUpgrade() -> Bool {
     return LuckgramAccountLimit.offerUpgrade(isPro: luckgramIsPro(), remoteMaxFree: luckgramRemoteMaxFree(), remoteMaxPro: luckgramRemoteMaxPro())
 }
 
-/// 29's upgrade entry.
+/// The Pro page (29).
 public func luckgramOpenProUpgrade(context: AccountContext) {
     (context.sharedContext.mainWindow?.viewController as? NavigationController)?.pushViewController(luckgramProController(context: context))
+}
+
+/// The "upgrade to Pro" prompt (29): one line of reason + "View Pro" → the Pro page.
+/// `openPro` nil when already on the Pro page.
+public func luckgramProUpgradeController(context: AccountContext, reason: String, openPro: (() -> Void)?) -> ViewController {
+    let presentationData = context.sharedContext.currentPresentationData.with { $0 }
+    LuckgramStrings.appLanguageCode = presentationData.strings.primaryComponent.languageCode
+    return textAlertController(context: context, title: nil, text: reason, actions: [
+        TextAlertAction(type: .genericAction, title: presentationData.strings.Common_Cancel, action: {}),
+        TextAlertAction(type: .defaultAction, title: LuckgramAccountsStrings.viewPro, action: {
+            openPro?()
+        })
+    ])
 }
 
 /// Shown when the account limit is reached; free users get "View Pro" (32).
