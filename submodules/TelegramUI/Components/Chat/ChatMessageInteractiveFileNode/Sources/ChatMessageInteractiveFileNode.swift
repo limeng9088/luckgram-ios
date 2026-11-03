@@ -891,6 +891,24 @@ public final class ChatMessageInteractiveFileNode: ASDisplayNode {
                                         break
                                     }
                                 }
+                            } else if let service = luckgramTranslateIn, service.isEnabled, !text.isEmpty, !arguments.presentationData.isPreview {
+                                // Luckgram spec 01 B: the translation below the transcription, or a 「翻译」 link
+                                let smallFont = Font.regular(floor(textFont.pointSize * 0.8))
+                                let modifiedString = NSMutableAttributedString(attributedString: textString!)
+                                if let entry = LuckgramMessageTranslations.shared.entry(accountPeerId: arguments.context.account.peerId, messageId: arguments.message.id, text: text, voice: true) {
+                                    modifiedString.append(NSAttributedString(string: "\n" + service.header(fromLang: entry.fromLang, toLang: entry.toLang) + "\n", font: smallFont, textColor: messageTheme.secondaryTextColor))
+                                    modifiedString.append(NSAttributedString(string: String(repeating: "\u{2500}", count: 14) + "\n", font: smallFont, textColor: messageTheme.secondaryTextColor.withAlphaComponent(0.5)))
+                                    modifiedString.append(NSAttributedString(string: entry.text, font: textFont, textColor: messageTheme.primaryTextColor))
+                                    textString = modifiedString
+                                } else if service.showVoiceLink(text: text) {
+                                    modifiedString.append(NSAttributedString(string: "\n", font: smallFont, textColor: messageTheme.primaryTextColor))
+                                    modifiedString.append(NSAttributedString(string: LuckgramTranslateInLogic.menuLabel(translated: false, chinese: LuckgramStrings.isChinese), attributes: [
+                                        .font: smallFont,
+                                        .foregroundColor: messageTheme.accentTextColor,
+                                        ChatMessageInteractiveFileNode.luckgramTranslateLinkKey: true
+                                    ]))
+                                    textString = modifiedString
+                                }
                             }
                         }
                     case let .error(error):
@@ -2201,6 +2219,37 @@ public final class ChatMessageInteractiveFileNode: ASDisplayNode {
         return super.hitTest(point, with: event)
     }
     
+    /// Luckgram spec 01 B.1: attribute of the 「翻译」 link under a transcription.
+    public static let luckgramTranslateLinkKey = NSAttributedString.Key(rawValue: "LuckgramTranslateLink")
+
+    /// Luckgram spec 01 B.1: the action of a tap on the 「翻译」 link at `point`, if any.
+    public func luckgramTranslateLinkAction(at point: CGPoint) -> (() -> Void)? {
+        guard let arguments = self.arguments, let service = luckgramTranslateIn, self.textNode.supernode != nil else {
+            return nil
+        }
+        let textPoint = self.view.convert(point, to: self.textNode.view)
+        guard let (_, attributes) = self.textNode.attributesAtPoint(textPoint), attributes[ChatMessageInteractiveFileNode.luckgramTranslateLinkKey] != nil else {
+            return nil
+        }
+        var transcription: String?
+        for attribute in arguments.message.attributes {
+            if let attribute = attribute as? AudioTranscriptionMessageAttribute, !attribute.text.isEmpty, !attribute.isPending {
+                transcription = attribute.text
+            }
+        }
+        guard let text = transcription else {
+            return nil
+        }
+        let accountPeerId = arguments.context.account.peerId
+        let messageId = arguments.message.id
+        let controllerInteraction = arguments.controllerInteraction
+        return {
+            service.toggle(accountPeerId: accountPeerId, messageId: messageId, text: text, voice: true, updated: {
+                controllerInteraction.requestMessageUpdate(messageId, false, nil)
+            })
+        }
+    }
+
     public func hasTapAction(at point: CGPoint) -> Bool {
         if let _ = self.dateAndStatusNode.hitTest(self.view.convert(point, to: self.dateAndStatusNode.view), with: nil) {
             return true

@@ -240,6 +240,10 @@ public class ChatMessageFileBubbleContentNode: ChatMessageBubbleContentNode {
         if self.interactiveFileNode.hasTapAction(at: self.view.convert(point, to: self.interactiveFileNode.view)) {
             return ChatMessageBubbleContentTapAction(content: .ignore)
         }
+        // Luckgram spec 01 B.1: 「翻译」 under a voice transcription
+        if let action = self.interactiveFileNode.luckgramTranslateLinkAction(at: self.view.convert(point, to: self.interactiveFileNode.view)) {
+            return ChatMessageBubbleContentTapAction(content: .custom(action))
+        }
         return super.tapActionAtPoint(point, gesture: gesture, isEstimating: isEstimating)
     }
     

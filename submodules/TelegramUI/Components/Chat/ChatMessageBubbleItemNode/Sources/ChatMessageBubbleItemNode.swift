@@ -768,6 +768,8 @@ public class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewI
     private var mediaInfoNode: ChatMessageStarsMediaInfoNode?
     
     private var summarizeButtonNode: ChatMessageShareButton?
+    /// Luckgram spec 01 A.2: one-tap translate button next to a received message.
+    private var luckgramTranslateButtonNode: ChatMessageShareButton?
     private var shareButtonNode: ChatMessageShareButton?
     
     private let messageAccessibilityArea: AccessibilityAreaNode
@@ -1313,6 +1315,10 @@ public class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewI
                 }
                 
                 if let summarizeButtonNode = strongSelf.summarizeButtonNode, summarizeButtonNode.frame.contains(point) {
+                    return .fail
+                }
+
+                if let buttonNode = strongSelf.luckgramTranslateButtonNode, buttonNode.frame.contains(point) {
                     return .fail
                 }
                 
@@ -2021,6 +2027,13 @@ public class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewI
             needsShareButton = false
             needsSummarizeButton = false
             allowFullWidth = true
+        }
+
+        // Luckgram spec 01 A.2: one-tap translate button next to someone else's message whose
+        // language is not a "don't translate" language.
+        var needsLuckgramTranslateButton = false
+        if incoming, !isUnsupportedContent, !needsSummarizeButton, !isFailed, item.message.adAttribute == nil, !item.presentationData.isPreview, !item.message.text.isEmpty, let service = luckgramTranslateIn {
+            needsLuckgramTranslateButton = service.showButton(text: item.message.text)
         }
 
         var tmpWidth: CGFloat
@@ -3854,6 +3867,7 @@ public class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewI
                 mediaInfoOrigin: mediaInfoOrigin,
                 mediaInfoSizeAndApply: mediaInfoSizeApply,
                 needsSummarizeButton: needsSummarizeButton,
+                needsLuckgramTranslateButton: needsLuckgramTranslateButton,
                 needsShareButton: needsShareButton,
                 shareButtonOffset: shareButtonOffset,
                 avatarOffset: avatarOffset,
@@ -3926,6 +3940,7 @@ public class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewI
         mediaInfoOrigin: CGPoint?,
         mediaInfoSizeAndApply: (CGSize, (Bool) -> ChatMessageStarsMediaInfoNode?),
         needsSummarizeButton: Bool,
+        needsLuckgramTranslateButton: Bool,
         needsShareButton: Bool,
         shareButtonOffset: CGPoint?,
         avatarOffset: CGFloat?,
@@ -5388,6 +5403,20 @@ public class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewI
             summarizeButtonNode.removeFromSupernode()
         }
         
+        if needsLuckgramTranslateButton {
+            if strongSelf.luckgramTranslateButtonNode == nil {
+                let buttonNode = ChatMessageShareButton()
+                strongSelf.luckgramTranslateButtonNode = buttonNode
+                strongSelf.insertSubnode(buttonNode, belowSubnode: strongSelf.messageAccessibilityArea)
+                buttonNode.pressed = { [weak strongSelf] in
+                    strongSelf?.luckgramToggleTranslation()
+                }
+            }
+        } else if let buttonNode = strongSelf.luckgramTranslateButtonNode {
+            strongSelf.luckgramTranslateButtonNode = nil
+            buttonNode.removeFromSupernode()
+        }
+
         if needsShareButton {
             if strongSelf.shareButtonNode == nil {
                 let shareButtonNode = ChatMessageShareButton()
@@ -5648,6 +5677,7 @@ public class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewI
                 animation.animator.updateAlpha(layer: shareButtonNode.layer, alpha: (isCurrentlyPlayingMedia || isSidePanelOpen) ? 0.0 : 1.0, completion: nil)
                 animation.animator.updateScale(layer: shareButtonNode.layer, scale: (isCurrentlyPlayingMedia || isSidePanelOpen) ? 0.001 : 1.0, completion: nil)
             }
+            strongSelf.luckgramLayoutTranslateButton(item: item, backgroundFrame: backgroundFrame, incoming: incoming, disablesComments: disablesComments, hidden: isCurrentlyPlayingMedia || isSidePanelOpen, animation: animation)
         } else {
             /*if let _ = strongSelf.backgroundFrameTransition {
                 strongSelf.animateFrameTransition(1.0, backgroundFrame.size.height)
@@ -5706,6 +5736,7 @@ public class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewI
                 animation.animator.updateAlpha(layer: shareButtonNode.layer, alpha: (isCurrentlyPlayingMedia || isSidePanelOpen) ? 0.0 : 1.0, completion: nil)
                 animation.animator.updateScale(layer: shareButtonNode.layer, scale: (isCurrentlyPlayingMedia || isSidePanelOpen) ? 0.001 : 1.0, completion: nil)
             }
+            strongSelf.luckgramLayoutTranslateButton(item: item, backgroundFrame: backgroundFrame, incoming: incoming, disablesComments: disablesComments, hidden: isCurrentlyPlayingMedia || isSidePanelOpen, animation: animation)
             
             // The non-animated path. The enclosing `else` already establishes that `animation` is not
             // `.System`, so every write here is immediate. This used to branch first on `.System` +
@@ -6691,6 +6722,9 @@ public class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewI
             return boostButtonNode.view
         }
         
+        if let buttonNode = self.luckgramTranslateButtonNode, buttonNode.frame.contains(point) {
+            return buttonNode.view.hitTest(self.view.convert(point, to: buttonNode.view), with: event)
+        }
         if let summarizeButtonNode = self.summarizeButtonNode, summarizeButtonNode.frame.contains(point) {
             return summarizeButtonNode.view.hitTest(self.view.convert(point, to: summarizeButtonNode.view), with: event)
         }
@@ -7779,6 +7813,37 @@ public class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewI
         self.updateVisibility(isScroll: false)
     }
     
+    /// Luckgram spec 01 A.2: the one-tap button translates the message in its bubble (or undoes it).
+    private func luckgramToggleTranslation() {
+        guard let item = self.item, let service = luckgramTranslateIn, !item.message.text.isEmpty else {
+            return
+        }
+        let messageId = item.message.id
+        let controllerInteraction = item.controllerInteraction
+        service.toggle(accountPeerId: item.context.account.peerId, messageId: messageId, text: item.message.text, voice: false, updated: {
+            let _ = controllerInteraction.requestMessageUpdate(messageId, false, nil)
+        })
+    }
+
+    private func luckgramLayoutTranslateButton(item: ChatMessageItem, backgroundFrame: CGRect, incoming: Bool, disablesComments: Bool, hidden: Bool, animation: ListViewItemUpdateAnimation) {
+        guard let buttonNode = self.luckgramTranslateButtonNode else {
+            return
+        }
+        let buttonSize = buttonNode.update(presentationData: item.presentationData, controllerInteraction: item.controllerInteraction, chatLocation: item.chatLocation, subject: item.associatedData.subject, message: EngineMessage(item.message), accountPeerId: item.context.account.peerId, disableComments: true, isLuckgramTranslate: true)
+        var buttonFrame = CGRect(origin: CGPoint(x: backgroundFrame.maxX + 8.0, y: backgroundFrame.maxY - buttonSize.height - 1.0), size: buttonSize)
+        if let shareButtonNode = self.shareButtonNode {
+            buttonFrame.origin.x = shareButtonNode.frame.minX
+            buttonFrame.origin.y = shareButtonNode.frame.minY - buttonSize.height - 6.0
+        }
+        if buttonFrame.minY < backgroundFrame.minY {
+            buttonFrame.origin.y = backgroundFrame.minY
+        }
+        animation.animator.updatePosition(layer: buttonNode.layer, position: buttonFrame.center, completion: nil)
+        animation.animator.updateBounds(layer: buttonNode.layer, bounds: CGRect(origin: CGPoint(), size: buttonFrame.size), completion: nil)
+        animation.animator.updateAlpha(layer: buttonNode.layer, alpha: hidden ? 0.0 : 1.0, completion: nil)
+        animation.animator.updateScale(layer: buttonNode.layer, scale: hidden ? 0.001 : 1.0, completion: nil)
+    }
+
     private func toggleSummarization() {
         guard let item = self.item else {
             return

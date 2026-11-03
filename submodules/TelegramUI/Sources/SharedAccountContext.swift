@@ -506,7 +506,19 @@ public final class SharedAccountContextImpl: SharedAccountContext {
             }
         })
         
-        // Luckgram specs#82: Luckgram AI translates when Telegram's translation fails.
+        // Luckgram spec 01 A/B: translations of received messages and voice transcriptions in the bubble.
+        let luckgramTranslateIn = LuckgramTranslateInController.install(context: { [weak self] in
+            return self?.activeAccountsValue?.primary
+        })
+        let _ = (accountManager.sharedData(keys: [ApplicationSpecificSharedDataKeys.translationSettings])
+        |> deliverOnMainQueue).startStandalone(next: { sharedData in
+            let settings = sharedData.entries[ApplicationSpecificSharedDataKeys.translationSettings]?.get(TranslationSettings.self)
+            luckgramTranslateIn.doNotTranslate = settings?.ignoredLanguages
+        })
+        let _ = LuckgramFeatures.find(LuckgramTranslateInLogic.featureKey)?.subpage { context in
+            return luckgramTranslateInSettingsController(context: context)
+        }
+        // Luckgram spec 01: Luckgram AI translates when Telegram's translation fails.
         LuckgramTranslateService.install(context: { [weak self] in
             return self?.activeAccountsValue?.primary
         }, present: { [weak self] controller in

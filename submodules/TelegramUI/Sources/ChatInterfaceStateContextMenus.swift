@@ -1466,6 +1466,30 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
                 if let peerId = chatPresentationInterfaceState.chatLocation.peerId, peerId.namespace == Namespaces.Peer.SecretChat {
                     canTranslate = false
                 }
+                // Luckgram spec 01 A.1 / B.1: translate in the bubble (or undo), instead of Telegram's sheet.
+                // Also offered for "don't translate" languages.
+                if let service = luckgramTranslateIn, service.isEnabled, chatPresentationInterfaceState.chatLocation.peerId?.namespace != Namespaces.Peer.SecretChat {
+                    var luckgramTarget: (EngineRawMessage, String, Bool)?
+                    if let textMessage = messages.first(where: { !$0.text.isEmpty }) {
+                        luckgramTarget = (textMessage, textMessage.text, false)
+                    } else if hasExpandedAudioTranscription, let attribute = message.attributes.first(where: { $0 is AudioTranscriptionMessageAttribute }) as? AudioTranscriptionMessageAttribute, !attribute.text.isEmpty, !attribute.isPending {
+                        luckgramTarget = (message, attribute.text, true)
+                    }
+                    if let target = luckgramTarget {
+                        let (targetMessage, targetText, isVoice) = target
+                        canTranslate = false
+                        let targetId = targetMessage.id
+                        let translated = LuckgramMessageTranslations.shared.entry(accountPeerId: context.account.peerId, messageId: targetId, text: targetText, voice: isVoice) != nil
+                        actions.append(.action(ContextMenuActionItem(text: LuckgramTranslateInLogic.menuLabel(translated: translated, chinese: LuckgramStrings.isChinese), icon: { theme in
+                            return generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Translate"), color: theme.actionSheet.primaryTextColor)
+                        }, action: { _, f in
+                            service.toggle(accountPeerId: context.account.peerId, messageId: targetId, text: targetText, voice: isVoice, updated: {
+                                controllerInteraction.requestMessageUpdate(targetId, false, nil)
+                            })
+                            f(.default)
+                        })))
+                    }
+                }
                 if canTranslate {
                     actions.append(.action(ContextMenuActionItem(text: chatPresentationInterfaceState.strings.Conversation_ContextMenuTranslate, icon: { theme in
                         return generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Translate"), color: theme.actionSheet.primaryTextColor)

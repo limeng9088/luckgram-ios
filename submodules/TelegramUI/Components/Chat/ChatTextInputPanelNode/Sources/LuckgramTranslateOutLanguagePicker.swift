@@ -3,6 +3,7 @@
 
 import Foundation
 import UIKit
+import TelegramPresentationData
 
 final class LuckgramTranslateOutLanguagePicker: UITableViewController, UISearchResultsUpdating {
     private struct Item {
@@ -146,5 +147,13 @@ final class LuckgramTranslateOutLanguagePicker: UITableViewController, UISearchR
         presenting?.dismiss(animated: true, completion: {
             completion(code)
         })
+    }
+}
+
+public extension LuckgramTranslateOut {
+    /// Luckgram spec 01 A.4: the same language list for 「翻译成」 on the received-message translation page.
+    static func makeLanguagePicker(strings: PresentationStrings?, isDark: Bool, selected: String?, completion: @escaping (String) -> Void) -> UIViewController {
+        let picker = LuckgramTranslateOutLanguagePicker(strings: LuckgramTranslateOut.Strings(strings), selected: selected, recent: [], isDark: isDark, completion: completion)
+        return picker.wrappedInNavigation()
     }
 }

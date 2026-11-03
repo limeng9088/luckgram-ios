@@ -77,6 +77,11 @@ public enum LuckgramFeatures {
         add(.toggle("translate_out", group: .messagesLanguage, default: true,
             title: ("发送前翻译", "Translate before sending"),
             description: ("在输入框里先翻译成对方的语言再发送", "Translate your message into the other person's language before sending")))
+        // Settings page is attached by TelegramUI at startup (it uses the language picker in
+        // ChatTextInputPanelNode and Telegram's "Do not translate" page in SettingsUI).
+        add(.toggle("translate_in", group: .messagesLanguage, default: true,
+            title: ("收到消息翻译", "Translate received messages"),
+            description: ("长按或点消息旁的图标，译文显示在原文下方", "Long-press or tap the icon next to a message; the translation appears below the original")))
         // Quick replies "Manage" subpage is attached by TelegramUI at startup (it lives in
         // ChatTextInputPanelNode, which depends on LuckgramUI).
         add(.toggle("quick_replies", group: .messagesLanguage, default: true,
