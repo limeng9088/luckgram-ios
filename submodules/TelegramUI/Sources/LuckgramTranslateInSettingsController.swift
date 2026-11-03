@@ -99,7 +99,7 @@ func luckgramTranslateInSettingsController(context: AccountContext) -> ViewContr
         let excluded = settings.ignoredLanguages ?? [presentationData.strings.baseLanguageCode]
         let excludedNames = excluded.map { luckgramLanguageName($0) }.filter { !$0.isEmpty }.joined(separator: LuckgramStrings.isChinese ? "、" : ", ")
         let entries: [LuckgramTranslateInSettingsEntry] = [
-            .target(s("翻译成", "Translate to"), luckgramLanguageName(LuckgramTranslateInController.targetLanguage)),
+            .target(s("翻译成", "Translate to"), LuckgramTranslateInController.targetLanguage.flatMap { luckgramLanguageName($0) } ?? s("未选择（第一次翻译时选）", "Not set (asked the first time)")),
             .doNotTranslate(s("不翻译的语言", "Do not translate"), excludedNames),
             .info(s("长按消息选「翻译」，或点消息旁的翻译图标，译文显示在原文下方。「不翻译的语言」的消息不显示翻译图标，长按仍可翻译。", "Long-press a message and choose Translate, or tap the translate icon next to it; the translation appears below the original. Messages in a \"do not translate\" language get no icon but can still be translated from the menu."))
         ]

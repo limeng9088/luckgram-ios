@@ -610,7 +610,10 @@ public class ChatMessageTextBubbleContentNode: ChatMessageBubbleContentNode {
                 if let service = luckgramTranslateIn, service.isEnabled, !item.message.text.isEmpty, rawText == item.message.text, !item.presentationData.isPreview, let entry = LuckgramMessageTranslations.shared.entry(accountPeerId: item.context.account.peerId, messageId: item.message.id, text: item.message.text) {
                     let smallFont = Font.regular(floor(textFont.pointSize * 0.8))
                     let combined = NSMutableAttributedString(attributedString: attributedText)
-                    combined.append(NSAttributedString(string: "\n" + service.header(fromLang: entry.fromLang, toLang: entry.toLang) + "\n", font: smallFont, textColor: messageTheme.secondaryTextColor))
+                    combined.append(NSAttributedString(string: "\n", font: smallFont, textColor: messageTheme.secondaryTextColor))
+                    // specs#93: the header is tappable (change the language)
+                    combined.append(NSAttributedString(string: service.header(fromLang: entry.fromLang, toLang: entry.toLang), attributes: [.font: smallFont, .foregroundColor: messageTheme.secondaryTextColor, luckgramTranslateHeaderKey: true]))
+                    combined.append(NSAttributedString(string: "\n", font: smallFont, textColor: messageTheme.secondaryTextColor))
                     combined.append(NSAttributedString(string: String(repeating: "\u{2500}", count: 14) + "\n", font: smallFont, textColor: messageTheme.secondaryTextColor.withAlphaComponent(0.5)))
                     combined.append(NSAttributedString(string: entry.text, font: textFont, textColor: messageTheme.primaryTextColor))
                     attributedText = combined
@@ -1190,6 +1193,18 @@ public class ChatMessageTextBubbleContentNode: ChatMessageBubbleContentNode {
             }
             
             
+            if attributes[luckgramTranslateHeaderKey] != nil, case .tap = gesture, let item = self.item, let service = luckgramTranslateIn {
+                // specs#93: 「英语 → 中文」 tapped: pick another language and translate this message again
+                let accountPeerId = item.context.account.peerId
+                let messageId = item.message.id
+                let text = item.message.text
+                let controllerInteraction = item.controllerInteraction
+                return ChatMessageBubbleContentTapAction(content: .custom({
+                    service.changeLanguage(accountPeerId: accountPeerId, messageId: messageId, text: text, voice: false, updated: {
+                        controllerInteraction.requestMessageUpdate(messageId, false, nil)
+                    })
+                }))
+            }
             if let _ = attributes[NSAttributedString.Key(rawValue: TelegramTextAttributes.Spoiler)], !self.displayContentsUnderSpoilers.value {
                 return ChatMessageBubbleContentTapAction(content: .none)
             } else if let tonAddress = attributes[NSAttributedString.Key(rawValue: TelegramTextAttributes.TonAddress)] as? TelegramTonAddress {

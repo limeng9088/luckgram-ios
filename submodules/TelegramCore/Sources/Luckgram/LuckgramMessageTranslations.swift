@@ -96,6 +96,12 @@ public protocol LuckgramTranslateInService: AnyObject {
     /// Translates the message's `text` (or removes its translation); `updated` runs on the main
     /// queue when the bubble should be redrawn. Failures are shown to the user by the service.
     func toggle(accountPeerId: PeerId, messageId: MessageId, text: String, voice: Bool, updated: @escaping () -> Void)
+    /// specs#93: the header 「英语 → 中文」 was tapped: pick another language (saved as the default) and
+    /// translate this message again.
+    func changeLanguage(accountPeerId: PeerId, messageId: MessageId, text: String, voice: Bool, updated: @escaping () -> Void)
 }
 
 public var luckgramTranslateIn: LuckgramTranslateInService?
+
+/// specs#93: attribute on the 「已翻译 · 英语 → 中文」 header in a bubble; a tap changes the language.
+public let luckgramTranslateHeaderKey = NSAttributedString.Key(rawValue: "LuckgramTranslateHeader")

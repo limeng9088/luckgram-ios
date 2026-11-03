@@ -6057,13 +6057,25 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
             return
         }
         let strings = LuckgramTranslateOut.Strings(interfaceState.strings)
+        let _ = threadId
 
-        let languageSignal: Signal<String, NoError>
-        if let language {
-            languageSignal = .single(language)
-        } else {
-            languageSignal = LuckgramTranslateOut.resolveLanguage(context: context, peerId: peerId, threadId: threadId)
+        guard let language else {
+            // specs#93: the language saved for this chat, otherwise ask (no guessing, no English default)
+            let _ = (LuckgramTranslateOut.savedLanguage(context: context, peerId: peerId)
+            |> take(1)
+            |> deliverOnMainQueue).startStandalone(next: { [weak self] saved in
+                guard let self else {
+                    return
+                }
+                if let saved, !saved.isEmpty {
+                    self.translateOutPressed(language: saved)
+                } else {
+                    self.showTranslateOutLanguages()
+                }
+            })
+            return
         }
+        let languageSignal: Signal<String, NoError> = .single(language)
 
         self.translateOutIsBusy = true
         self.translateOutDisposable?.dispose()

@@ -896,7 +896,10 @@ public final class ChatMessageInteractiveFileNode: ASDisplayNode {
                                 let smallFont = Font.regular(floor(textFont.pointSize * 0.8))
                                 let modifiedString = NSMutableAttributedString(attributedString: textString!)
                                 if let entry = LuckgramMessageTranslations.shared.entry(accountPeerId: arguments.context.account.peerId, messageId: arguments.message.id, text: text, voice: true) {
-                                    modifiedString.append(NSAttributedString(string: "\n" + service.header(fromLang: entry.fromLang, toLang: entry.toLang) + "\n", font: smallFont, textColor: messageTheme.secondaryTextColor))
+                                    modifiedString.append(NSAttributedString(string: "\n", font: smallFont, textColor: messageTheme.secondaryTextColor))
+                                    // specs#93: the header is tappable (change the language)
+                                    modifiedString.append(NSAttributedString(string: service.header(fromLang: entry.fromLang, toLang: entry.toLang), attributes: [.font: smallFont, .foregroundColor: messageTheme.secondaryTextColor, luckgramTranslateHeaderKey: true]))
+                                    modifiedString.append(NSAttributedString(string: "\n", font: smallFont, textColor: messageTheme.secondaryTextColor))
                                     modifiedString.append(NSAttributedString(string: String(repeating: "\u{2500}", count: 14) + "\n", font: smallFont, textColor: messageTheme.secondaryTextColor.withAlphaComponent(0.5)))
                                     modifiedString.append(NSAttributedString(string: entry.text, font: textFont, textColor: messageTheme.primaryTextColor))
                                     textString = modifiedString
@@ -2228,7 +2231,11 @@ public final class ChatMessageInteractiveFileNode: ASDisplayNode {
             return nil
         }
         let textPoint = self.view.convert(point, to: self.textNode.view)
-        guard let (_, attributes) = self.textNode.attributesAtPoint(textPoint), attributes[ChatMessageInteractiveFileNode.luckgramTranslateLinkKey] != nil else {
+        guard let (_, attributes) = self.textNode.attributesAtPoint(textPoint) else {
+            return nil
+        }
+        let isHeader = attributes[luckgramTranslateHeaderKey] != nil
+        if !isHeader && attributes[ChatMessageInteractiveFileNode.luckgramTranslateLinkKey] == nil {
             return nil
         }
         var transcription: String?
@@ -2244,9 +2251,15 @@ public final class ChatMessageInteractiveFileNode: ASDisplayNode {
         let messageId = arguments.message.id
         let controllerInteraction = arguments.controllerInteraction
         return {
-            service.toggle(accountPeerId: accountPeerId, messageId: messageId, text: text, voice: true, updated: {
-                controllerInteraction.requestMessageUpdate(messageId, false, nil)
-            })
+            if isHeader {
+                service.changeLanguage(accountPeerId: accountPeerId, messageId: messageId, text: text, voice: true, updated: {
+                    controllerInteraction.requestMessageUpdate(messageId, false, nil)
+                })
+            } else {
+                service.toggle(accountPeerId: accountPeerId, messageId: messageId, text: text, voice: true, updated: {
+                    controllerInteraction.requestMessageUpdate(messageId, false, nil)
+                })
+            }
         }
     }
 
