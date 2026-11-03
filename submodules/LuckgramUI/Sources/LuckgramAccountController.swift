@@ -364,6 +364,17 @@ public func luckgramProController(context: AccountContext) -> ViewController {
             }
             return
         }
+        if id == 4 {
+            // specs#89 (31): Pro community; free users get the same upgrade prompt as cloud backup (32).
+            LuckgramProCommunity.join(context: context, navigationController: {
+                return controllerRef?.navigationController as? NavigationController
+            }, present: { c in
+                presentImpl?(c)
+            }, upgrade: {
+                presentImpl?(luckgramProUpgradeController(context: context, reason: LuckgramProCommunity.texts.proOnly, openPro: nil))
+            })
+            return
+        }
         guard !state.busy, let billing = state.billing else {
             return
         }
@@ -433,7 +444,13 @@ public func luckgramProController(context: AccountContext) -> ViewController {
     }
 
     let entries = combineLatest(updated.get(), LuckgramPro.shared.stateSignal) |> map { _, pro -> [LuckgramAccountEntry] in
-        return billingEntries() + cloudBackupEntries(isPro: pro.isPro(now: Date()))
+        var e = billingEntries() + cloudBackupEntries(isPro: pro.isPro(now: Date()))
+        // specs#89 (31): Pro community, its own section below cloud backup; follows the Pro state (perks).
+        if LuckgramProCommunity.showRow {
+            e.append(.action(2, 4, LuckgramProCommunity.texts.join, .generic))
+            e.append(.footer(2, 0, LuckgramProCommunity.texts.info))
+        }
+        return e
     }
 
     let controller = luckgramItemListController(context: context, title: tx.proTitle, entries: entries, arguments: arguments)

@@ -57,6 +57,10 @@ public enum LuckgramFeatures {
             .confirmEnable { context, present, done in LuckgramDoubleBottom.confirmEnable(context: context, present: present, done: done) }
             .confirmDisable { context, present, done in LuckgramDoubleBottom.confirmDisable(context: context, present: present, done: done) }
             .hiddenWhen { LuckgramDoubleBottomState.shared.isActive })
+        add(.toggle(LuckgramProCommunityLogic.featureKey, group: .accountPrivacy, default: true,
+            title: ("Pro 社群", "Pro community"),
+            description: ("Luckgram Pro 页显示「加入 Pro 社群」，一键进 Pro 用户私密群", "Show \"Join the Pro community\" on the Luckgram Pro page to join the private Pro group"))
+            .subpage { context in luckgramProController(context: context) })
         add(.toggle(LuckgramStoreRestrictionsFeature.key, group: .accountPrivacy, default: false,
             title: ("受限频道", "Store-restricted channels"),
             description: ("查看只在商店版 Telegram 中被隐藏的频道和群组；点进去可调整「显示 18+ 内容」", "View channels and groups hidden only in store versions of Telegram; tap for the 18+ content setting"))
