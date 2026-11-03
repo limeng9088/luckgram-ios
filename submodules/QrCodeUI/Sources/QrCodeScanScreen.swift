@@ -80,6 +80,18 @@ public final class QrCodeScanScreen: ViewController {
         case cryptoAddress
         case custom(info: String)
         case customValidated(info: String, validate: (String) -> Bool)
+        /// Luckgram (specs#92): chat list 「扫一扫」. Any code goes to `completion`; album button and a
+        /// 「我的二维码」 button (`myCodeTitle`, calls `showMyCode`).
+        case luckgram(info: String, myCodeTitle: String)
+
+        var luckgramShowsGallery: Bool {
+            switch self {
+            case .peer, .luckgram:
+                return true
+            default:
+                return false
+            }
+        }
     }
 
     public static func normalizedCryptoAddress(_ value: String) -> String? {
@@ -215,6 +227,10 @@ public final class QrCodeScanScreen: ViewController {
         case .custom:
             self.completion(code)
             return true
+        case .luckgram:
+            self.codeResolved = true
+            self.completion(code)
+            return true
         case let .customValidated(_, validate):
             guard validate(code) else {
                 return false
@@ -280,7 +296,7 @@ public final class QrCodeScanScreen: ViewController {
                             }
                         })
                     }
-                case .custom, .customValidated:
+                case .custom, .customValidated, .luckgram:
                     strongSelf.completeWithCode(code)
             }
         })
@@ -404,6 +420,8 @@ private final class QrCodeScanScreenNode: ViewControllerTracingNode, ASScrollVie
     private let frameNode: FrameNode
     private let galleryButtonNode: GlassButtonNode
     private let torchButtonNode: GlassButtonNode
+    /// Luckgram (specs#92): 「我的二维码」 for `.luckgram`.
+    private var luckgramMyCodeButton: HighlightableButtonNode?
     private let titleNode: ImmediateTextNode
     private let textNode: ImmediateTextNode
     private let errorTextNode: ImmediateTextNode
@@ -477,6 +495,15 @@ private final class QrCodeScanScreenNode: ViewControllerTracingNode, ASScrollVie
             case let .customValidated(info, _):
                 title = presentationData.strings.AuthSessions_AddDevice_ScanTitle
                 text = info
+            case let .luckgram(info, myCodeTitle):
+                title = ""
+                text = info
+                let button = HighlightableButtonNode()
+                button.setTitle(myCodeTitle, with: Font.medium(16.0), with: .white, for: .normal)
+                button.backgroundColor = UIColor(white: 1.0, alpha: 0.18)
+                button.cornerRadius = 20.0
+                button.contentEdgeInsets = UIEdgeInsets(top: 0.0, left: 20.0, bottom: 0.0, right: 20.0)
+                self.luckgramMyCodeButton = button
         }
         
         self.titleNode = ImmediateTextNode()
@@ -527,8 +554,12 @@ private final class QrCodeScanScreenNode: ViewControllerTracingNode, ASScrollVie
         
         self.addSubnode(self.fadeNode)
         self.addSubnode(self.frameNode)
-        if case .peer = subject {
+        if subject.luckgramShowsGallery {
             self.addSubnode(self.galleryButtonNode)
+        }
+        if let button = self.luckgramMyCodeButton {
+            self.addSubnode(button)
+            button.addTarget(self, action: #selector(self.luckgramMyCodePressed), forControlEvents: .touchUpInside)
         }
         self.addSubnode(self.torchButtonNode)
         self.addSubnode(self.titleNode)
@@ -610,7 +641,7 @@ private final class QrCodeScanScreenNode: ViewControllerTracingNode, ASScrollVie
                     filteredCodes = codes.filter { $0.message.hasPrefix("https://t.me/") || $0.message.hasPrefix("t.me/") }
                 case .cryptoAddress:
                     filteredCodes = codes.filter { normalizedTonQrValue($0.message) != nil }
-                case .custom:
+                case .custom, .luckgram:
                     filteredCodes = codes
                 case let .customValidated(_, validate):
                     filteredCodes = codes.filter { validate($0.message) }
@@ -895,12 +926,19 @@ private final class QrCodeScanScreenNode: ViewControllerTracingNode, ASScrollVie
         torchFrame.origin.y = updatedTorchY
         
         var galleryFrame = torchFrame
-        if case .peer = self.subject {
+        if self.subject.luckgramShowsGallery {
             galleryFrame.origin.x -= buttonSize.width
             torchFrame.origin.x += buttonSize.width
         }
         transition.updateFrame(node: self.galleryButtonNode, frame: galleryFrame)
         transition.updateFrame(node: self.torchButtonNode, frame: torchFrame)
+        if let button = self.luckgramMyCodeButton {
+            let size = button.measure(CGSize(width: layout.size.width - 64.0, height: 40.0))
+            let width = size.width + 40.0
+            let y = max(torchFrame.maxY + 24.0, layout.size.height - layout.intrinsicInsets.bottom - 40.0 - 24.0)
+            transition.updateFrame(node: button, frame: CGRect(x: floor((layout.size.width - width) / 2.0), y: min(y, layout.size.height - 40.0 - 8.0), width: width, height: 40.0))
+            transition.updateAlpha(node: button, alpha: controlsAlpha)
+        }
         
         transition.updateAlpha(node: self.textNode, alpha: controlsAlpha)
         transition.updateAlpha(node: self.errorTextNode, alpha: controlsAlpha)
@@ -947,6 +985,10 @@ private final class QrCodeScanScreenNode: ViewControllerTracingNode, ASScrollVie
         }
     }
     
+    @objc private func luckgramMyCodePressed() {
+        self.controller?.showMyCode()
+    }
+
     @objc private func galleryPressed() {
         let context = self.context
         let presentationData = context.sharedContext.currentPresentationData.with { $0 }
@@ -1008,7 +1050,7 @@ private final class QrCodeScanScreenNode: ViewControllerTracingNode, ASScrollVie
     
     fileprivate func resolveCode(code: String, completion: @escaping (Bool) -> Void) {
         switch self.subject {
-        case .cryptoAddress, .customValidated:
+        case .cryptoAddress, .customValidated, .luckgram:
             completion(self.controller?.completeWithCode(code) == true)
             return
         default:

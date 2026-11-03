@@ -100,6 +100,7 @@ swift_library(
         "//submodules/TelegramUI/Components/ChatFolderLinkPreviewScreen",
         "//submodules/ItemListUI",
         "//submodules/QrCodeUI",
+        "//submodules/DeviceAccess:DeviceAccess",
         "//submodules/TelegramUI/Components/ActionPanelComponent",
         "//submodules/TelegramUI/Components/Stories/StoryContainerScreen",
         "//submodules/TelegramUI/Components/Stories/StoryPeerListComponent",
