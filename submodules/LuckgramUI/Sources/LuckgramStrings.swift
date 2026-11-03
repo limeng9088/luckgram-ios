@@ -119,6 +119,10 @@ public enum LuckgramStrings {
             return pick("你没有同意使用 AI 服务。", "You didn't allow the AI service.")
         case LuckgramAIError.cancelled:
             return pick("已取消。", "Cancelled.")
+        case LuckgramAIError.notPro:
+            return pick("这是 Pro 专享功能。", "This feature is for Pro members.")
+        case LuckgramAIError.creditsExhausted:
+            return pick("本月 AI 点数已用完。", "You've used all AI credits for this month.")
         default:
             return pick("AI 服务暂时不可用，请稍后再试。", "The AI service is temporarily unavailable. Please try again later.")
         }

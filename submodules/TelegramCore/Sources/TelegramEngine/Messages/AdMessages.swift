@@ -451,7 +451,7 @@ private class AdMessagesHistoryContextImpl {
 
         self.stateValue = State(interPostInterval: nil, messages: [])
 
-        if messageId == nil {
+        if messageId == nil && !LuckgramSponsoredGate.hidden { // Luckgram 29: none for Pro
             self.state.set(CachedState.getCached(postbox: account.postbox, peerId: peerId)
             |> mapToSignal { cachedState -> Signal<State, NoError> in
                 if let cachedState = cachedState, cachedState.timestamp >= Int32(Date().timeIntervalSince1970) - 5 * 60 {
@@ -479,6 +479,9 @@ private class AdMessagesHistoryContextImpl {
     func activate() {
         if self.isActivated {
             return
+        }
+        if LuckgramSponsoredGate.hidden {
+            return // Luckgram 29: no sponsored messages for Pro
         }
         self.isActivated = true
         
@@ -590,6 +593,9 @@ private class AdMessagesHistoryContextImpl {
     }
 
     func markAsSeen(opaqueId: Data) {
+        if LuckgramSponsoredGate.hidden {
+            return
+        }
         let signal: Signal<Never, NoError> = self.account.network.request(Api.functions.messages.viewSponsoredMessage(randomId: Buffer(data: opaqueId)))
         |> `catch` { _ -> Signal<Api.Bool, NoError> in
             return .single(.boolFalse)
@@ -686,6 +692,9 @@ public class AdMessagesHistoryContext {
 
 
 func _internal_markAdAction(account: Account, opaqueId: Data, media: Bool, fullscreen: Bool) {
+    if LuckgramSponsoredGate.hidden {
+        return // Luckgram 29
+    }
     var flags: Int32 = 0
     if media {
         flags |= (1 << 0)
@@ -702,6 +711,9 @@ func _internal_markAdAction(account: Account, opaqueId: Data, media: Bool, fulls
 }
 
 func _internal_markAdAsSeen(account: Account, opaqueId: Data) {
+    if LuckgramSponsoredGate.hidden {
+        return // Luckgram 29
+    }
     let signal = account.network.request(Api.functions.messages.viewSponsoredMessage(randomId: Buffer(data: opaqueId)))
     |> `catch` { _ -> Signal<Api.Bool, NoError> in
         return .single(.boolFalse)

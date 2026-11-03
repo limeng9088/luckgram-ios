@@ -25,10 +25,11 @@ private enum LuckgramAccountEntry: ItemListNodeEntry {
     case action(Int32, Int32, String, ItemListActionKind)
     case plan(Int32, Int32, String, String)
     case footer(Int32, Int32, String)
+    case perk(Int32, Int32, String, String, String?, String) // section, id, perk, title, badge, text (29)
 
     var section: ItemListSectionId {
         switch self {
-        case let .header(s, _), let .value(s, _, _, _, _), let .action(s, _, _, _), let .plan(s, _, _, _), let .footer(s, _, _):
+        case let .header(s, _), let .value(s, _, _, _, _), let .action(s, _, _, _), let .plan(s, _, _, _), let .footer(s, _, _), let .perk(s, _, _, _, _, _):
             return s
         }
     }
@@ -37,7 +38,7 @@ private enum LuckgramAccountEntry: ItemListNodeEntry {
         switch self {
         case let .header(s, _):
             return s * 1000
-        case let .value(s, id, _, _, _), let .action(s, id, _, _), let .plan(s, id, _, _):
+        case let .value(s, id, _, _, _), let .action(s, id, _, _), let .plan(s, id, _, _), let .perk(s, id, _, _, _, _):
             return s * 1000 + id
         case let .footer(s, id, _):
             return s * 1000 + 900 + id
@@ -56,6 +57,8 @@ private enum LuckgramAccountEntry: ItemListNodeEntry {
             return a1 == b1 && a2 == b2 && a3 == b3 && a4 == b4
         case let (.footer(a1, a2, a3), .footer(b1, b2, b3)):
             return a1 == b1 && a2 == b2 && a3 == b3
+        case let (.perk(a1, a2, a3, a4, a5, a6), .perk(b1, b2, b3, b4, b5, b6)):
+            return a1 == b1 && a2 == b2 && a3 == b3 && a4 == b4 && a5 == b5 && a6 == b6
         default:
             return false
         }
@@ -82,6 +85,8 @@ private enum LuckgramAccountEntry: ItemListNodeEntry {
             })
         case let .footer(_, _, text):
             return ItemListTextItem(presentationData: presentationData, text: .plain(text), sectionId: self.section)
+        case let .perk(_, _, perk, title, badge, text):
+            return ItemListDisclosureItem(presentationData: presentationData, systemStyle: .glass, icon: LuckgramProUI.icon(perk), title: title, titleBadge: badge, label: text, labelStyle: .multilineDetailText, sectionId: self.section, style: .blocks, disclosureStyle: .none, action: nil)
         }
     }
 }
@@ -388,13 +393,25 @@ public func luckgramProController(context: AccountContext) -> ViewController {
         }))
     })
 
-    let entries = updated.get() |> map { _ -> [LuckgramAccountEntry] in
+    let perkTexts = LuckgramProPerks.Texts(zh: LuckgramStrings.isChinese)
+    /// 29 需求 2: the live perks in their fixed order, in their own section under the plans.
+    func addPerks(_ e: inout [LuckgramAccountEntry]) {
+        for (i, row) in LuckgramProUI.liveRows().enumerated() {
+            e.append(.perk(1, Int32(10 + i), row.perk, row.title, row.proOnly ? perkTexts.proOnlyBadge : nil, row.subtitle))
+        }
+    }
+
+    let entries = combineLatest(queue: .mainQueue(), updated.get(), LuckgramPro.shared.stateSignal) |> map { _, _ -> [LuckgramAccountEntry] in
         var e: [LuckgramAccountEntry] = [.header(0, tx.proTitle)]
         guard let b = state.billing else {
             e.append(.value(0, 1, tx.proTitle, "—", state.loading))
             return e
         }
         e.append(.value(0, 1, tx.proTitle, b.pro ? tx.proUntil(LuckgramAccountLogic.date(b.proExpiresAt)) : tx.free, false))
+        if let credits = LuckgramProUI.creditsValue() {
+            e.append(.value(0, 4, perkTexts.creditsTitle, credits, false))
+        }
+        addPerks(&e)
         if !b.enabled {
             e.append(.footer(0, 0, tx.notOnSale))
             return e

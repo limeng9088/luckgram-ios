@@ -117,6 +117,7 @@ public enum LuckgramAIRegistry {
         // ---- features that extend the assistant register here ----
         LuckgramAgents.register() // 22 agents
         LuckgramAIImage.register() // 23 images
+        LuckgramProModelChoice.register() // 29 premium model
     }
 
     /// Puts `prefix` in front of what is already typed (replacing another built-in prefix).

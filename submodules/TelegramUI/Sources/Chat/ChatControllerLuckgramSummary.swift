@@ -31,6 +31,12 @@ extension ChatControllerImpl {
         model.presentController = { [weak self] c in
             self?.present(c, in: .window(.root))
         }
+        model.showUpgrade = { [weak self] reason in
+            guard let self else {
+                return
+            }
+            LuckgramProUI.presentUpgrade(context: self.context, reason: reason, from: self) // Luckgram 29
+        }
         self.chatDisplayNode.luckgramSummary = model
         return model
     }

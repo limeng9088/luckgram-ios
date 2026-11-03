@@ -54,6 +54,9 @@ public final class LuckgramAIConversation: Codable {
     public var task: LuckgramAI.AITask
     /// Extra system instruction sent first with every request, or nil.
     public var systemPrompt: String?
+    /// `model_tier` sent with every request, or nil for the standard model (spec 29: "premium", set by
+    /// the model choice). Not saved: a reopened conversation starts on the standard model.
+    public var modelTier: String?
     public var createdAt: Double
     public var updatedAt: Double
     public var messages: [Message]

@@ -12,8 +12,6 @@ import AccountContext
 public final class LuckgramChatSummaryModel {
     /// spec 19 需求 1: the bar shows from this many unread messages.
     public static let barMinUnread = 30
-    /// Largest range offered; also caps "unread".
-    static let maxRange = 500
 
     public static var isEnabled: Bool {
         return LuckgramSettings.shared.isEnabled(LuckgramFeatures.aiSummary)
@@ -40,6 +38,27 @@ public final class LuckgramChatSummaryModel {
     public var jumpToMessage: ((EngineMessage.Id) -> Void)?
     /// Presents the AI consent alert.
     public var presentController: ((ViewController) -> Void)?
+    /// spec 29 需求 5/6: opens the "upgrade to Pro" sheet.
+    public var showUpgrade: ((LuckgramProPerks.Reason) -> Void)?
+    private let proTexts = LuckgramProPerks.Texts(zh: LuckgramStrings.isChinese)
+
+    private static var isPro: Bool {
+        return LuckgramPro.shared.isPro
+    }
+
+    /// spec 29 需求 5: "unread" covers up to the Pro limit for Pro users, else the free 100.
+    private var unreadCap: Int {
+        return LuckgramProPerks.summaryUnreadCap(unread: self.unread, pro: LuckgramChatSummaryModel.isPro, proMax: LuckgramPro.shared.state.summaryMaxMessages(now: Date()))
+    }
+
+    /// Free users can't ask follow-up questions (placeholder says so).
+    var canAsk: Bool {
+        return LuckgramChatSummaryModel.isPro
+    }
+
+    var questionPlaceholder: String {
+        return self.canAsk ? LuckgramStrings.pick("问这些消息…", "Ask about these messages…") : self.proTexts.followUpHintFree
+    }
 
     public private(set) var phase: Phase = .hidden
     public private(set) var version = 0
@@ -90,22 +109,46 @@ public final class LuckgramChatSummaryModel {
     }
 
     func startUnread() {
-        self.start(count: min(self.unread, LuckgramChatSummaryModel.maxRange), label: LuckgramStrings.pick("未读", "Unread"))
+        self.start(count: self.unreadCap, label: LuckgramStrings.pick("未读", "Unread"))
     }
 
     /// "总结聊天": pick the range.
     public func makeRangePicker() -> UIAlertController {
         let sheet = UIAlertController(title: LuckgramStrings.pick("总结聊天", "Summarize chat"), message: nil, preferredStyle: .actionSheet)
+        let pro = LuckgramChatSummaryModel.isPro
+        let badge = " · " + self.proTexts.proOnlyBadge
         if self.unread > 0 {
-            let n = min(self.unread, LuckgramChatSummaryModel.maxRange)
-            sheet.addAction(UIAlertAction(title: LuckgramStrings.pick("未读（\(n) 条）", "Unread (\(n))"), style: .default) { [weak self] _ in
-                self?.startUnread()
+            // spec 29 需求 5: free users get unread up to 100; "all unread" beyond that is Pro-only
+            let n = self.unreadCap
+            let all = self.unread > LuckgramProPerks.summaryFreeMax
+            let title: String
+            if !all {
+                title = LuckgramStrings.pick("未读（\(n) 条）", "Unread (\(n))")
+            } else if pro {
+                title = self.proTexts.allUnread(n)
+            } else {
+                title = self.proTexts.allUnread(self.unread) + badge
+            }
+            sheet.addAction(UIAlertAction(title: title, style: .default) { [weak self] _ in
+                guard let self else {
+                    return
+                }
+                if all && !LuckgramChatSummaryModel.isPro {
+                    self.showUpgrade?(.summaryRange)
+                } else {
+                    self.startUnread()
+                }
             })
         }
         for n in [100, 300, 500] {
             let label = LuckgramStrings.pick("最近 \(n) 条", "Last \(n)")
-            sheet.addAction(UIAlertAction(title: label, style: .default) { [weak self] _ in
-                self?.start(count: n, label: label)
+            let needsPro = LuckgramProPerks.summaryNeedsPro(count: n, pro: pro)
+            sheet.addAction(UIAlertAction(title: needsPro ? label + badge : label, style: .default) { [weak self] _ in
+                if LuckgramProPerks.summaryNeedsPro(count: n, pro: LuckgramChatSummaryModel.isPro) {
+                    self?.showUpgrade?(.summaryRange)
+                } else {
+                    self?.start(count: n, label: label)
+                }
             })
         }
         sheet.addAction(UIAlertAction(title: LuckgramStrings.pick("取消", "Cancel"), style: .cancel))
@@ -185,6 +228,9 @@ public final class LuckgramChatSummaryModel {
             self.close()
             return
         }
+        if error.code == LuckgramProPerks.errorQuotaExceeded || error.code == LuckgramProPerks.errorNotPro {
+            self.showUpgrade?(error.code == LuckgramProPerks.errorNotPro ? .proOnly : .quota) // spec 29 需求 6
+        }
         self.status = error.localizedMessage + LuckgramStrings.pick(" 点此重试", " Tap to retry")
         self.retry = retry
         self.changed()
@@ -233,6 +279,10 @@ public final class LuckgramChatSummaryModel {
         if self.isBusy || self.lines.isEmpty {
             return
         }
+        if !self.canAsk {
+            self.showUpgrade?(.followUp) // spec 29 需求 5
+            return
+        }
         let tail = "\n\nQuestion: " + question + "\nAnswer briefly, in the language of the question. " + LuckgramChatSummaryLogic.citeRule
         let head = "Chat messages (oldest first):\n"
         let budget = max(1000, self.maxChars - tail.unicodeScalars.count - head.unicodeScalars.count - 100)
@@ -268,6 +318,9 @@ public final class LuckgramChatSummaryModel {
             }
             self.isBusy = false
             self.qa[index].error = error.localizedMessage
+            if error.code == LuckgramProPerks.errorQuotaExceeded {
+                self.showUpgrade?(.quota)
+            }
             self.changed()
         })
     }
@@ -558,6 +611,7 @@ public final class LuckgramChatSummaryPanelComponent: Component {
             self.collapseButton.isHidden = false
             self.closeButton.isHidden = false
             self.titleLabel.text = model.title
+            self.questionField.placeholder = model.questionPlaceholder // spec 29: follow-ups are Pro-only
             self.titleLabel.textColor = primary
             self.collapseButton.tintColor = secondary
             self.closeButton.tintColor = secondary

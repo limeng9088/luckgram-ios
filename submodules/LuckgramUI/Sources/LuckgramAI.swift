@@ -16,6 +16,10 @@ public struct LuckgramAIError: Error, Equatable, CustomStringConvertible {
     public static let inputTooLarge = "input_too_large"
     public static let invalidRequest = "invalid_request"
     public static let invalidToken = "invalid_token"
+    /// S12: a Pro-only request (e.g. the premium model) from a free user.
+    public static let notPro = "not_pro"
+    /// S12: the month's AI credits are used up.
+    public static let creditsExhausted = "credits_exhausted"
     // Codes produced by the client itself
     public static let networkError = "network_error"
     /// The user declined (or has not given) consent; nothing was sent.
@@ -373,7 +377,8 @@ public final class LuckgramAI {
         })
     }
 
-    public func chat(context: AccountContext?, present: ((ViewController) -> Void)?, task: AITask, effect: String? = nil, messages: [Message], stream: Bool) -> Signal<ChatEvent, LuckgramAIError> {
+    /// `modelTier`: `model_tier` (spec 29 / S12: "premium" costs 1 AI credit), nil for the standard model.
+    public func chat(context: AccountContext?, present: ((ViewController) -> Void)?, task: AITask, effect: String? = nil, modelTier: String? = nil, messages: [Message], stream: Bool) -> Signal<ChatEvent, LuckgramAIError> {
         let chars = messages.reduce(0) { $0 + $1.content.count }
         if chars > LuckgramSettings.shared.remoteInt("ai.max_input_chars", default: 60000) {
             return .fail(LuckgramAIError(code: LuckgramAIError.inputTooLarge))
@@ -385,6 +390,9 @@ public final class LuckgramAI {
         ]
         if let effect, task == .writing {
             body["effect"] = effect
+        }
+        if let modelTier {
+            body["model_tier"] = modelTier
         }
         guard let payload = try? JSONSerialization.data(withJSONObject: body) else {
             return .fail(LuckgramAIError(code: LuckgramAIError.invalidRequest))
