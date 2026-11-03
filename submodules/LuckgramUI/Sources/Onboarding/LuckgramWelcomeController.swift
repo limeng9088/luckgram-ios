@@ -60,7 +60,14 @@ public final class LuckgramWelcomeController: ViewController {
         super.viewDidAppear(animated)
         if !self.asked && LuckgramWelcomeLogic.shouldAskPrivacy(accepted: LuckgramWelcomeController.isAccepted) {
             self.asked = true
-            self.showPrivacy(thenStart: false)
+            // After the first layout pass: on the first setViewControllers of the auth flow the
+            // page may not be in a window yet and an alert presented now is dropped.
+            DispatchQueue.main.async { [weak self] in
+                guard let self, !LuckgramWelcomeController.isAccepted else {
+                    return
+                }
+                self.showPrivacy(thenStart: false)
+            }
         }
     }
 
