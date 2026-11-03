@@ -130,7 +130,8 @@ public final class LuckgramAIChatController: UIViewController, LuckgramAIChatHos
         self.headerStack.axis = .horizontal
         self.headerStack.spacing = 6.0
         self.headerScroll.showsHorizontalScrollIndicator = false
-        self.headerScroll.backgroundColor = theme.list.plainBackgroundColor
+        // specs#96: no band of its own — the chips sit on the page background like the quick buttons
+        self.headerScroll.backgroundColor = .clear
         self.headerScroll.addSubview(self.headerStack)
         for entry in LuckgramAIRegistry.headerEntries {
             self.headerStack.addArrangedSubview(self.makeChip(title: LuckgramStrings.pick(entry.title.0, entry.title.1), icon: entry.icon, action: { [weak self] in
@@ -175,6 +176,12 @@ public final class LuckgramAIChatController: UIViewController, LuckgramAIChatHos
         }
 
         self.inputPanel.backgroundColor = theme.chat.inputPanel.panelBackgroundColor
+        // specs#96: the hairline Telegram's message panel has on top
+        let panelSeparator = UIView()
+        panelSeparator.backgroundColor = theme.chat.inputPanel.panelSeparatorColor
+        panelSeparator.frame = CGRect(x: 0.0, y: 0.0, width: 1.0, height: 1.0 / UIScreen.main.scale)
+        panelSeparator.autoresizingMask = [.flexibleWidth, .flexibleBottomMargin]
+        self.inputPanel.addSubview(panelSeparator)
         self.inputView_.font = UIFont.systemFont(ofSize: 17.0)
         self.inputView_.textColor = theme.chat.inputPanel.inputTextColor
         self.inputView_.backgroundColor = theme.chat.inputPanel.inputBackgroundColor
