@@ -57,6 +57,9 @@ public final class LuckgramAIConversation: Codable {
     public var systemPrompt: String?
     /// Extra top-level fields of every /v1/ai/chat request of this conversation, or nil (spec 30: `agent_id`).
     public var requestParams: [String: String]?
+    /// `model_tier` sent with every request, or nil for the standard model (spec 29: "premium", set by
+    /// the model choice). Not saved: a reopened conversation starts on the standard model.
+    public var modelTier: String?
     public var createdAt: Double
     public var updatedAt: Double
     public var messages: [Message]

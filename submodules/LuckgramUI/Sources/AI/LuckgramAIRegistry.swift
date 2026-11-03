@@ -118,6 +118,7 @@ public enum LuckgramAIRegistry {
         LuckgramAgents.register() // 22 agents
         LuckgramAgentMarket.register() // 30 agent market
         LuckgramAIImage.register() // 23 images
+        LuckgramProModelChoice.register() // 29 premium model
     }
 
     /// Puts `prefix` in front of what is already typed (replacing another built-in prefix).

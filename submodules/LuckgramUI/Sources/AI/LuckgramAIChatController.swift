@@ -431,10 +431,15 @@ public final class LuckgramAIChatController: UIViewController, LuckgramAIChatHos
         self.updateSendButton()
 
         let context = self.context
+        let tier = conversation.modelTier
+        var params = conversation.requestParams // spec 29: the premium model goes as model_tier
+        if let tier {
+            params = (params ?? [:]).merging(["model_tier": tier], uniquingKeysWith: { current, _ in current })
+        }
         self.requestDisposable?.dispose()
         self.requestDisposable = (LuckgramAI.shared.chat(context: context, present: { [weak self] c in
             self?.presentAlert(c)
-        }, task: conversation.task, params: conversation.requestParams, messages: messages, stream: true)
+        }, task: conversation.task, params: params, messages: messages, stream: true)
         |> deliverOnMainQueue).startStrict(next: { [weak self] event in
             guard let self, self.streaming === reply else {
                 return
@@ -447,6 +452,9 @@ public final class LuckgramAIChatController: UIViewController, LuckgramAIChatHos
             case let .completed(text):
                 reply.text = text
                 self.finishReply(conversation, reply, error: nil)
+                if tier != nil {
+                    LuckgramProModelChoice.onPremiumReply()
+                }
             }
             if atBottom {
                 self.scrollToBottom(animated: false)
@@ -456,6 +464,7 @@ public final class LuckgramAIChatController: UIViewController, LuckgramAIChatHos
                 return
             }
             self.finishReply(conversation, reply, error: error)
+            LuckgramProModelChoice.onError(host: self, code: error.code) // spec 29
         }, completed: { [weak self] in
             guard let self, self.streaming === reply else {
                 return

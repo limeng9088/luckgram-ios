@@ -1,5 +1,6 @@
 import Foundation
 import SwiftSignalKit
+import TelegramCore
 
 /// specs#87 (29): the one place that says whether the user has Luckgram Pro. Every Pro check goes
 /// through `isPro`; perks, AI credits and limits come from the same `LuckgramProState`.
@@ -25,6 +26,7 @@ public final class LuckgramPro {
         let cached = LuckgramProState.fromCache(LuckgramSettings.shared.string(LuckgramPro.cacheKey, default: nil))
         self.currentState = cached
         self.statePromise = ValuePromise(cached, ignoreRepeated: true)
+        LuckgramSponsoredGate.setPro(active: cached.active, expiresAt: cached.expiresAt) // 需求 4
     }
 
     public var state: LuckgramProState {
@@ -78,6 +80,7 @@ public final class LuckgramPro {
 
     private func update(_ next: LuckgramProState) {
         self.currentState = next
+        LuckgramSponsoredGate.setPro(active: next.active, expiresAt: next.expiresAt) // 需求 4
         LuckgramSettings.shared.setString(LuckgramPro.cacheKey, next.toCache())
         self.statePromise.set(next)
     }

@@ -91,6 +91,23 @@ public final class LuckgramOnboardingController: ViewController {
         if self.index + 1 < self.steps.count {
             self.index += 1
             self.bind(animated: true)
+        } else if step == .pro && !primary && LuckgramProPerks.shouldShowSurvey(fromOnboarding: true, alreadyShown: LuckgramSettings.shared.bool(LuckgramProPerks.surveyShownKey, default: false)) {
+            // 29 需求 7: "Continue without Pro" asks why once per device, then login. Shown over
+            // this page (no navigation step that could fail); removed once login is on top.
+            LuckgramSettings.shared.setBool(LuckgramProPerks.surveyShownKey, true)
+            let survey = LuckgramProSkipSurveyView(texts: LuckgramProPerks.Texts(zh: LuckgramStrings.isChinese), topInset: self.pageView.topInset, bottomInset: self.pageView.bottomInset)
+            survey.frame = self.pageView.bounds
+            survey.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+            survey.done = { [weak self, weak survey] reason in
+                if let reason {
+                    LuckgramProSkipSurveyView.send(reason)
+                }
+                self?.finish()
+                Queue.mainQueue().after(0.8, {
+                    survey?.removeFromSuperview()
+                })
+            }
+            self.pageView.addSubview(survey)
         } else {
             self.finish()
         }
@@ -446,6 +463,10 @@ private enum LuckgramOnboardingCards {
     }
 
     static func proCard(_ t: LuckgramWelcomeLogic.Texts, price: String?, canSubscribe: Bool) -> UIView {
+        let live = LuckgramProUI.liveRows()
+        if !live.isEmpty {
+            return liveProCard(live, t: t, price: price, canSubscribe: canSubscribe)
+        }
         let icons = ["✦", "⇄", "⭐"]
         let colors = [UIColor(rgb: 0x5E5CE6), UIColor(rgb: 0x0A84FF), UIColor(rgb: 0xFF9F0A)]
         var rows: [UIView] = []
@@ -468,6 +489,55 @@ private enum LuckgramOnboardingCards {
             rows.append(label(t.proFootnote, size: 12.0, color: secondary, center: true))
         }
         return stack(rows, spacing: 8.0)
+    }
+}
+
+extension LuckgramOnboardingCards {
+    /// 29 需求 2: the live perks; scrolls when taller than about half the screen.
+    static func liveProCard(_ rows: [LuckgramProPerks.Row], t: LuckgramWelcomeLogic.Texts, price: String?, canSubscribe: Bool) -> UIView {
+        let badgeText = LuckgramProPerks.Texts(zh: LuckgramStrings.isChinese).proOnlyBadge
+        var views: [UIView] = []
+        if let price, !price.isEmpty {
+            views.append(label(price, size: 22.0, bold: true, center: true))
+        }
+        for row in rows {
+            let icon = UIImageView(image: LuckgramProUI.icon(row.perk, size: 34.0))
+            icon.translatesAutoresizingMaskIntoConstraints = false
+            icon.widthAnchor.constraint(equalToConstant: 34.0).isActive = true
+            icon.heightAnchor.constraint(equalToConstant: 34.0).isActive = true
+            var lines: [UIView] = []
+            if row.proOnly {
+                let badge = label(" " + badgeText + " ", size: 11.0, color: .black, bold: true)
+                badge.backgroundColor = UIColor(rgb: 0xFFD60A)
+                badge.layer.cornerRadius = 5.0
+                badge.clipsToBounds = true
+                lines.append(stack([badge, UIView()], spacing: 0.0, axis: .horizontal))
+            }
+            lines.append(label(row.title, size: 15.0, bold: true))
+            lines.append(label(row.subtitle, size: 13.0, color: secondary))
+            views.append(box(stack([icon, stack(lines, spacing: 2.0)], spacing: 12.0, axis: .horizontal, alignment: .top), color: card, radius: 16.0, padding: UIEdgeInsets(top: 12.0, left: 12.0, bottom: 12.0, right: 12.0)))
+        }
+        if canSubscribe {
+            views.append(label(t.proFootnote, size: 12.0, color: secondary, center: true))
+        }
+        let list = stack(views, spacing: 8.0)
+        let scroll = UIScrollView()
+        scroll.showsVerticalScrollIndicator = false
+        scroll.alwaysBounceVertical = false
+        list.translatesAutoresizingMaskIntoConstraints = false
+        scroll.addSubview(list)
+        let fit = scroll.heightAnchor.constraint(equalTo: list.heightAnchor)
+        fit.priority = UILayoutPriority(500.0)
+        NSLayoutConstraint.activate([
+            list.topAnchor.constraint(equalTo: scroll.contentLayoutGuide.topAnchor),
+            list.bottomAnchor.constraint(equalTo: scroll.contentLayoutGuide.bottomAnchor),
+            list.leadingAnchor.constraint(equalTo: scroll.contentLayoutGuide.leadingAnchor),
+            list.trailingAnchor.constraint(equalTo: scroll.contentLayoutGuide.trailingAnchor),
+            list.widthAnchor.constraint(equalTo: scroll.frameLayoutGuide.widthAnchor),
+            scroll.heightAnchor.constraint(lessThanOrEqualToConstant: UIScreen.main.bounds.height * 0.45),
+            fit
+        ])
+        return scroll
     }
 }
 
