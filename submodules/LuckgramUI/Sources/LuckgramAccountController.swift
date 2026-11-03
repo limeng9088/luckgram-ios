@@ -355,6 +355,15 @@ public func luckgramProController(context: AccountContext) -> ViewController {
     }
 
     let arguments = LuckgramAccountArguments(action: { id in
+        if id == 50 {
+            // Luckgram 32: cloud backup (Pro); free users get the upgrade prompt.
+            if luckgramIsPro() {
+                pushImpl?(luckgramCloudBackupController(context: context))
+            } else {
+                presentImpl?(luckgramProUpgradeController(context: context, reason: LuckgramCloudBackupStrings.proOnly, openPro: nil))
+            }
+            return
+        }
         guard !state.busy, let billing = state.billing else {
             return
         }
@@ -388,7 +397,16 @@ public func luckgramProController(context: AccountContext) -> ViewController {
         }))
     })
 
-    let entries = updated.get() |> map { _ -> [LuckgramAccountEntry] in
+    // Luckgram 32: "Cloud backup" section under the plans.
+    func cloudBackupEntries(isPro: Bool) -> [LuckgramAccountEntry] {
+        return [
+            .header(1, LuckgramCloudBackupStrings.header),
+            .plan(1, 50, LuckgramCloudBackupStrings.header, isPro ? "" : "Pro"),
+            .footer(1, 0, LuckgramCloudBackupStrings.proOnly)
+        ]
+    }
+
+    func billingEntries() -> [LuckgramAccountEntry] {
         var e: [LuckgramAccountEntry] = [.header(0, tx.proTitle)]
         guard let b = state.billing else {
             e.append(.value(0, 1, tx.proTitle, "—", state.loading))
@@ -412,6 +430,10 @@ public func luckgramProController(context: AccountContext) -> ViewController {
         }
         e.append(.footer(0, 0, tx.proInfo))
         return e
+    }
+
+    let entries = combineLatest(updated.get(), LuckgramPro.shared.stateSignal) |> map { _, pro -> [LuckgramAccountEntry] in
+        return billingEntries() + cloudBackupEntries(isPro: pro.isPro(now: Date()))
     }
 
     let controller = luckgramItemListController(context: context, title: tx.proTitle, entries: entries, arguments: arguments)
