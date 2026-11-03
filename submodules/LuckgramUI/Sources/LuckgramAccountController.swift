@@ -343,6 +343,7 @@ public func luckgramProController(context: AccountContext) -> ViewController {
                 if let now = state.billing?.proExpiresAt, now != state.expiresBefore {
                     state.refreshesLeft = 0
                     refresh()
+                    LuckgramPro.shared.refresh() // 29: payment went through
                     luckgramToast(context, tx.proActive, present: presentImpl)
                 } else if state.refreshesLeft > 0 {
                     refreshAfterPurchase()
@@ -423,6 +424,7 @@ public func luckgramProController(context: AccountContext) -> ViewController {
     }
     controller.didAppear = { _ in
         load()
+        LuckgramPro.shared.refresh() // 29: same state everywhere
     }
     return controller
 }

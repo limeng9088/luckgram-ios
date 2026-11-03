@@ -461,6 +461,7 @@ public final class SharedAccountContextImpl: SharedAccountContext {
             LuckgramRemoteConfigFetcher.shared.refreshIfStale()
             LuckgramAnnouncements.shared.refreshIfStale() // Luckgram: announcements (S8)
             LuckgramUpdates.shared.checkIfDue() // Luckgram: update check (S5)
+            LuckgramPro.shared.refreshIfStale() // Luckgram 29: Pro state (/v1/me)
         })
         // Luckgram spec 13: TelegramCore reads the store-restrictions switch from LuckgramStoreRestrictions.
         self.luckgramStoreRestrictionsDisposable = (LuckgramSettings.shared.isEnabledSignal(LuckgramStoreRestrictionsFeature.key)
