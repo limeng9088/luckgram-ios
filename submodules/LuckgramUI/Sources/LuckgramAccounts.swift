@@ -15,7 +15,16 @@ import LuckgramAccountsStore
 /// Luckgram 09 (more accounts): strings, the limit alert and Settings → Manage accounts.
 /// Same texts and layout as Android `LuckgramAccounts` / `LuckgramAccountsActivity`.
 public enum LuckgramAccountsStrings {
-    public static var limitReached: String { LuckgramStrings.pick("最多可登录 \(LuckgramAccountsStore.maxAccounts) 个账号", "You can log in to at most \(LuckgramAccountsStore.maxAccounts) accounts") }
+    public static var limitReached: String {
+        let max = LuckgramAccountsStore.maxAccounts
+        var text = LuckgramStrings.pick("最多可登录 \(max) 个账号", "You can log in to at most \(max) accounts")
+        if luckgramOfferAccountUpgrade() {
+            let pro = luckgramProMaxAccounts()
+            text += LuckgramStrings.pick("。升级 Pro 可登录 \(pro) 个账号", ". Upgrade to Pro to log in to \(pro) accounts")
+        }
+        return text
+    }
+    public static var viewPro: String { LuckgramStrings.pick("查看 Pro", "View Pro") }
     public static func showAll(_ count: Int) -> String { LuckgramStrings.pick("显示全部 \(count) 个账号", "Show all \(count) accounts") }
     public static var showLess: String { LuckgramStrings.pick("收起", "Show less") }
     public static var manage: String { LuckgramStrings.pick("管理账号", "Manage accounts") }
@@ -30,13 +39,66 @@ public enum LuckgramAccountsStrings {
     public static var notificationsInfo: String { LuckgramStrings.pick("关闭后，这个账号收到新消息时不再弹出通知。", "When off, new messages for this account don't show a notification.") }
 }
 
-/// Shown instead of Telegram Premium's upsell when 20 accounts are logged in.
+// MARK: - Limit (32: free 20 / Pro 50 from remote config)
+
+/// Pro status for the account limit and cloud backup (29's unified state).
+public func luckgramIsPro() -> Bool {
+    return LuckgramPro.shared.isPro
+}
+
+private func luckgramRemoteMaxFree() -> Int {
+    return LuckgramSettings.shared.remoteInt(LuckgramAccountLimit.maxFreeKey, default: LuckgramAccountLimit.defaultMaxFree)
+}
+
+private func luckgramRemoteMaxPro() -> Int {
+    return LuckgramSettings.shared.remoteInt(LuckgramAccountLimit.maxProKey, default: LuckgramAccountLimit.defaultMaxPro)
+}
+
+/// How many accounts this user may have logged in at once (installed into LuckgramAccountsStore).
+func luckgramMaxAccounts() -> Int {
+    return LuckgramAccountLimit.limit(isPro: luckgramIsPro(), remoteMaxFree: luckgramRemoteMaxFree(), remoteMaxPro: luckgramRemoteMaxPro())
+}
+
+func luckgramProMaxAccounts() -> Int {
+    return LuckgramAccountLimit.maxPro(remoteMaxFree: luckgramRemoteMaxFree(), remoteMaxPro: luckgramRemoteMaxPro())
+}
+
+func luckgramOfferAccountUpgrade() -> Bool {
+    return LuckgramAccountLimit.offerUpgrade(isPro: luckgramIsPro(), remoteMaxFree: luckgramRemoteMaxFree(), remoteMaxPro: luckgramRemoteMaxPro())
+}
+
+/// The Pro page (29).
+public func luckgramOpenProUpgrade(context: AccountContext) {
+    (context.sharedContext.mainWindow?.viewController as? NavigationController)?.pushViewController(luckgramProController(context: context))
+}
+
+/// The "upgrade to Pro" prompt (29): one line of reason + "View Pro" → the Pro page.
+/// `openPro` nil when already on the Pro page.
+public func luckgramProUpgradeController(context: AccountContext, reason: String, openPro: (() -> Void)?) -> ViewController {
+    let presentationData = context.sharedContext.currentPresentationData.with { $0 }
+    LuckgramStrings.appLanguageCode = presentationData.strings.primaryComponent.languageCode
+    return textAlertController(context: context, title: nil, text: reason, actions: [
+        TextAlertAction(type: .genericAction, title: presentationData.strings.Common_Cancel, action: {}),
+        TextAlertAction(type: .defaultAction, title: LuckgramAccountsStrings.viewPro, action: {
+            openPro?()
+        })
+    ])
+}
+
+/// Shown when the account limit is reached; free users get "View Pro" (32).
 public func luckgramAccountLimitController(context: AccountContext) -> ViewController {
     let presentationData = context.sharedContext.currentPresentationData.with { $0 }
     LuckgramStrings.appLanguageCode = presentationData.strings.primaryComponent.languageCode
-    return textAlertController(context: context, title: nil, text: LuckgramAccountsStrings.limitReached, actions: [
-        TextAlertAction(type: .defaultAction, title: presentationData.strings.Common_OK, action: {})
-    ])
+    var actions: [TextAlertAction] = []
+    if luckgramOfferAccountUpgrade() {
+        actions.append(TextAlertAction(type: .genericAction, title: presentationData.strings.Common_Cancel, action: {}))
+        actions.append(TextAlertAction(type: .defaultAction, title: LuckgramAccountsStrings.viewPro, action: {
+            luckgramOpenProUpgrade(context: context)
+        }))
+    } else {
+        actions.append(TextAlertAction(type: .defaultAction, title: presentationData.strings.Common_OK, action: {}))
+    }
+    return textAlertController(context: context, title: nil, text: LuckgramAccountsStrings.limitReached, actions: actions)
 }
 
 // MARK: - Manage accounts

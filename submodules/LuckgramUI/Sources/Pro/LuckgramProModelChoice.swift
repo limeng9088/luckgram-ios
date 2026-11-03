@@ -60,9 +60,11 @@ enum LuckgramProModelChoice {
             LuckgramPro.shared.refresh()
             alert(host, LuckgramProPerks.Texts(zh: LuckgramStrings.isChinese).creditsExhausted)
         case LuckgramProPerks.errorNotPro?:
+            // the premium model, or something else Pro-only (e.g. a Pro market agent, 30)
+            let premium = host.conversation.modelTier != nil
             host.conversation.modelTier = nil
             LuckgramPro.shared.refresh()
-            presentUpgradeNative(host: host, reason: .premiumModel)
+            presentUpgradeNative(host: host, reason: premium ? .premiumModel : .proOnly)
         case LuckgramProPerks.errorQuotaExceeded?:
             presentUpgradeNative(host: host, reason: .quota)
         default:

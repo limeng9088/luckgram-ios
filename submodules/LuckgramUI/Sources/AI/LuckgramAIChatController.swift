@@ -432,10 +432,14 @@ public final class LuckgramAIChatController: UIViewController, LuckgramAIChatHos
 
         let context = self.context
         let tier = conversation.modelTier
+        var params = conversation.requestParams // spec 29: the premium model goes as model_tier
+        if let tier {
+            params = (params ?? [:]).merging(["model_tier": tier], uniquingKeysWith: { current, _ in current })
+        }
         self.requestDisposable?.dispose()
         self.requestDisposable = (LuckgramAI.shared.chat(context: context, present: { [weak self] c in
             self?.presentAlert(c)
-        }, task: conversation.task, modelTier: conversation.modelTier, messages: messages, stream: true)
+        }, task: conversation.task, params: params, messages: messages, stream: true)
         |> deliverOnMainQueue).startStrict(next: { [weak self] event in
             guard let self, self.streaming === reply else {
                 return

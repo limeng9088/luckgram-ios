@@ -8,18 +8,14 @@ import ItemListUI
 import PresentationDataUtils
 import AccountContext
 import AccountUtils
-import LegacyMediaPickerUI
 import OverlayStatusController
 import LuckgramAccountsStore
 
-/// Luckgram 10 strings; same texts as Android `LuckgramBackup`.
+/// Luckgram 32 backup strings; same texts as Android `LuckgramBackup`.
 public enum LuckgramBackupStrings {
-    public static var title: String { LuckgramStrings.pick("账号备份", "Account backup") }
-    public static var selectHeader: String { LuckgramStrings.pick("选择要导出的账号", "Accounts to export") }
-    public static var export: String { LuckgramStrings.pick("导出为文件", "Export to file") }
-    public static var restore: String { LuckgramStrings.pick("从备份恢复", "Restore from backup") }
-    public static var info: String { LuckgramStrings.pick("备份文件里只有登录信息和备注名，不包含消息、联系人或媒体。文件用你设置的密码加密，iPhone 和 Android 通用。", "The file holds only the login and the local names, no messages, contacts or media. It is encrypted with your password and works on both iPhone and Android.") }
-    public static var warning: String { LuckgramStrings.pick("这个文件等于你账号的钥匙。任何人拿到文件和密码就能登录你的账号。不要发给别人，不要存到不信任的地方。", "This file is the key to your accounts. Anyone with the file and the password can log in to them. Don't send it to anyone and don't keep it anywhere you don't trust.") }
+    public static var selectHeader: String { LuckgramStrings.pick("选择要备份的账号", "Accounts to back up") }
+    public static var info: String { LuckgramStrings.pick("备份里只有登录信息和备注名，不包含消息、联系人或媒体。用你设置的密码在本机加密，iPhone 和 Android 通用。", "The backup holds only the logins and the local names, no messages, contacts or media. It is encrypted on this device with your password and works on both iPhone and Android.") }
+    public static var warning: String { LuckgramStrings.pick("这份备份等于你账号的钥匙。任何人拿到备份和密码就能登录你的账号。", "This backup is the key to your accounts. Anyone with the backup and the password can log in to them.") }
     public static var passwordTitle: String { LuckgramStrings.pick("设置备份密码", "Set a backup password") }
     public static var passwordHint: String { LuckgramStrings.pick("密码（至少 8 位）", "Password (at least 8 characters)") }
     public static var passwordRepeatHint: String { LuckgramStrings.pick("再次输入密码", "Repeat password") }
@@ -28,12 +24,11 @@ public enum LuckgramBackupStrings {
     public static var enterPasswordTitle: String { LuckgramStrings.pick("输入备份密码", "Enter the backup password") }
     public static var wrongPassword: String { LuckgramStrings.pick("密码不正确", "Incorrect password") }
     public static func wait(_ seconds: Int) -> String { LuckgramStrings.pick("请 \(seconds) 秒后再试", "Try again in \(seconds) s") }
-    public static var notBackup: String { LuckgramStrings.pick("这不是 Luckgram 备份文件，或文件已损坏", "This isn't a Luckgram backup file, or the file is damaged") }
+    public static var notBackup: String { LuckgramStrings.pick("云备份已损坏或来自更新版本的 Luckgram", "The cloud backup is damaged or was made by a newer Luckgram") }
     public static var chooseAccounts: String { LuckgramStrings.pick("选择要恢复的账号", "Accounts to restore") }
     public static var alreadyLoggedIn: String { LuckgramStrings.pick("已登录", "Already logged in") }
     public static var restoreButton: String { LuckgramStrings.pick("恢复", "Restore") }
     public static var selectAtLeastOne: String { LuckgramStrings.pick("请至少选择一个账号", "Select at least one account") }
-    public static var exportFailed: String { LuckgramStrings.pick("导出失败", "Export failed") }
     public static var noRoom: String { LuckgramStrings.pick("已达到账号上限，无法恢复更多账号", "The account limit is reached; no more accounts can be restored") }
     public static func result(restored: Int, skipped: Int, failed: Int) -> String {
         var text = LuckgramStrings.pick("已恢复 \(restored) 个账号", "\(restored) account(s) restored")
@@ -53,7 +48,8 @@ public enum LuckgramBackupStrings {
 // MARK: - Password prompts (secure text entry)
 
 private func presentNewPasswordAlert(sharedContext: SharedAccountContext, completion: @escaping (String) -> Void) {
-    let alert = UIAlertController(title: LuckgramBackupStrings.passwordTitle, message: LuckgramBackupStrings.warning, preferredStyle: .alert)
+    let message = LuckgramBackupStrings.warning + "\n\n" + LuckgramCloudBackupStrings.warning
+    let alert = UIAlertController(title: LuckgramBackupStrings.passwordTitle, message: message, preferredStyle: .alert)
     alert.addTextField { field in
         field.isSecureTextEntry = true
         field.placeholder = LuckgramBackupStrings.passwordHint
@@ -63,7 +59,7 @@ private func presentNewPasswordAlert(sharedContext: SharedAccountContext, comple
         field.placeholder = LuckgramBackupStrings.passwordRepeatHint
     }
     alert.addAction(UIAlertAction(title: LuckgramStrings.cancel, style: .cancel))
-    alert.addAction(UIAlertAction(title: LuckgramBackupStrings.export, style: .default, handler: { [weak alert] _ in
+    alert.addAction(UIAlertAction(title: LuckgramCloudBackupStrings.upload, style: .default, handler: { [weak alert] _ in
         let first = alert?.textFields?.first?.text ?? ""
         let second = alert?.textFields?.last?.text ?? ""
         if first.count < LuckgramBackupFormat.minPasswordLength {
@@ -99,35 +95,12 @@ private func presentMessage(sharedContext: SharedAccountContext, _ text: String)
     sharedContext.applicationBindings.presentNativeController(alert)
 }
 
-// MARK: - Restore flow (settings page and login screen)
+// MARK: - Restore flow (cloud backup page and login screen)
 
 /// Wrong-password back-off for the whole process: 1, 2, 4… seconds between attempts.
 private final class LuckgramBackupThrottle {
     static var failedAttempts = 0
     static var nextAttemptAt: Double = 0
-}
-
-/// Pick a file → password → choose accounts → restore. `present` shows a controller over the
-/// current screen; `push` opens the account list.
-public func luckgramStartBackupRestore(sharedContext: SharedAccountContext, present: @escaping (ViewController) -> Void, push: @escaping (ViewController) -> Void) {
-    let presentationData = sharedContext.currentPresentationData.with { $0 }
-    LuckgramStrings.appLanguageCode = presentationData.strings.primaryComponent.languageCode
-    let picker = legacyICloudFilePicker(theme: presentationData.theme, mode: .import, documentTypes: ["public.item"], completion: { urls in
-        guard let url = urls.first else {
-            return
-        }
-        let accessing = url.startAccessingSecurityScopedResource()
-        let data = try? Data(contentsOf: url, options: [.mappedIfSafe])
-        if accessing {
-            url.stopAccessingSecurityScopedResource()
-        }
-        guard let data, data.count < 1024 * 1024 else {
-            presentMessage(sharedContext: sharedContext, LuckgramBackupStrings.notBackup)
-            return
-        }
-        askPasswordAndDecrypt(sharedContext: sharedContext, fileData: data, push: push)
-    })
-    present(picker)
 }
 
 private func askPasswordAndDecrypt(sharedContext: SharedAccountContext, fileData: Data, push: @escaping (ViewController) -> Void) {
@@ -269,6 +242,7 @@ private func luckgramBackupRestoreController(sharedContext: SharedAccountContext
             return
         }
         let chosen = accounts.indices.filter { selectedValue.contains($0) && !loggedInValue.contains(accounts[$0].userId) }.map { accounts[$0] }
+        let alreadyLoggedIn = accounts.filter { loggedInValue.contains($0.userId) }.count
         if chosen.isEmpty {
             presentMessage(sharedContext: sharedContext, LuckgramBackupStrings.selectAtLeastOne)
             return
@@ -279,7 +253,7 @@ private func luckgramBackupRestoreController(sharedContext: SharedAccountContext
             for i in accounts.indices {
                 accounts[i].wipe()
             }
-            let text = result.noRoom > 0 && result.restored == 0 ? LuckgramBackupStrings.noRoom : LuckgramBackupStrings.result(restored: result.restored, skipped: result.skipped, failed: result.noRoom)
+            let text = result.noRoom > 0 && result.restored == 0 ? LuckgramBackupStrings.noRoom : LuckgramBackupStrings.result(restored: result.restored, skipped: result.skipped + alreadyLoggedIn, failed: result.noRoom)
             presentMessage(sharedContext: sharedContext, text)
             dismissImpl?()
         })
@@ -298,7 +272,7 @@ private func luckgramBackupRestoreController(sharedContext: SharedAccountContext
             entries.append(.account(index: index, title: title, checked: !isLoggedIn && selected.contains(index), enabled: !isLoggedIn))
         }
         entries.append(.restore(LuckgramBackupStrings.restoreButton))
-        let controllerState = ItemListControllerState(presentationData: ItemListPresentationData(presentationData), title: .text(LuckgramBackupStrings.restore), leftNavigationButton: nil, rightNavigationButton: nil, backNavigationButton: ItemListBackButton(title: presentationData.strings.Common_Back))
+        let controllerState = ItemListControllerState(presentationData: ItemListPresentationData(presentationData), title: .text(LuckgramCloudBackupStrings.restore), leftNavigationButton: nil, rightNavigationButton: nil, backNavigationButton: ItemListBackButton(title: presentationData.strings.Common_Back))
         let listState = ItemListNodeState(presentationData: ItemListPresentationData(presentationData), entries: entries, style: .blocks, animateChanges: true)
         return (controllerState, (listState, arguments))
     }
@@ -320,35 +294,83 @@ private func luckgramBackupRestoreController(sharedContext: SharedAccountContext
     return controller
 }
 
-// MARK: - Luckgram Features → Account backup
+// MARK: - Cloud backup (32)
 
-private final class LuckgramBackupArguments {
+/// "Restore from cloud": download the ciphertext, then password → choose accounts → restore.
+/// `context` nil on the login screen: the device must already be linked (any account logged in).
+public func luckgramStartCloudRestore(sharedContext: SharedAccountContext, context: AccountContext?, push: @escaping (ViewController) -> Void) {
+    let presentationData = sharedContext.currentPresentationData.with { $0 }
+    LuckgramStrings.appLanguageCode = presentationData.strings.primaryComponent.languageCode
+    let progress = OverlayStatusController(theme: presentationData.theme, type: .loading(cancelled: nil))
+    sharedContext.mainWindow?.present(progress, on: .root)
+    let _ = LuckgramCloudBackup.download(context: context).start(next: { data in
+        progress.dismiss()
+        guard let data else {
+            presentMessage(sharedContext: sharedContext, LuckgramCloudBackupStrings.noBackup)
+            return
+        }
+        askPasswordAndDecrypt(sharedContext: sharedContext, fileData: data, push: push)
+    }, error: { error in
+        progress.dismiss()
+        presentMessage(sharedContext: sharedContext, context == nil && error.code == "not_linked" ? LuckgramCloudBackupStrings.needAccount : LuckgramCloudBackupStrings.error(error))
+    })
+}
+
+private func presentRememberChoice(sharedContext: SharedAccountContext, completion: @escaping (Bool) -> Void) {
+    let alert = UIAlertController(title: nil, message: LuckgramCloudBackupStrings.remember + "\n\n" + LuckgramCloudBackupStrings.autoInfo, preferredStyle: .alert)
+    alert.addAction(UIAlertAction(title: LuckgramCloudBackupStrings.rememberNo, style: .cancel, handler: { _ in
+        completion(false)
+    }))
+    alert.addAction(UIAlertAction(title: LuckgramCloudBackupStrings.rememberYes, style: .default, handler: { _ in
+        completion(true)
+    }))
+    sharedContext.applicationBindings.presentNativeController(alert)
+}
+
+private enum LuckgramCloudAction {
+    case pro
+    case upload
+    case restore
+    case delete
+    case auto(Bool)
+}
+
+private enum LuckgramCloudState: Equatable {
+    case loading
+    case empty
+    case ready(LuckgramCloudBackupLogic.Meta)
+    case error(String)
+}
+
+private final class LuckgramCloudBackupArguments {
     let toggle: (Int64) -> Void
-    let export: () -> Void
-    let restore: () -> Void
+    let action: (LuckgramCloudAction) -> Void
 
-    init(toggle: @escaping (Int64) -> Void, export: @escaping () -> Void, restore: @escaping () -> Void) {
+    init(toggle: @escaping (Int64) -> Void, action: @escaping (LuckgramCloudAction) -> Void) {
         self.toggle = toggle
-        self.export = export
-        self.restore = restore
+        self.action = action
     }
 }
 
-private enum LuckgramBackupEntry: ItemListNodeEntry {
+private enum LuckgramCloudBackupEntry: ItemListNodeEntry {
     case header(String)
     case account(index: Int, accountId: Int64, title: String, checked: Bool)
-    case export(String)
-    case warning(String)
-    case restore(String)
     case info(String)
+    case pro(String, String)
+    case upload(String)
+    case restore(String)
+    case delete(String)
+    case status(String)
+    case auto(String, Bool)
+    case autoInfo(String)
 
     var section: ItemListSectionId {
         switch self {
-        case .header, .account:
+        case .header, .account, .info:
             return 0
-        case .export, .warning:
+        case .pro, .upload, .restore, .delete, .status:
             return 1
-        case .restore, .info:
+        case .auto, .autoInfo:
             return 2
         }
     }
@@ -359,13 +381,21 @@ private enum LuckgramBackupEntry: ItemListNodeEntry {
             return 0
         case let .account(index, _, _, _):
             return 10 + index
-        case .export:
+        case .info:
+            return 999
+        case .pro:
             return 1000
-        case .warning:
+        case .upload:
             return 1001
         case .restore:
+            return 1002
+        case .delete:
+            return 1003
+        case .status:
+            return 1004
+        case .auto:
             return 2000
-        case .info:
+        case .autoInfo:
             return 2001
         }
     }
@@ -374,14 +404,19 @@ private enum LuckgramBackupEntry: ItemListNodeEntry {
         return self.sortIndex
     }
 
-    static func <(lhs: LuckgramBackupEntry, rhs: LuckgramBackupEntry) -> Bool {
+    static func <(lhs: LuckgramCloudBackupEntry, rhs: LuckgramCloudBackupEntry) -> Bool {
         return lhs.sortIndex < rhs.sortIndex
     }
 
-    static func ==(lhs: LuckgramBackupEntry, rhs: LuckgramBackupEntry) -> Bool {
+    static func ==(lhs: LuckgramCloudBackupEntry, rhs: LuckgramCloudBackupEntry) -> Bool {
         switch (lhs, rhs) {
-        case let (.header(a), .header(b)), let (.export(a), .export(b)), let (.warning(a), .warning(b)), let (.restore(a), .restore(b)), let (.info(a), .info(b)):
+        case let (.header(a), .header(b)), let (.info(a), .info(b)), let (.upload(a), .upload(b)), let (.restore(a), .restore(b)),
+             let (.delete(a), .delete(b)), let (.status(a), .status(b)), let (.autoInfo(a), .autoInfo(b)):
             return a == b
+        case let (.pro(a1, a2), .pro(b1, b2)):
+            return a1 == b1 && a2 == b2
+        case let (.auto(a1, a2), .auto(b1, b2)):
+            return a1 == b1 && a2 == b2
         case let (.account(a1, a2, a3, a4), .account(b1, b2, b3, b4)):
             return a1 == b1 && a2 == b2 && a3 == b3 && a4 == b4
         default:
@@ -390,7 +425,7 @@ private enum LuckgramBackupEntry: ItemListNodeEntry {
     }
 
     func item(presentationData: ItemListPresentationData, arguments: Any) -> ListViewItem {
-        let arguments = arguments as! LuckgramBackupArguments
+        let arguments = arguments as! LuckgramCloudBackupArguments
         switch self {
         case let .header(text):
             return ItemListSectionHeaderItem(presentationData: presentationData, text: text, sectionId: self.section)
@@ -398,26 +433,42 @@ private enum LuckgramBackupEntry: ItemListNodeEntry {
             return ItemListCheckboxItem(presentationData: presentationData, systemStyle: .glass, title: title, style: .left, checked: checked, zeroSeparatorInsets: false, sectionId: self.section, action: {
                 arguments.toggle(accountId)
             })
-        case let .export(text):
-            return ItemListActionItem(presentationData: presentationData, systemStyle: .glass, title: text, kind: .generic, alignment: .natural, sectionId: self.section, style: .blocks, action: {
-                arguments.export()
+        case let .info(text), let .status(text), let .autoInfo(text):
+            return ItemListTextItem(presentationData: presentationData, text: .plain(text), sectionId: self.section)
+        case let .pro(title, label):
+            return ItemListDisclosureItem(presentationData: presentationData, systemStyle: .glass, title: title, label: label, sectionId: self.section, style: .blocks, action: {
+                arguments.action(.pro)
             })
-        case let .warning(text):
-            return ItemListTextItem(presentationData: presentationData, text: .markdown("**\(text)**"), sectionId: self.section)
+        case let .upload(text):
+            return ItemListActionItem(presentationData: presentationData, systemStyle: .glass, title: text, kind: .generic, alignment: .natural, sectionId: self.section, style: .blocks, action: {
+                arguments.action(.upload)
+            })
         case let .restore(text):
             return ItemListActionItem(presentationData: presentationData, systemStyle: .glass, title: text, kind: .generic, alignment: .natural, sectionId: self.section, style: .blocks, action: {
-                arguments.restore()
+                arguments.action(.restore)
             })
-        case let .info(text):
-            return ItemListTextItem(presentationData: presentationData, text: .plain(text), sectionId: self.section)
+        case let .delete(text):
+            return ItemListActionItem(presentationData: presentationData, systemStyle: .glass, title: text, kind: .destructive, alignment: .natural, sectionId: self.section, style: .blocks, action: {
+                arguments.action(.delete)
+            })
+        case let .auto(title, value):
+            return ItemListSwitchItem(presentationData: presentationData, systemStyle: .glass, title: title, value: value, sectionId: self.section, style: .blocks, updated: { value in
+                arguments.action(.auto(value))
+            })
         }
     }
 }
 
-public func luckgramBackupController(context: AccountContext) -> ViewController {
+/// Luckgram Features → Luckgram Pro → Cloud backup (Pro). Pick accounts, back up (encrypted on
+/// this device), restore, delete, weekly backup. No file export / import. Same layout and texts
+/// as Android `CloudBackupActivity`.
+public func luckgramCloudBackupController(context: AccountContext) -> ViewController {
     let sharedContext = context.sharedContext
     var pushImpl: ((ViewController) -> Void)?
     var presentImpl: ((ViewController) -> Void)?
+    var uploadImpl: (([AccountRecordId]?, String, Bool) -> Void)?
+    let cloudState = ValuePromise<LuckgramCloudState>(.loading, ignoreRepeated: true)
+    let autoChanged = ValuePromise<Double>(0, ignoreRepeated: true)
     var deselected = Set<Int64>()
     let deselectedPromise = ValuePromise<Set<Int64>>(Set(), ignoreRepeated: true)
     var accountIdsValue: [Int64] = []
@@ -427,89 +478,137 @@ public func luckgramBackupController(context: AccountContext) -> ViewController 
         return accounts.map { ($0.0.account.id.int64, $0.1.compactDisplayTitle) }
     }
 
-    let arguments = LuckgramBackupArguments(toggle: { accountId in
+    let arguments = LuckgramCloudBackupArguments(toggle: { accountId in
         if deselected.contains(accountId) {
             deselected.remove(accountId)
         } else {
             deselected.insert(accountId)
         }
         deselectedPromise.set(deselected)
-    }, export: {
-        let recordIds = accountIdsValue.filter { !deselected.contains($0) }.map { AccountRecordId(rawValue: $0) }
-        if recordIds.isEmpty {
-            presentMessage(sharedContext: sharedContext, LuckgramBackupStrings.selectAtLeastOne)
-            return
-        }
-        presentNewPasswordAlert(sharedContext: sharedContext, completion: { password in
-            let _ = (LuckgramBackup.collect(accountManager: sharedContext.accountManager, recordIds: recordIds)
-            |> deliverOn(Queue.concurrentDefaultQueue())
-            |> map { items -> URL? in
-                var items = items
-                defer {
-                    for i in items.indices {
-                        items[i].wipe()
-                    }
-                }
-                guard !items.isEmpty, let data = try? LuckgramBackupFormat.encrypt(accounts: items, password: password) else {
-                    return nil
-                }
-                let directory = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("luckgram-backup", isDirectory: true)
-                try? FileManager.default.removeItem(at: directory)
-                try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-                let formatter = DateFormatter()
-                formatter.locale = Locale(identifier: "en_US_POSIX")
-                formatter.dateFormat = "yyyyMMdd-HHmm"
-                let url = directory.appendingPathComponent("luckgram-\(formatter.string(from: Date())).\(LuckgramBackupFormat.fileExtension)")
-                do {
-                    try data.write(to: url, options: [.atomic, .completeFileProtection])
-                    return url
-                } catch {
-                    return nil
-                }
+    }, action: { action in
+        switch action {
+        case .pro:
+            presentImpl?(luckgramProUpgradeController(context: context, reason: LuckgramCloudBackupStrings.proOnly, openPro: {
+                pushImpl?(luckgramProController(context: context))
+            }))
+        case .upload:
+            let recordIds = accountIdsValue.filter { !deselected.contains($0) }.map { AccountRecordId(rawValue: $0) }
+            if recordIds.isEmpty {
+                presentMessage(sharedContext: sharedContext, LuckgramBackupStrings.selectAtLeastOne)
+                return
             }
-            |> deliverOnMainQueue).start(next: { url in
-                guard let url else {
-                    presentMessage(sharedContext: sharedContext, LuckgramBackupStrings.exportFailed)
-                    return
-                }
-                let activityController = UIActivityViewController(activityItems: [url], applicationActivities: nil)
-                if let window = sharedContext.mainWindow?.viewController?.view.window {
-                    activityController.popoverPresentationController?.sourceView = window
-                    activityController.popoverPresentationController?.sourceRect = CGRect(origin: CGPoint(x: window.bounds.width / 2.0, y: window.bounds.size.height - 1.0), size: CGSize(width: 1.0, height: 1.0))
-                }
-                sharedContext.applicationBindings.presentNativeController(activityController)
+            presentNewPasswordAlert(sharedContext: sharedContext, completion: { password in
+                presentRememberChoice(sharedContext: sharedContext, completion: { remember in
+                    uploadImpl?(recordIds, password, remember)
+                })
             })
-        })
-    }, restore: {
-        luckgramStartBackupRestore(sharedContext: sharedContext, present: { c in
-            presentImpl?(c)
-        }, push: { c in
-            pushImpl?(c)
-        })
+        case .restore:
+            luckgramStartCloudRestore(sharedContext: sharedContext, context: context, push: { c in
+                pushImpl?(c)
+            })
+        case .delete:
+            let alert = UIAlertController(title: LuckgramCloudBackupStrings.delete, message: LuckgramCloudBackupStrings.deleteConfirm, preferredStyle: .alert)
+            alert.addAction(UIAlertAction(title: LuckgramStrings.cancel, style: .cancel))
+            alert.addAction(UIAlertAction(title: LuckgramCloudBackupStrings.delete, style: .destructive, handler: { _ in
+                let _ = LuckgramCloudBackup.delete(context: context).start(next: { _ in
+                    cloudState.set(.empty)
+                    presentMessage(sharedContext: sharedContext, LuckgramCloudBackupStrings.deleted)
+                }, error: { error in
+                    presentMessage(sharedContext: sharedContext, LuckgramCloudBackupStrings.error(error))
+                })
+            }))
+            sharedContext.applicationBindings.presentNativeController(alert)
+        case let .auto(value):
+            if value {
+                // Turning it on needs the password remembered; back up every account right away with it.
+                presentNewPasswordAlert(sharedContext: sharedContext, completion: { password in
+                    uploadImpl?(nil, password, true)
+                })
+            } else {
+                LuckgramCloudBackup.setAuto(password: nil)
+            }
+            autoChanged.set(Date().timeIntervalSince1970)
+        }
     })
 
-    let signal = combineLatest(queue: .mainQueue(), context.sharedContext.presentationData, accounts, deselectedPromise.get())
-    |> map { presentationData, accounts, deselected -> (ItemListControllerState, (ItemListNodeState, Any)) in
-        var presentationData = presentationData
-        presentationData = presentationData.withUpdated(theme: presentationData.theme.withModalBlocksBackground())
+    /// `recordIds` nil: every logged-in account (weekly backup).
+    uploadImpl = { recordIds, password, remember in
+        let presentationData = sharedContext.currentPresentationData.with { $0 }
+        let progress = OverlayStatusController(theme: presentationData.theme, type: .loading(cancelled: nil))
+        sharedContext.mainWindow?.present(progress, on: .root)
+        let _ = LuckgramCloudBackup.upload(accountManager: sharedContext.accountManager, context: context, recordIds: recordIds, password: password).start(next: { meta in
+            progress.dismiss()
+            if remember {
+                LuckgramCloudBackup.setAuto(password: password)
+            } else if LuckgramCloudBackup.isAutoEnabled {
+                LuckgramCloudBackup.setAuto(password: nil)
+            }
+            LuckgramCloudBackup.markUploaded()
+            cloudState.set(.ready(meta))
+            autoChanged.set(Date().timeIntervalSince1970)
+            presentMessage(sharedContext: sharedContext, LuckgramCloudBackupStrings.uploaded)
+        }, error: { error in
+            progress.dismiss()
+            autoChanged.set(Date().timeIntervalSince1970)
+            if error.code == "not_pro" {
+                presentImpl?(luckgramProUpgradeController(context: context, reason: LuckgramCloudBackupStrings.error(error), openPro: {
+                    pushImpl?(luckgramProController(context: context))
+                }))
+            } else {
+                presentMessage(sharedContext: sharedContext, LuckgramCloudBackupStrings.error(error))
+            }
+        })
+    }
+
+    if luckgramIsPro() {
+        let _ = LuckgramCloudBackup.fetch(context: context).start(next: { meta in
+            cloudState.set(meta.map { LuckgramCloudState.ready($0) } ?? LuckgramCloudState.empty)
+        }, error: { error in
+            cloudState.set(.error(LuckgramCloudBackupStrings.error(error)))
+        })
+    }
+
+    let signal = combineLatest(queue: .mainQueue(), context.sharedContext.presentationData, accounts, deselectedPromise.get(), cloudState.get(), autoChanged.get())
+    |> map { presentationData, accounts, deselected, cloud, _ -> (ItemListControllerState, (ItemListNodeState, Any)) in
         LuckgramStrings.appLanguageCode = presentationData.strings.primaryComponent.languageCode
         accountIdsValue = accounts.map(\.0)
-        var entries: [LuckgramBackupEntry] = [.header(LuckgramBackupStrings.selectHeader.uppercased())]
-        for (index, account) in accounts.enumerated() {
-            entries.append(.account(index: index, accountId: account.0, title: account.1, checked: !deselected.contains(account.0)))
+        var entries: [LuckgramCloudBackupEntry] = []
+        if !luckgramIsPro() {
+            entries.append(.header(LuckgramCloudBackupStrings.header.uppercased()))
+            entries.append(.pro(LuckgramCloudBackupStrings.upload, "Pro"))
+            entries.append(.status(LuckgramCloudBackupStrings.proOnly + "\n\n" + LuckgramCloudBackupStrings.warning))
+        } else {
+            entries.append(.header(LuckgramBackupStrings.selectHeader.uppercased()))
+            for (index, account) in accounts.enumerated() {
+                entries.append(.account(index: index, accountId: account.0, title: account.1, checked: !deselected.contains(account.0)))
+            }
+            entries.append(.info(LuckgramBackupStrings.info))
+            entries.append(.upload(LuckgramCloudBackupStrings.upload))
+            let status: String
+            switch cloud {
+            case .loading:
+                status = LuckgramCloudBackupStrings.loading
+            case .empty:
+                status = LuckgramCloudBackupStrings.noBackup
+            case let .ready(meta):
+                status = LuckgramCloudBackupStrings.status(meta)
+                entries.append(.restore(LuckgramCloudBackupStrings.restore))
+                entries.append(.delete(LuckgramCloudBackupStrings.delete))
+            case let .error(text):
+                status = text
+            }
+            entries.append(.status(status + "\n\n" + LuckgramBackupStrings.warning + "\n" + LuckgramCloudBackupStrings.warning))
+            entries.append(.auto(LuckgramCloudBackupStrings.auto, LuckgramCloudBackup.isAutoEnabled))
+            entries.append(.autoInfo(LuckgramCloudBackupStrings.autoInfo))
         }
-        entries.append(.export(LuckgramBackupStrings.export))
-        entries.append(.warning(LuckgramBackupStrings.warning))
-        entries.append(.restore(LuckgramBackupStrings.restore))
-        entries.append(.info(LuckgramBackupStrings.info))
-        let controllerState = ItemListControllerState(presentationData: ItemListPresentationData(presentationData), title: .text(LuckgramBackupStrings.title), leftNavigationButton: nil, rightNavigationButton: nil, backNavigationButton: ItemListBackButton(title: presentationData.strings.Common_Back))
+        let controllerState = ItemListControllerState(presentationData: ItemListPresentationData(presentationData), title: .text(LuckgramCloudBackupStrings.header), leftNavigationButton: nil, rightNavigationButton: nil, backNavigationButton: ItemListBackButton(title: presentationData.strings.Common_Back))
         let listState = ItemListNodeState(presentationData: ItemListPresentationData(presentationData), entries: entries, style: .blocks, animateChanges: true)
         return (controllerState, (listState, arguments))
     }
 
     let controller = ItemListController(context: context, state: signal)
     pushImpl = { [weak controller] c in
-        controller?.push(c)
+        (controller?.navigationController as? NavigationController)?.pushViewController(c)
     }
     presentImpl = { [weak controller] c in
         controller?.present(c, in: .window(.root))

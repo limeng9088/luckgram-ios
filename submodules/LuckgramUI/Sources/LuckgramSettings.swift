@@ -1,5 +1,6 @@
 import Foundation
 import SwiftSignalKit
+import LuckgramAccountsStore
 
 /// Luckgram switch and config storage (same name and keys as Android `org.telegram.luckgram.LuckgramSettings`).
 ///
@@ -27,6 +28,10 @@ public final class LuckgramSettings {
             // earlier installation left behind.
             LuckgramKeychain.delete(account: LuckgramKeychain.deviceTokenAccount)
             self.defaults.set(true, forKey: LuckgramSettings.installMarkerKey)
+        }
+        // Luckgram 32: account limit from remote config + Pro status.
+        LuckgramAccountsStore.maxAccountsProvider = {
+            return luckgramMaxAccounts()
         }
     }
 
@@ -229,6 +234,7 @@ public final class LuckgramSettings {
             LuckgramAIStore.accountRemoved(accountId: accountId)
         }
         if noAccountsLeft {
+            LuckgramCloudBackup.forgetPassword() // 32: the remembered backup password lives in the Keychain
             for key in self.defaults.dictionaryRepresentation().keys where key != LuckgramSettings.installMarkerKey {
                 self.defaults.removeObject(forKey: key)
             }

@@ -37,6 +37,8 @@ jobs:
           LuckgramUI|submodules/LuckgramUI/Sources/LuckgramAccountLogic.swift|submodules/LuckgramUI/Tests/LuckgramAccountLogicTests.swift
           LuckgramUI|submodules/LuckgramUI/Sources/Pro/LuckgramProState.swift|submodules/LuckgramUI/Tests/LuckgramProStateTests.swift
           LuckgramUI|submodules/LuckgramUI/Sources/Pro/LuckgramProPerks.swift|submodules/LuckgramUI/Tests/LuckgramProPerksTests.swift
+          LuckgramUI|submodules/LuckgramUI/Sources/Scan/LuckgramScanLogic.swift|submodules/LuckgramUI/Tests/LuckgramScanLogicTests.swift
+          LuckgramUI|submodules/LuckgramUI/Sources/Pro/LuckgramProCommunityLogic.swift|submodules/LuckgramUI/Tests/LuckgramProCommunityLogicTests.swift
           LuckgramUI|submodules/LuckgramUI/Sources/LuckgramAnnouncementLogic.swift|submodules/LuckgramUI/Tests/LuckgramAnnouncementLogicTests.swift
           LuckgramUI|submodules/LuckgramUI/Sources/LuckgramUpdateLogic.swift|submodules/LuckgramUI/Tests/LuckgramUpdateLogicTests.swift
           TelegramCore|submodules/TelegramCore/Sources/Luckgram/LuckgramStoreRestrictions.swift|submodules/TelegramCore/Tests/Luckgram/LuckgramStoreRestrictionsTests.swift
@@ -46,8 +48,11 @@ jobs:
           LuckgramUI|submodules/LuckgramUI/Sources/Writing/LuckgramAIWritingEntities.swift|submodules/LuckgramUI/Tests/LuckgramAIWritingEntitiesTests.swift
           LuckgramUI|submodules/LuckgramUI/Sources/Onboarding/LuckgramWelcomeLogic.swift|submodules/LuckgramUI/Tests/LuckgramWelcomeLogicTests.swift
           LuckgramUI|submodules/LuckgramUI/Sources/Diag/LuckgramDiagLogic.swift|submodules/LuckgramUI/Tests/LuckgramDiagLogicTests.swift
+          LuckgramUI|submodules/LuckgramUI/Sources/LuckgramAccountLimit.swift|submodules/LuckgramUI/Tests/LuckgramAccountLimitTests.swift
+          LuckgramUI|submodules/LuckgramUI/Sources/Backup/LuckgramCloudBackupLogic.swift|submodules/LuckgramUI/Tests/LuckgramCloudBackupLogicTests.swift
           LuckgramUI|submodules/LuckgramUI/Sources/Diag/LuckgramEndpoints.swift|submodules/LuckgramUI/Tests/LuckgramEndpointsTests.swift
           LuckgramUI|submodules/LuckgramUI/Sources/LuckgramVersionLine.swift|submodules/LuckgramUI/Tests/LuckgramVersionLineTests.swift
+          LuckgramUI|submodules/LuckgramUI/Sources/Agents/LuckgramAgentMarketLogic.swift|submodules/LuckgramUI/Tests/LuckgramAgentMarketLogicTests.swift
           "
           ran=0
           for line in $SUITES; do

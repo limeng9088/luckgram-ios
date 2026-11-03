@@ -30,6 +30,8 @@ public enum LuckgramAgents {
         var descEn: String
         public var color: UInt32
         public var prompt: String
+        /// spec 30: set for an agent from the market (its instruction stays on the server).
+        public var market: LuckgramAgentMarketLogic.Agent? = nil
 
         public var name: String {
             return self.isPreset ? LuckgramStrings.pick(self.nameZh, self.nameEn) : self.nameZh
@@ -40,6 +42,9 @@ public enum LuckgramAgents {
         }
 
         public var initial: String {
+            if let market = self.market {
+                return market.avatarText(chinese: LuckgramStrings.isChinese)
+            }
             let trimmed = self.name.trimmingCharacters(in: .whitespaces)
             return trimmed.first.map { String($0).uppercased() } ?? "?"
         }
@@ -66,6 +71,27 @@ public enum LuckgramAgents {
         Agent(id: "coder", isPreset: true, nameZh: "编程助手", nameEn: "Coding assistant", descZh: "写代码、找 bug、解释原理", descEn: "Write code, find bugs, explain concepts", color: 0x607D8B,
               prompt: "You are a senior software engineer. Give working, idiomatic code in fenced code blocks with the language name, explain briefly why it works, point out bugs and edge cases, and ask for the language or framework when it matters.")
     ]
+
+    // MARK: - Market agents (spec 30)
+
+    private static let marketPrefix = "market:"
+
+    /// Id of a market agent in this list (pins, `find`); never clashes with presets or custom agents.
+    public static func marketAgentId(_ marketId: String) -> String {
+        return self.marketPrefix + marketId
+    }
+
+    static func fromMarket(_ m: LuckgramAgentMarketLogic.Agent) -> Agent {
+        return Agent(id: self.marketAgentId(m.id), isPreset: true, nameZh: m.name.pick(chinese: true), nameEn: m.name.pick(chinese: false), descZh: m.description.pick(chinese: true), descEn: m.description.pick(chinese: false), color: m.color, prompt: "", market: m)
+    }
+
+    /// Market agents the user has chatted with ("我的"), most recent first; empty when the market is off.
+    public static func marketAgents(accountId: Int64) -> [Agent] {
+        if !LuckgramAgentMarket.isEnabled {
+            return []
+        }
+        return LuckgramAgentMarket.used(accountId: accountId).map { self.fromMarket($0) }
+    }
 
     // MARK: - Custom agents
 
@@ -106,6 +132,12 @@ public enum LuckgramAgents {
     }
 
     public static func find(_ id: String, accountId: Int64) -> Agent? {
+        if id.hasPrefix(self.marketPrefix) {
+            guard LuckgramAgentMarket.isEnabled, let m = LuckgramAgentMarket.findUsed(String(id.dropFirst(self.marketPrefix.count)), accountId: accountId) else {
+                return nil
+            }
+            return self.fromMarket(m)
+        }
         return self.presets.first(where: { $0.id == id }) ?? self.custom(accountId: accountId).first(where: { $0.id == id })
     }
 
@@ -149,6 +181,10 @@ public enum LuckgramAgents {
 
     /// spec 22 需求 3: one conversation per agent, task=agent with the agent's instruction.
     public static func open(_ agent: Agent, context: AccountContext, from host: LuckgramAIChatHost?) {
+        if let market = agent.market {
+            LuckgramAgentMarket.open(market, context: context, from: host?.viewController, host: host)
+            return
+        }
         let conversation = LuckgramAIStore.shared(context: context).findOrCreate(key: self.conversationKey(agent), task: .agent, systemPrompt: agent.prompt, title: agent.name)
         conversation.title = agent.name
         LuckgramAIChatController.open(context: context, conversationId: conversation.id, from: host)

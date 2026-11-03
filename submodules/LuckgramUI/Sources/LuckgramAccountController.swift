@@ -360,6 +360,26 @@ public func luckgramProController(context: AccountContext) -> ViewController {
     }
 
     let arguments = LuckgramAccountArguments(action: { id in
+        if id == 50 {
+            // Luckgram 32: cloud backup (Pro); free users get the upgrade prompt.
+            if luckgramIsPro() {
+                pushImpl?(luckgramCloudBackupController(context: context))
+            } else {
+                presentImpl?(luckgramProUpgradeController(context: context, reason: LuckgramCloudBackupStrings.proOnly, openPro: nil))
+            }
+            return
+        }
+        if id == 4 {
+            // specs#89 (31): Pro community; free users get the same upgrade prompt as cloud backup (32).
+            LuckgramProCommunity.join(context: context, navigationController: {
+                return controllerRef?.navigationController as? NavigationController
+            }, present: { c in
+                presentImpl?(c)
+            }, upgrade: {
+                presentImpl?(luckgramProUpgradeController(context: context, reason: LuckgramProCommunity.texts.proOnly, openPro: nil))
+            })
+            return
+        }
         guard !state.busy, let billing = state.billing else {
             return
         }
@@ -394,14 +414,23 @@ public func luckgramProController(context: AccountContext) -> ViewController {
     })
 
     let perkTexts = LuckgramProPerks.Texts(zh: LuckgramStrings.isChinese)
-    /// 29 需求 2: the live perks in their fixed order, in their own section under the plans.
+    /// 29 需求 2: the live perks in their fixed order, in their own section at the bottom.
     func addPerks(_ e: inout [LuckgramAccountEntry]) {
         for (i, row) in LuckgramProUI.liveRows().enumerated() {
-            e.append(.perk(1, Int32(10 + i), row.perk, row.title, row.proOnly ? perkTexts.proOnlyBadge : nil, row.subtitle))
+            e.append(.perk(3, Int32(10 + i), row.perk, row.title, row.proOnly ? perkTexts.proOnlyBadge : nil, row.subtitle))
         }
     }
 
-    let entries = combineLatest(queue: .mainQueue(), updated.get(), LuckgramPro.shared.stateSignal) |> map { _, _ -> [LuckgramAccountEntry] in
+    // Luckgram 32: "Cloud backup" section under the plans.
+    func cloudBackupEntries(isPro: Bool) -> [LuckgramAccountEntry] {
+        return [
+            .header(1, LuckgramCloudBackupStrings.header),
+            .plan(1, 50, LuckgramCloudBackupStrings.header, isPro ? "" : "Pro"),
+            .footer(1, 0, LuckgramCloudBackupStrings.proOnly)
+        ]
+    }
+
+    func billingEntries() -> [LuckgramAccountEntry] {
         var e: [LuckgramAccountEntry] = [.header(0, tx.proTitle)]
         guard let b = state.billing else {
             e.append(.value(0, 1, tx.proTitle, "—", state.loading))
@@ -411,7 +440,6 @@ public func luckgramProController(context: AccountContext) -> ViewController {
         if let credits = LuckgramProUI.creditsValue() {
             e.append(.value(0, 4, perkTexts.creditsTitle, credits, false))
         }
-        addPerks(&e)
         if !b.enabled {
             e.append(.footer(0, 0, tx.notOnSale))
             return e
@@ -428,6 +456,17 @@ public func luckgramProController(context: AccountContext) -> ViewController {
             e.append(.plan(0, Int32(100 + i), tx.plan(p), tx.stars(p.stars)))
         }
         e.append(.footer(0, 0, tx.proInfo))
+        return e
+    }
+
+    let entries = combineLatest(updated.get(), LuckgramPro.shared.stateSignal) |> map { _, pro -> [LuckgramAccountEntry] in
+        var e = billingEntries() + cloudBackupEntries(isPro: pro.isPro(now: Date()))
+        // specs#89 (31): Pro community, its own section below cloud backup; follows the Pro state (perks).
+        if LuckgramProCommunity.showRow {
+            e.append(.action(2, 4, LuckgramProCommunity.texts.join, .generic))
+            e.append(.footer(2, 0, LuckgramProCommunity.texts.info))
+        }
+        addPerks(&e) // 29 需求 2: section 3, last
         return e
     }
 

@@ -37,6 +37,8 @@ public enum LuckgramFeatures {
     public static let aiAssistantRow = "ai_assistant_row"
     /// spec 22
     public static let aiAgents = "ai_agents"
+    /// spec 30
+    public static let aiAgentMarket = "ai_agent_market"
     /// spec 23
     public static let aiImage = "ai_image"
     public static let roundVideoFromGallery = "round_video_from_gallery"
@@ -57,10 +59,10 @@ public enum LuckgramFeatures {
             .confirmEnable { context, present, done in LuckgramDoubleBottom.confirmEnable(context: context, present: present, done: done) }
             .confirmDisable { context, present, done in LuckgramDoubleBottom.confirmDisable(context: context, present: present, done: done) }
             .hiddenWhen { LuckgramDoubleBottomState.shared.isActive })
-        add(.toggle(LuckgramBackup.featureKey, group: .accountPrivacy, default: true,
-            title: ("账号备份", "Account backup"),
-            description: ("把账号导出为加密文件，换手机后导入", "Export accounts to an encrypted file and import them on a new phone"))
-            .subpage { context in luckgramBackupController(context: context) })
+        add(.toggle(LuckgramProCommunityLogic.featureKey, group: .accountPrivacy, default: true,
+            title: ("Pro 社群", "Pro community"),
+            description: ("Luckgram Pro 页显示「加入 Pro 社群」，一键进 Pro 用户私密群", "Show \"Join the Pro community\" on the Luckgram Pro page to join the private Pro group"))
+            .subpage { context in luckgramProController(context: context) })
         add(.toggle(LuckgramStoreRestrictionsFeature.key, group: .accountPrivacy, default: false,
             title: ("受限频道", "Store-restricted channels"),
             description: ("查看只在商店版 Telegram 中被隐藏的频道和群组；点进去可调整「显示 18+ 内容」", "View channels and groups hidden only in store versions of Telegram; tap for the 18+ content setting"))
@@ -117,6 +119,9 @@ public enum LuckgramFeatures {
             title: ("隐藏聊天", "Hidden chats"),
             description: ("把聊天从列表里藏起来，下拉列表找回", "Hide chats from the list; pull down to find them"))
             .subpage { context in luckgramHiddenChatsSettingsController(context: context) })
+        add(.toggle(LuckgramScanLogic.featureKey, group: .profileOrganize, default: true,
+            title: ("聊天列表「+」菜单", "Chat list \"+\" menu"),
+            description: ("聊天列表右上角「+」：扫一扫加好友、代理配置", "The \"+\" at the top right of the chat list: scan to add friends, proxy settings")))
 
         // ---- 发现 / Discover
         add(.toggle(NearbyLogic.featureKey, group: .discover, default: true,
@@ -137,6 +142,9 @@ public enum LuckgramFeatures {
         add(.toggle(LuckgramFeatures.aiAgents, group: .ai, default: true,
             title: ("AI 智能体", "AI agents"),
             description: ("AI 助手里的旅行规划师、文案写手等，也能自己创建", "Travel planner, copywriter and more in the AI assistant, or make your own")))
+        add(.toggle(LuckgramFeatures.aiAgentMarket, group: .ai, default: true,
+            title: ("智能体市场", "Agent market"),
+            description: ("「智能体」里的「市场」：按分类浏览、搜索更多智能体，部分 Pro 专享", "\"Market\" in Agents: browse and search more agents by category, some for Pro")))
         add(.toggle(LuckgramFeatures.aiAssistantRow, group: .ai, default: true,
             title: ("聊天列表置顶「Luckgram AI」", "Pin \"Luckgram AI\" in the chat list"),
             description: ("在聊天列表顶部显示一行 AI 助手入口", "Show an AI assistant row at the top of the chat list")))

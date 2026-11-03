@@ -5,13 +5,11 @@ import TelegramCore
 import AccountContext
 import LuckgramAccountsStore
 
-/// Luckgram 10 (account backup): reads the logged-in accounts' permanent keys from their account
-/// records and restores accounts as new records. A restored record carries the key as
+/// Luckgram 32 (cloud backup): reads the logged-in accounts' permanent keys from their account
+/// records (for the encrypted cloud backup) and restores accounts as new records. A restored record carries the key as
 /// `AccountBackupData`, which `accountWithId` turns into an authorized account — the same path
 /// Telegram uses to bring accounts back after a reinstall.
 public enum LuckgramBackup {
-    public static let featureKey = "account_backup"
-
     public struct ExportableAccount {
         public let recordId: AccountRecordId
         public let userId: Int64
@@ -34,6 +32,16 @@ public enum LuckgramBackup {
                 result.append(LuckgramBackupFormat.Account(userId: userId, dcId: data.masterDatacenterId, authKey: data.masterDatacenterKey, serverSalt: 0, name: LuckgramAccountsStore.shared.alias(recordId.int64)))
             }
             return result
+        }
+    }
+
+    /// Every logged-in account that can be exported (32: cloud backup covers all accounts).
+    public static func collectAll(accountManager: AccountManager<TelegramAccountManagerTypes>) -> Signal<[LuckgramBackupFormat.Account], NoError> {
+        return accountManager.transaction { transaction -> [AccountRecordId] in
+            return transaction.getRecords().filter { !isLoggedOut($0) && backupData($0) != nil }.map(\.id)
+        }
+        |> mapToSignal { recordIds -> Signal<[LuckgramBackupFormat.Account], NoError> in
+            return collect(accountManager: accountManager, recordIds: recordIds)
         }
     }
 

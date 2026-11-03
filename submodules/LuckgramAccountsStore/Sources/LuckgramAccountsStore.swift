@@ -8,8 +8,20 @@ import SwiftSignalKit
 /// in the app group container (`<rootPath>/luckgram-accounts.json`) so that the notification service
 /// extension can read the notification switch and the local name. Nothing here leaves the device.
 public final class LuckgramAccountsStore {
-    /// Maximum number of accounts logged in at the same time (spec 09: 20, for everyone).
-    public static let maxAccounts = 20
+    /// Spec 09's limit; the free limit never goes below it (32).
+    public static let defaultMaxAccounts = 20
+    /// Upper bound for any limit, same as Android's compiled slots (AccountLimit.SLOT_CAPACITY).
+    public static let slotCapacity = 50
+    /// Installed by LuckgramUI (LuckgramSettings): free 20 / Pro 50 from remote config (32).
+    /// This module can't see remote config or Pro status, so it asks.
+    public static var maxAccountsProvider: (() -> Int)?
+    /// Accounts that may be logged in at the same time.
+    public static var maxAccounts: Int {
+        guard let provider = maxAccountsProvider else {
+            return defaultMaxAccounts
+        }
+        return min(slotCapacity, max(defaultMaxAccounts, provider()))
+    }
     /// The settings account list shows this many other accounts before it collapses.
     public static let collapsedCount = 5
     /// Longest local name.

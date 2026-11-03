@@ -116,6 +116,7 @@ public enum LuckgramAIRegistry {
         LuckgramAIDebugDemo.register()
         // ---- features that extend the assistant register here ----
         LuckgramAgents.register() // 22 agents
+        LuckgramAgentMarket.register() // 30 agent market
         LuckgramAIImage.register() // 23 images
         LuckgramProModelChoice.register() // 29 premium model
     }

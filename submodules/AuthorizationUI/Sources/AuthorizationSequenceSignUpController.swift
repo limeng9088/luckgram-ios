@@ -81,7 +81,7 @@ final class AuthorizationSequenceSignUpController: ViewController {
             self.navigationItem.leftBarButtonItem = UIBarButtonItem(title: presentationData.strings.Common_Cancel, style: .plain, target: self, action: #selector(self.cancelPressed))
         }
         
-        self.navigationItem.rightBarButtonItem = UIBarButtonItem(customDisplayNode: self.moreButtonNode)
+        self.luckgramSetRightItem(UIBarButtonItem(customDisplayNode: self.moreButtonNode)) // Luckgram 91: keeps the proxy icon
         
         self.moreButtonNode.action = { [weak self] _, gesture in
             if let strongSelf = self {
@@ -148,9 +148,9 @@ final class AuthorizationSequenceSignUpController: ViewController {
                 
         if self.inProgress {
             let item = UIBarButtonItem(customDisplayNode: ProgressNavigationButtonNode(color: self.presentationData.theme.rootController.navigationBar.accentTextColor))
-            self.navigationItem.rightBarButtonItem = item
+            self.luckgramSetRightItem(item) // Luckgram 91: keeps the proxy icon
         } else {
-            self.navigationItem.rightBarButtonItem = UIBarButtonItem(title: self.presentationData.strings.Common_Next, style: .done, target: self, action: #selector(self.nextPressed))
+            self.luckgramSetRightItem(UIBarButtonItem(title: self.presentationData.strings.Common_Next, style: .done, target: self, action: #selector(self.nextPressed))) // Luckgram 91: keeps the proxy icon
         }
     }
     
