@@ -209,7 +209,7 @@ public enum LuckgramTranslateOut {
     /// are preserved; formatting is kept when the server returns it.
     ///
     /// specs#82: when Telegram fails (any error such as TRANSLATIONS_DISABLED_ALT, an empty result or no answer
-    /// within 15 s) the plain text is translated by Luckgram AI instead; if that fails too, the outcome says why.
+    /// within LuckgramTranslateFallbackLogic.telegramTimeoutSeconds = 8 s) the plain text is translated by Luckgram AI instead; if that fails too, the outcome says why.
     static func translate(context: AccountContext, text: NSAttributedString, toLang: String) -> Signal<Outcome, NoError> {
         let string = text.string
         if string.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
