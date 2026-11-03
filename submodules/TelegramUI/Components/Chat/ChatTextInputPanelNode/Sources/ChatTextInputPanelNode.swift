@@ -1477,6 +1477,8 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
         var insets = UIEdgeInsets(top: 0.0, left: 8.0, bottom: 0.0, right: 8.0)
         if let customLeftAction = self.customLeftAction, case let .toggleExpanded(isVisible, _, _) = customLeftAction, !isVisible {
         } else if let customLeftAction = self.customLeftAction, case .empty = customLeftAction {
+        } else if self.luckgramPlusOnRight {
+            // Luckgram specs#94: the 「+」 sits right of the mic, nothing left of the field
         } else {
             insets.left += 40.0 + 6.0
         }
@@ -2660,6 +2662,10 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
             textFieldInsets.right += additionalSideInsets.right / 3.0
         }
         if inputHasText || self.extendedSearchLayout || hasMediaDraft || hasForward || hasSlowmodeButton || isEditingMedia {
+            if self.luckgramPlusOnRight && self.luckgramAIOnRight && inputHasText {
+                // Luckgram specs#94: Telegram's AI button (3+ lines) takes the 「+」 slot right of the field
+                textFieldInsets.right += 40.0 + 6.0
+            }
         } else {
             if let customRightAction = self.customRightAction, case .empty = customRightAction {
                 textFieldInsets.right = 8.0
@@ -2670,7 +2676,8 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
             } else if let liveMicrophoneButtonSize {
                 textFieldInsets.right = 14.0 + liveMicrophoneButtonSize.width + 6.0 + liveMicrophoneButtonSize.width
             } else {
-                textFieldInsets.right = 54.0
+                // Luckgram specs#94: mic, then 「+」 on the right
+                textFieldInsets.right = self.luckgramPlusOnRight ? 54.0 + 40.0 + 6.0 : 54.0
             }
         }
         if mediaRecordingState != nil {
@@ -3584,8 +3591,44 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
             }
         }
 
+        // Luckgram specs#94: WeChat layout — 「+」 right of the mic while the field is empty; with text it gives way
+        // to the send button (Telegram's AI button, when shown, keeps a 40pt slot there instead).
+        var luckgramCapsuleHidden = false
+        var luckgramAIOnly = false
+        if self.luckgramPlusOnRight {
+            let micMovedOut = inputHasText || self.extendedSearchLayout || hasMediaDraft || interfaceState.interfaceState.forwardMessageIds != nil || hasSlowmodeButton || isEditingMedia
+            attachmentPillHeight = 40.0
+            if mediaRecordingState != nil {
+                attachmentButtonX = textInputFrame.maxX + 6.0 + mediaActionButtonsSize.width + 6.0
+                luckgramCapsuleHidden = true
+            } else if !micMovedOut {
+                attachmentButtonX = textInputFrame.maxX + 6.0 + mediaActionButtonsSize.width + 6.0
+            } else {
+                attachmentButtonX = textInputFrame.maxX + 6.0
+                if isAIButtonVisible && inputHasText {
+                    luckgramAIOnly = true
+                } else {
+                    luckgramCapsuleHidden = true
+                }
+            }
+            if luckgramAIOnly != self.luckgramAIOnRight {
+                // the field width depends on this slot; lay out once more with it reserved / released
+                self.luckgramAIOnRight = luckgramAIOnly
+                DispatchQueue.main.async { [weak self] in
+                    self?.requestLayout(transition: .animated(duration: 0.2, curve: .easeInOut))
+                }
+            }
+        } else if self.luckgramAIOnRight {
+            self.luckgramAIOnRight = false
+        }
+
         let attachmentButtonFrame = CGRect(origin: CGPoint(x: attachmentButtonX, y: textInputFrame.maxY - attachmentPillHeight), size: CGSize(width: 40.0, height: attachmentPillHeight))
         attachmentButtonX += 40.0 + 6.0
+        if self.luckgramPlusOnRight {
+            transition.updateAlpha(layer: self.attachmentButtonBackground.layer, alpha: luckgramCapsuleHidden ? 0.0 : attachmentButtonAlpha)
+        }
+        self.attachmentButtonIcon.isHidden = luckgramAIOnly
+        self.attachmentButton.isUserInteractionEnabled = !luckgramAIOnly && !luckgramCapsuleHidden
         self.attachmentButtonBackground.update(size: attachmentButtonFrame.size, cornerRadius: 40.0 * 0.5, isDark: interfaceState.theme.overallDarkAppearance, tintColor: defaultGlassTintColor, isInteractive: true, transition: ComponentTransition(transition))
 
         transition.updateFrame(layer: self.attachmentButtonBackground.layer, frame: attachmentButtonFrame)
@@ -6327,6 +6370,14 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
     }
 
     private var luckgramIconIsPlus = false
+    /// Telegram's AI button holds the 「+」 slot right of the field (text of 3+ lines); see the layout.
+    private var luckgramAIOnRight = false
+
+    /// specs#94: the 「+」 is laid out right of the mic (WeChat). A recorded voice draft keeps Telegram's
+    /// left button, which then means "delete the draft".
+    var luckgramPlusOnRight: Bool {
+        return self.luckgramIsPlusMode && self.presentationInterfaceState?.interfaceState.mediaDraftState == nil
+    }
 
     private func luckgramAttachmentIcon(theme: PresentationTheme) -> UIImage? {
         self.luckgramIconIsPlus = self.luckgramIsPlusMode
