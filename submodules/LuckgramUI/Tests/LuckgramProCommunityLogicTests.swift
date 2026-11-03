@@ -20,7 +20,7 @@ final class LuckgramProCommunityLogicTests: XCTestCase {
     }
 
     func testBadAnswers() {
-        XCTAssertEqual(L.parse(["invite_link": "https://evil.example/+x"]), .badAnswer)
+        XCTAssertEqual(L.parse(["invite_link": "https://luckgram.cc/+x"]), .badAnswer)
         XCTAssertEqual(L.parse([:]), .badAnswer)
         XCTAssertEqual(L.parse(nil), .badAnswer)
     }
