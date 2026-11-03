@@ -102,7 +102,7 @@ public final class AuthorizationSequencePhoneEntryController: ViewController, MF
         // Luckgram 10: "Restore from backup" (narrow screens use this slot for "Next").
         if LuckgramSettings.shared.isEnabled(LuckgramBackup.featureKey) {
             LuckgramStrings.appLanguageCode = presentationData.strings.primaryComponent.languageCode
-            self.navigationItem.rightBarButtonItem = UIBarButtonItem(title: LuckgramBackupStrings.restore, style: .plain, target: self, action: #selector(self.luckgramRestorePressed))
+            self.luckgramSetRightItem(UIBarButtonItem(title: LuckgramBackupStrings.restore, style: .plain, target: self, action: #selector(self.luckgramRestorePressed))) // Luckgram 91: keeps the proxy icon
         }
     }
     
@@ -133,9 +133,9 @@ public final class AuthorizationSequencePhoneEntryController: ViewController, MF
                 
         if self.inProgress {
             let item = UIBarButtonItem(customDisplayNode: ProgressNavigationButtonNode(color: self.presentationData.theme.rootController.navigationBar.accentTextColor))
-            self.navigationItem.rightBarButtonItem = item
+            self.luckgramSetRightItem(item) // Luckgram 91: keeps the proxy icon
         } else {
-            self.navigationItem.rightBarButtonItem = UIBarButtonItem(title: self.presentationData.strings.Common_Next, style: .done, target: self, action: #selector(self.nextPressed))
+            self.luckgramSetRightItem(UIBarButtonItem(title: self.presentationData.strings.Common_Next, style: .done, target: self, action: #selector(self.nextPressed))) // Luckgram 91: keeps the proxy icon
         }
     }
     

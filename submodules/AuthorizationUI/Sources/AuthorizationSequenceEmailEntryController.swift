@@ -130,9 +130,9 @@ public final class AuthorizationSequenceEmailEntryController: ViewController {
                         
         if self.inProgress {
             let item = UIBarButtonItem(customDisplayNode: ProgressNavigationButtonNode(color: self.presentationData.theme.rootController.navigationBar.accentTextColor))
-            self.navigationItem.rightBarButtonItem = item
+            self.luckgramSetRightItem(item) // Luckgram 91: keeps the proxy icon
         } else {
-            self.navigationItem.rightBarButtonItem = UIBarButtonItem(title: self.presentationData.strings.Common_Next, style: .done, target: self, action: #selector(self.nextPressed))
+            self.luckgramSetRightItem(UIBarButtonItem(title: self.presentationData.strings.Common_Next, style: .done, target: self, action: #selector(self.nextPressed))) // Luckgram 91: keeps the proxy icon
         }
     }
     
