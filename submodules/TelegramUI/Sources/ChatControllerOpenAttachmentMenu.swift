@@ -51,6 +51,8 @@ extension ChatControllerImpl {
         case edit(mediaOptions: MessageMediaEditingOptions?, mediaReference: AnyMediaReference?)
         case bot(id: EnginePeer.Id, payload: String?, justInstalled: Bool)
         case gift
+        /// Luckgram specs#94: opened from a 「+」 panel cell, straight on that tab (gallery if it isn't offered).
+        case luckgramTab(AttachmentButtonType)
     }
 
     func presentAttachmentMenu(subject: AttachMenuSubject) {
@@ -288,7 +290,7 @@ extension ChatControllerImpl {
             }
 
             switch subject {
-            case .default, .gift:
+            case .default, .gift, .luckgramTab:
                 if WalletConfiguration.with(appConfiguration: self.context.currentAppConfiguration.with { $0 }).isAvailable, !isScheduledMessages, banSendText == nil, let user = self.presentationInterfaceState.renderedPeer?.peer as? TelegramUser, user.id != self.context.account.peerId, !user.isDeleted, !isServicePeer(user), user.botInfo == nil, !user.flags.contains(.isSupport), let fileIndex = availableButtons.firstIndex(of: .file) {
                     availableButtons.insert(.money, at: fileIndex + 1)
                 }
@@ -337,6 +339,8 @@ extension ChatControllerImpl {
                         initialButton = .gallery
                     case .gift:
                         initialButton = .gift
+                    case let .luckgramTab(button):
+                        initialButton = availableButtons.contains(button) ? button : .gallery
                     default:
                         break
                     }
@@ -378,7 +382,11 @@ extension ChatControllerImpl {
                     return (buttons, allButtons, initialButton)
                 }
             } else {
-                buttons = .single((availableButtons, availableButtons, .gallery))
+                var initialButton: AttachmentButtonType = .gallery
+                if case let .luckgramTab(button) = subject, availableButtons.contains(button) {
+                    initialButton = button
+                }
+                buttons = .single((availableButtons, availableButtons, initialButton))
             }
             
             let dataSettings = self.context.sharedContext.accountManager.transaction { transaction -> GeneratedMediaStoreSettings in

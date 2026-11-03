@@ -2072,7 +2072,7 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
                     self.attachmentButtonIcon.image = PresentationResourcesChat.chatInputPanelEditAttachmentButtonImage(interfaceState.theme)
                     self.attachmentButtonIcon.tintColor = interfaceState.theme.chat.inputPanel.panelControlColor
                 } else {
-                    self.attachmentButtonIcon.image = PresentationResourcesChat.chatInputPanelAttachmentButtonImage(interfaceState.theme)
+                    self.attachmentButtonIcon.image = self.luckgramAttachmentIcon(theme: interfaceState.theme)
                     self.attachmentButtonIcon.tintColor = interfaceState.theme.chat.inputPanel.panelControlColor
                 }
                
@@ -2098,7 +2098,7 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
                     }
                 }
                 
-                if wasEditingMedia != isEditingMedia || hadMediaDraft != hasMediaDraft || isFirstTime {
+                if wasEditingMedia != isEditingMedia || hadMediaDraft != hasMediaDraft || isFirstTime || self.luckgramIconIsPlus != self.luckgramIsPlusMode {
                     if let customLeftAction = self.customLeftAction {
                         switch customLeftAction {
                         case .empty, .toggleExpanded, .settings:
@@ -2112,7 +2112,7 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
                         self.attachmentButtonIcon.image = PresentationResourcesChat.chatInputPanelEditAttachmentButtonImage(interfaceState.theme)
                         self.attachmentButtonIcon.tintColor = interfaceState.theme.chat.inputPanel.panelControlColor
                     } else {
-                        self.attachmentButtonIcon.image = PresentationResourcesChat.chatInputPanelAttachmentButtonImage(interfaceState.theme)
+                        self.attachmentButtonIcon.image = self.luckgramAttachmentIcon(theme: interfaceState.theme)
                         self.attachmentButtonIcon.tintColor = interfaceState.theme.chat.inputPanel.panelControlColor
                     }
                 }
@@ -4956,7 +4956,7 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
             break
         case .media:
             break
-        case .inputButtons, .none:
+        case .inputButtons, .none, .luckgramPlus:
             if self.richTextInputNode?.keyboardInputView == nil {
                 interfaceInteraction.updateInputModeAndDismissedButtonKeyboardMessageId({ state in
                     return (.text, state.keyboardButtonsMessage?.id)
@@ -5904,6 +5904,8 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
             self.viewOnce = false
             self.audioRecordingRemoveAnimationState = .previewToAttachButton
             self.interfaceInteraction?.deleteRecordedMedia()
+        } else if self.luckgramIsPlusMode {
+            self.toggleLuckgramPlusPanel()
         } else {
             self.displayAttachmentMenu()
         }
@@ -6308,6 +6310,82 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
         }
     }
     
+    // MARK: - Luckgram: WeChat-style input bar (specs#94)
+
+    /// The paperclip is the 「+」: not while editing a message or in custom chat contents (business links etc.).
+    var luckgramIsPlusMode: Bool {
+        guard LuckgramCompactInput.isEnabled, self.customLeftAction == nil, let interfaceState = self.presentationInterfaceState else {
+            return false
+        }
+        if interfaceState.interfaceState.editMessage != nil {
+            return false
+        }
+        if case .customChatContents = interfaceState.subject {
+            return false
+        }
+        return true
+    }
+
+    private var luckgramIconIsPlus = false
+
+    private func luckgramAttachmentIcon(theme: PresentationTheme) -> UIImage? {
+        self.luckgramIconIsPlus = self.luckgramIsPlusMode
+        if self.luckgramIconIsPlus, let image = LuckgramCompactInput.plusIcon() {
+            return image
+        }
+        return PresentationResourcesChat.chatInputPanelAttachmentButtonImage(theme)
+    }
+
+    private func toggleLuckgramPlusPanel() {
+        guard let interfaceInteraction = self.interfaceInteraction, let interfaceState = self.presentationInterfaceState else {
+            return
+        }
+        if interfaceState.slowmodeState != nil, interfaceState.subject != .scheduledMessages {
+            // Telegram shows its slow mode tooltip from the attachment menu path.
+            self.displayAttachmentMenu()
+            return
+        }
+        if case .luckgramPlus = interfaceState.inputMode {
+            // second tap: back to the keyboard (specs#94 需求 2)
+            self.ensureFocused()
+            return
+        }
+        interfaceInteraction.updateInputModeAndDismissedButtonKeyboardMessageId({ state in
+            return (.luckgramPlus, state.interfaceState.messageActionsState.closedButtonKeyboardMessageId)
+        })
+    }
+
+    /// Cells of the 「+」 panel that belong to Luckgram features in this panel (quick replies, voice input,
+    /// AI writing, translate). Attachment cells are handled by the chat controller.
+    public func luckgramPerformPlusAction(_ action: LuckgramPlusAction) {
+        guard let interfaceState = self.presentationInterfaceState else {
+            return
+        }
+        let hasText = !interfaceState.interfaceState.composeInputState.content.isEmptyWhitespaceTrimmed
+        switch action {
+        case .quickReplies:
+            self.showQuickReplies()
+        case .dictation:
+            self.showDictation()
+        case .aiWriting:
+            if hasText || LuckgramAIWriting.hasItemsForEmptyText(peer: interfaceState.renderedPeer?.peer.flatMap(EnginePeer.init)) {
+                self.luckgramAIWritingHost()?.showMenu()
+            } else {
+                // nothing to rewrite yet: back to the keyboard
+                self.ensureFocused()
+            }
+        case .translate:
+            // spec 01 translate-before-sending: with text, translate now; empty field, pick the language
+            if hasText {
+                self.translateOutPressed(language: nil)
+            } else {
+                self.showTranslateOutLanguages()
+            }
+        case .gallery, .camera, .file, .location, .contact, .poll:
+            break
+        }
+    }
+
     override public func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
         if let result = self.luckgramPanelHitTest(point, with: event) {
             return result
