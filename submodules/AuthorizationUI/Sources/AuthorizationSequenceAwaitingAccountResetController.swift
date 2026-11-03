@@ -23,9 +23,9 @@ final class AuthorizationSequenceAwaitingAccountResetController: ViewController 
         didSet {
             if self.inProgress {
                 let item = UIBarButtonItem(customDisplayNode: ProgressNavigationButtonNode(color: self.theme.rootController.navigationBar.accentTextColor))
-                self.navigationItem.rightBarButtonItem = item
+                self.luckgramSetRightItem(item) // Luckgram 91: keeps the proxy icon
             } else {
-                self.navigationItem.rightBarButtonItem = UIBarButtonItem(title: self.strings.Common_Next, style: .done, target: self, action: #selector(self.logoutPressed))
+                self.luckgramSetRightItem(UIBarButtonItem(title: self.strings.Common_Next, style: .done, target: self, action: #selector(self.logoutPressed))) // Luckgram 91: keeps the proxy icon
             }
         }
     }
@@ -48,7 +48,7 @@ final class AuthorizationSequenceAwaitingAccountResetController: ViewController 
         }
         
         self.navigationItem.leftBarButtonItem = UIBarButtonItem(title: " ", style: .plain, target: self, action: nil)
-        self.navigationItem.rightBarButtonItem = UIBarButtonItem(title: self.strings.Settings_Logout, style: .plain, target: self, action: #selector(self.logoutPressed))
+        self.luckgramSetRightItem(UIBarButtonItem(title: self.strings.Settings_Logout, style: .plain, target: self, action: #selector(self.logoutPressed))) // Luckgram 91: keeps the proxy icon
     }
     
     required init(coder aDecoder: NSCoder) {

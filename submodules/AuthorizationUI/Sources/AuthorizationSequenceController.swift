@@ -63,6 +63,12 @@ public final class AuthorizationSequenceController: NavigationController, ASAuth
     }
     
     private var inAppPurchaseManager: InAppPurchaseManager!
+
+    // Luckgram 91: proxy icon at the top right of every login page.
+    private var luckgramProxyStatus: LuckgramAuthProxyStatus = .off
+    private var luckgramProxyNodes: [WeakLuckgramProxyNode] = []
+    private let luckgramProxyDisposable = MetaDisposable()
+    private var luckgramProxyNetworkId: ObjectIdentifier?
     
     public init(sharedContext: SharedAccountContext, account: UnauthorizedAccount, otherAccountPhoneNumbers: ((String, AccountRecordId, Bool)?, [(String, AccountRecordId, Bool)]), presentationData: PresentationData, openUrl: @escaping (String) -> Void, apiId: Int32, apiHash: String, authorizationCompleted: @escaping () -> Void) {
         self.sharedContext = sharedContext
@@ -122,6 +128,79 @@ public final class AuthorizationSequenceController: NavigationController, ASAuth
         self.stateDisposable?.dispose()
         self.actionDisposable.dispose()
         self.applicationStateDisposable?.dispose()
+        self.luckgramProxyDisposable.dispose()
+    }
+
+    // MARK: - Luckgram 91: proxy entry
+
+    /// Proxy on (any active server) and the connection state of the current unauthorized account.
+    private func luckgramObserveProxyIfNeeded() {
+        let network = self.account.network
+        let networkId = ObjectIdentifier(network)
+        if self.luckgramProxyNetworkId == networkId {
+            return
+        }
+        self.luckgramProxyNetworkId = networkId
+        let proxyEnabled = self.sharedContext.accountManager.sharedData(keys: [SharedDataKeys.proxySettings])
+        |> map { sharedData -> Bool in
+            return sharedData.entries[SharedDataKeys.proxySettings]?.get(ProxySettings.self)?.effectiveActiveServer != nil
+        }
+        |> distinctUntilChanged
+        self.luckgramProxyDisposable.set((combineLatest(proxyEnabled, network.connectionStatus)
+        |> map { enabled, status -> LuckgramAuthProxyStatus in
+            if !enabled {
+                return .off
+            }
+            switch status {
+            case .online, .updating:
+                return .connected
+            case .connecting, .waitingForNetwork:
+                return .connecting
+            }
+        }
+        |> distinctUntilChanged
+        |> deliverOnMainQueue).start(next: { [weak self] status in
+            guard let self else {
+                return
+            }
+            self.luckgramProxyStatus = status
+            self.luckgramProxyNodes = self.luckgramProxyNodes.filter { $0.node != nil }
+            for item in self.luckgramProxyNodes {
+                item.node?.update(theme: self.presentationData.theme, status: status)
+            }
+        }))
+    }
+
+    /// Adds the proxy icon to the login pages (phone, code, password, sign up, email, recovery, reset).
+    private func luckgramInstallProxyButton(on viewController: UIViewController) {
+        guard let controller = viewController as? ViewController, controller.luckgramProxyBarItem == nil else {
+            return
+        }
+        let isLoginPage = controller is AuthorizationSequencePhoneEntryController
+            || controller is AuthorizationSequenceCodeEntryController
+            || controller is AuthorizationSequencePasswordEntryController
+            || controller is AuthorizationSequenceSignUpController
+            || controller is AuthorizationSequenceEmailEntryController
+            || controller is AuthorizationSequencePasswordRecoveryController
+            || controller is AuthorizationSequenceAwaitingAccountResetController
+        if !isLoginPage {
+            return
+        }
+        self.luckgramObserveProxyIfNeeded()
+        let node = LuckgramAuthProxyNode(theme: self.presentationData.theme, status: self.luckgramProxyStatus)
+        self.luckgramProxyNodes.append(WeakLuckgramProxyNode(node))
+        let item = UIBarButtonItem(customDisplayNode: node)
+        item.target = self
+        item.action = #selector(self.luckgramProxyPressed)
+        item.accessibilityLabel = self.presentationData.strings.SocksProxySetup_Title
+        let own = controller.luckgramOwnRightItem
+        controller.luckgramProxyBarItem = item
+        controller.luckgramSetRightItem(own)
+    }
+
+    @objc private func luckgramProxyPressed() {
+        let controller = self.sharedContext.makeProxySettingsController(sharedContext: self.sharedContext, account: self.account)
+        (self.topViewController as? ViewController)?.present(controller, in: .window(.root), with: ViewControllerPresentationArguments(presentationAnimation: .modalSheet))
     }
     
     override public func loadView() {
@@ -1383,6 +1462,9 @@ public final class AuthorizationSequenceController: NavigationController, ASAuth
     
     override public func setViewControllers(_ viewControllers: [UIViewController], animated: Bool) {
         let wasEmpty = self.viewControllers.isEmpty
+        for viewController in viewControllers {
+            self.luckgramInstallProxyButton(on: viewController)
+        }
         super.setViewControllers(viewControllers, animated: animated)
         if wasEmpty {
             if self.topViewController is AuthorizationSequenceSplashController {
@@ -1495,5 +1577,13 @@ public final class AuthorizationSequenceController: NavigationController, ASAuth
         emailBody.append("MNC: \(mnc)")
         
         AuthorizationSequenceController.presentEmailComposeController(sharedContext: sharedContext, address: "sms@telegram.org", subject: presentationData.strings.Login_EmailCodeSubject(formattedNumber).string, body: emailBody, from: controller, presentationData: presentationData)
+    }
+}
+
+private final class WeakLuckgramProxyNode {
+    weak var node: LuckgramAuthProxyNode?
+
+    init(_ node: LuckgramAuthProxyNode) {
+        self.node = node
     }
 }
