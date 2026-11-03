@@ -188,8 +188,10 @@ public final class AuthorizationSequenceController: NavigationController, ASAuth
         }
         self.luckgramObserveProxyIfNeeded()
         let node = LuckgramAuthProxyNode(theme: self.presentationData.theme, status: self.luckgramProxyStatus)
+        guard let item = UIBarButtonItem(customDisplayNode: node) else {
+            return
+        }
         self.luckgramProxyNodes.append(WeakLuckgramProxyNode(node))
-        let item = UIBarButtonItem(customDisplayNode: node)
         item.target = self
         item.action = #selector(self.luckgramProxyPressed)
         item.accessibilityLabel = self.presentationData.strings.SocksProxySetup_Title
