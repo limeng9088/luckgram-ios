@@ -512,6 +512,15 @@ public final class SharedAccountContextImpl: SharedAccountContext {
         let luckgramTranslateIn = LuckgramTranslateInController.install(context: { [weak self] in
             return self?.activeAccountsValue?.primary
         })
+        // specs#93: the language list for the first translation and the tappable header
+        luckgramTranslateIn.pickLanguage = { [weak self] selected, completion in
+            guard let self else {
+                return
+            }
+            let presentationData = self.currentPresentationData.with { $0 }
+            let picker = LuckgramTranslateOut.makeLanguagePicker(strings: presentationData.strings, isDark: presentationData.theme.overallDarkAppearance, selected: selected, completion: completion)
+            self.mainWindow?.presentNative(picker)
+        }
         let _ = (accountManager.sharedData(keys: [ApplicationSpecificSharedDataKeys.translationSettings])
         |> deliverOnMainQueue).startStandalone(next: { sharedData in
             let settings = sharedData.entries[ApplicationSpecificSharedDataKeys.translationSettings]?.get(TranslationSettings.self)

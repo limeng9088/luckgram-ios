@@ -47,15 +47,13 @@ public enum LuckgramTranslateInLogic {
         return !isExcluded(b, doNotTranslate: doNotTranslate)
     }
 
-    /// The target language: the user's choice, otherwise the app language, otherwise English.
-    public static func targetLanguage(chosen: String?, appLanguage: String?) -> String {
+    /// The target language the user chose, or nil before the first choice (specs#93: no default from
+    /// the app / system language; the first translation asks).
+    public static func targetLanguage(chosen: String?) -> String? {
         if let chosen = chosen?.trimmingCharacters(in: .whitespacesAndNewlines), !chosen.isEmpty {
             return chosen
         }
-        if let app = appLanguage?.trimmingCharacters(in: .whitespacesAndNewlines), !app.isEmpty {
-            return app
-        }
-        return "en"
+        return nil
     }
 
     /// spec 01 A.1: 「已翻译 · 英语 → 中文」; without a known source just the target.

@@ -11,7 +11,7 @@ import AccountContext
 /// `messages.translateText` (8 s) → Luckgram AI. Installed into TelegramCore's
 /// `luckgramTranslateIn` by `SharedAccountContext`.
 public final class LuckgramTranslateInController: LuckgramTranslateInService {
-    /// LuckgramSettings key of 「翻译成」; empty = the app language.
+    /// LuckgramSettings key of 「翻译成」; empty = not chosen yet (asked on the first translation, specs#93).
     public static let toLangKey = "translate_in_to_lang"
 
     private let context: () -> AccountContext?
@@ -35,8 +35,31 @@ public final class LuckgramTranslateInController: LuckgramTranslateInService {
         return LuckgramSettings.shared.isEnabled(LuckgramTranslateInLogic.featureKey)
     }
 
-    public static var targetLanguage: String {
-        return LuckgramTranslateInLogic.targetLanguage(chosen: LuckgramSettings.shared.string(toLangKey, default: nil), appLanguage: LuckgramStrings.appLanguageCode ?? Locale.preferredLanguages.first)
+    /// 「翻译成」 as the user chose it, or nil before the first choice (specs#93).
+    public static var targetLanguage: String? {
+        return LuckgramTranslateInLogic.targetLanguage(chosen: LuckgramSettings.shared.string(toLangKey, default: nil))
+    }
+
+    /// specs#93: shows the language list (set by TelegramUI: it lives in ChatTextInputPanelNode); calls back
+    /// with the chosen code.
+    public var pickLanguage: ((_ selected: String?, _ completion: @escaping (String) -> Void) -> Void)?
+
+    private func askLanguage(_ then: @escaping (String) -> Void) {
+        guard let pickLanguage = self.pickLanguage else {
+            return
+        }
+        pickLanguage(LuckgramTranslateInLogic.base(LuckgramTranslateInController.targetLanguage), { code in
+            LuckgramSettings.shared.setString(LuckgramTranslateInController.toLangKey, code)
+            then(code)
+        })
+    }
+
+    public func changeLanguage(accountPeerId: EnginePeer.Id, messageId: EngineMessage.Id, text: String, voice: Bool, updated: @escaping () -> Void) {
+        self.askLanguage { [weak self] _ in
+            LuckgramMessageTranslations.shared.remove(accountPeerId: accountPeerId, messageId: messageId, text: text, voice: voice)
+            updated()
+            self?.toggle(accountPeerId: accountPeerId, messageId: messageId, text: text, voice: voice, updated: updated)
+        }
     }
 
     private var excluded: [String] {
@@ -92,12 +115,18 @@ public final class LuckgramTranslateInController: LuckgramTranslateInService {
             updated()
             return
         }
+        guard let toLang = LuckgramTranslateInController.targetLanguage else {
+            // specs#93: the first translation asks for the language, then translates this message
+            self.askLanguage { [weak self] _ in
+                self?.toggle(accountPeerId: accountPeerId, messageId: messageId, text: text, voice: voice, updated: updated)
+            }
+            return
+        }
         let pendingKey = "\(voice):\(accountPeerId.toInt64()):\(messageId.peerId.toInt64()):\(messageId.id)"
         if self.pending.contains(pendingKey) {
             return
         }
         self.pending.insert(pendingKey)
-        let toLang = LuckgramTranslateInController.targetLanguage
         let detectedFrom = self.language(of: text)
         let source = voice ? "translate_voice" : LuckgramTranslateFallbackLogic.sourceMessage
         let _ = (self.translate(source: source, text: text, toLang: toLang)

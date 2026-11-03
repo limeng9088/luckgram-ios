@@ -31,9 +31,11 @@ final class LuckgramTranslateInLogicTests: XCTestCase {
     }
 
     func testTargetLanguage() {
-        XCTAssertEqual(L.targetLanguage(chosen: "es", appLanguage: "zh"), "es")
-        XCTAssertEqual(L.targetLanguage(chosen: "", appLanguage: "zh"), "zh")
-        XCTAssertEqual(L.targetLanguage(chosen: nil, appLanguage: nil), "en")
+        // specs#93: only the user's choice, never the app / system language
+        XCTAssertEqual(L.targetLanguage(chosen: "es"), "es")
+        XCTAssertEqual(L.targetLanguage(chosen: " ja "), "ja")
+        XCTAssertNil(L.targetLanguage(chosen: ""))
+        XCTAssertNil(L.targetLanguage(chosen: nil))
     }
 
     func testHeaderAndMenuLabels() {
