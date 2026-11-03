@@ -1,4 +1,5 @@
 import Foundation
+import LuckgramUI
 import LottieSettings
 import UIKit
 import AsyncDisplayKit
@@ -58,6 +59,12 @@ final class AuthorizationSequenceCodeEntryControllerNode: ASDisplayNode, UITextF
     private var currentTimeoutTime: Int32?
     
     private var layoutArguments: (ContainerViewLayout, CGFloat)?
+
+    // Luckgram 97: "code sent to Telegram" card + help button (.otherSession only)
+    private var luckgramCardNode: LuckgramCodeHelpCardNode?
+    private let luckgramHelpButtonNode = HighlightableButtonNode()
+    private let luckgramHelpTitleNode = ImmediateTextNode()
+    var luckgramPresentHelp: ((UIView?) -> Void)?
     
     private var appleSignInAllowed = false
     
@@ -279,6 +286,14 @@ final class AuthorizationSequenceCodeEntryControllerNode: ASDisplayNode, UITextF
         self.addSubnode(self.currentOptionActivateAreaNode)
         self.addSubnode(self.currentOptionInfoNode)
         self.addSubnode(self.nextOptionButtonNode)
+        LuckgramStrings.appLanguageCode = self.strings.primaryComponent.languageCode
+        self.luckgramHelpTitleNode.attributedText = NSAttributedString(string: LuckgramCodeHelpStrings.helpButton, font: Font.regular(16.0), textColor: self.theme.list.itemAccentColor)
+        self.luckgramHelpButtonNode.addSubnode(self.luckgramHelpTitleNode)
+        self.luckgramHelpButtonNode.accessibilityLabel = LuckgramCodeHelpStrings.helpButton
+        self.luckgramHelpButtonNode.accessibilityTraits = [.button]
+        self.luckgramHelpButtonNode.isHidden = true
+        self.addSubnode(self.luckgramHelpButtonNode)
+        self.luckgramHelpButtonNode.addTarget(self, action: #selector(self.luckgramHelpPressed), forControlEvents: .touchUpInside)
         self.nextOptionButtonNode.addSubnode(self.nextOptionArrowNode)
         self.addSubnode(self.animationNode)
         self.addSubnode(self.resetNode)
@@ -503,6 +518,10 @@ final class AuthorizationSequenceCodeEntryControllerNode: ASDisplayNode, UITextF
         }
     }
     
+    @objc private func luckgramHelpPressed() {
+        self.luckgramPresentHelp?(self.luckgramHelpButtonNode.view)
+    }
+
     func containerLayoutUpdated(_ layout: ContainerViewLayout, navigationBarHeight: CGFloat, transition: ContainedViewLayoutTransition) {
         let previousInputHeight = self.layoutArguments?.0.inputHeight ?? 0.0
         let newInputHeight = layout.inputHeight ?? 0.0
@@ -645,8 +664,35 @@ final class AuthorizationSequenceCodeEntryControllerNode: ASDisplayNode, UITextF
             compact: layout.size.width <= 320.0 || (layout.size.width <= 375.0 && codeLength > 5)
         )
         
+        // Luckgram 97: the card replaces the animation so everything fits.
+        var luckgramShowCard = false
+        if case .otherSession = self.codeType {
+            luckgramShowCard = !LuckgramCodeHelpCardNode.dismissed
+            self.luckgramHelpButtonNode.isHidden = false
+        } else {
+            self.luckgramHelpButtonNode.isHidden = true
+        }
+        if luckgramShowCard, self.luckgramCardNode == nil {
+            let cardNode = LuckgramCodeHelpCardNode(theme: self.theme)
+            cardNode.dismiss = { [weak self] in
+                guard let self else {
+                    return
+                }
+                self.luckgramCardNode?.removeFromSupernode()
+                self.luckgramCardNode = nil
+                if let (layout, navigationHeight) = self.layoutArguments {
+                    self.containerLayoutUpdated(layout, navigationBarHeight: navigationHeight, transition: .animated(duration: 0.3, curve: .spring))
+                }
+            }
+            self.luckgramCardNode = cardNode
+            self.addSubnode(cardNode)
+        } else if !luckgramShowCard, let cardNode = self.luckgramCardNode {
+            cardNode.removeFromSupernode()
+            self.luckgramCardNode = nil
+        }
+
         var items: [AuthorizationLayoutItem] = []
-        if layout.size.width > 320.0 {
+        if layout.size.width > 320.0 && !luckgramShowCard {
             items.append(AuthorizationLayoutItem(node: self.animationNode, size: animationSize, spacingBefore: AuthorizationLayoutItemSpacing(weight: 10.0, maxValue: 10.0), spacingAfter: AuthorizationLayoutItemSpacing(weight: 0.0, maxValue: 0.0)))
             self.animationNode.updateLayout(size: animationSize)
             self.animationNode.isHidden = false
@@ -665,7 +711,16 @@ final class AuthorizationSequenceCodeEntryControllerNode: ASDisplayNode, UITextF
                 
                 items.append(AuthorizationLayoutItem(node: self.codeInputView, size: codeFieldSize, spacingBefore: AuthorizationLayoutItemSpacing(weight: 30.0, maxValue: 30.0), spacingAfter: AuthorizationLayoutItemSpacing(weight: 0.0, maxValue: 0.0)))
                 
-                items.append(AuthorizationLayoutItem(node: self.nextOptionButtonNode, size: nextOptionSize, spacingBefore: AuthorizationLayoutItemSpacing(weight: 50.0, maxValue: 120.0), spacingAfter: AuthorizationLayoutItemSpacing(weight: 0.0, maxValue: 0.0)))
+                if let cardNode = self.luckgramCardNode {
+                    let cardSize = cardNode.updateLayout(width: maximumWidth - 32.0)
+                    items.append(AuthorizationLayoutItem(node: cardNode, size: cardSize, spacingBefore: AuthorizationLayoutItemSpacing(weight: 20.0, maxValue: 20.0), spacingAfter: AuthorizationLayoutItemSpacing(weight: 0.0, maxValue: 0.0)))
+                }
+                let helpTitleSize = self.luckgramHelpTitleNode.updateLayout(CGSize(width: maximumWidth - 48.0, height: .greatestFiniteMagnitude))
+                let helpSize = CGSize(width: helpTitleSize.width + 20.0, height: helpTitleSize.height + 16.0)
+                self.luckgramHelpTitleNode.frame = CGRect(origin: CGPoint(x: 10.0, y: 8.0), size: helpTitleSize)
+                items.append(AuthorizationLayoutItem(node: self.luckgramHelpButtonNode, size: helpSize, spacingBefore: AuthorizationLayoutItemSpacing(weight: 10.0, maxValue: 10.0), spacingAfter: AuthorizationLayoutItemSpacing(weight: 0.0, maxValue: 0.0)))
+                
+                items.append(AuthorizationLayoutItem(node: self.nextOptionButtonNode, size: nextOptionSize, spacingBefore: AuthorizationLayoutItemSpacing(weight: luckgramShowCard ? 20.0 : 50.0, maxValue: luckgramShowCard ? 40.0 : 120.0), spacingAfter: AuthorizationLayoutItemSpacing(weight: 0.0, maxValue: 0.0)))
             case .missedCall:
                 self.titleIconNode.isHidden = false
                 
