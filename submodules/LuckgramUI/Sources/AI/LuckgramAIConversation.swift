@@ -6,7 +6,8 @@ import AccountContext
 ///
 /// Extension point "conversation properties" (spec 18 需求 8): `task` and `systemPrompt` are sent
 /// with every request of this conversation; `key` lets a feature find its own conversation again
-/// (e.g. one per agent, spec 22) with `LuckgramAIStore.findOrCreate`.
+/// (e.g. one per agent, spec 22) with `LuckgramAIStore.findOrCreate`. `requestParams` adds fields
+/// to every request (generic key-values, e.g. `agent_id` of a market agent, spec 30).
 public final class LuckgramAIConversation: Codable {
     /// Messages sent as context with each request (spec 18 需求 6).
     public static let contextMessages = 20
@@ -54,12 +55,14 @@ public final class LuckgramAIConversation: Codable {
     public var task: LuckgramAI.AITask
     /// Extra system instruction sent first with every request, or nil.
     public var systemPrompt: String?
+    /// Extra top-level fields of every /v1/ai/chat request of this conversation, or nil (spec 30: `agent_id`).
+    public var requestParams: [String: String]?
     public var createdAt: Double
     public var updatedAt: Double
     public var messages: [Message]
 
     enum CodingKeys: String, CodingKey {
-        case id, key, title, task, systemPrompt = "system", createdAt = "created", updatedAt = "updated", messages
+        case id, key, title, task, systemPrompt = "system", requestParams = "params", createdAt = "created", updatedAt = "updated", messages
     }
 
     init(task: LuckgramAI.AITask, systemPrompt: String?, title: String?) {
@@ -79,6 +82,7 @@ public final class LuckgramAIConversation: Codable {
         self.title = try c.decodeIfPresent(String.self, forKey: .title)
         self.task = LuckgramAI.AITask(rawValue: (try c.decodeIfPresent(String.self, forKey: .task)) ?? "chat") ?? .chat
         self.systemPrompt = try c.decodeIfPresent(String.self, forKey: .systemPrompt)
+        self.requestParams = try? c.decodeIfPresent([String: String].self, forKey: .requestParams)
         self.createdAt = (try c.decodeIfPresent(Double.self, forKey: .createdAt)) ?? 0.0
         self.updatedAt = (try c.decodeIfPresent(Double.self, forKey: .updatedAt)) ?? self.createdAt
         self.messages = (try c.decodeIfPresent([Message].self, forKey: .messages)) ?? []
@@ -91,6 +95,9 @@ public final class LuckgramAIConversation: Codable {
         try c.encodeIfPresent(self.title, forKey: .title)
         try c.encode(self.task.rawValue, forKey: .task)
         try c.encodeIfPresent(self.systemPrompt, forKey: .systemPrompt)
+        if let params = self.requestParams, !params.isEmpty {
+            try c.encode(params, forKey: .requestParams)
+        }
         try c.encode(self.createdAt, forKey: .createdAt)
         try c.encode(self.updatedAt, forKey: .updatedAt)
         try c.encode(self.messages.filter { !$0.isPending }, forKey: .messages)

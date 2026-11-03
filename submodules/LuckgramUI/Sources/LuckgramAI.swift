@@ -16,6 +16,12 @@ public struct LuckgramAIError: Error, Equatable, CustomStringConvertible {
     public static let inputTooLarge = "input_too_large"
     public static let invalidRequest = "invalid_request"
     public static let invalidToken = "invalid_token"
+    /// S12 / S13: needs Luckgram Pro (e.g. a Pro-only market agent).
+    public static let notPro = "not_pro"
+    /// S12: no AI credits left for a premium request.
+    public static let creditsExhausted = "credits_exhausted"
+    /// S13: the market agent was taken down.
+    public static let agentUnavailable = "agent_unavailable"
     // Codes produced by the client itself
     public static let networkError = "network_error"
     /// The user declined (or has not given) consent; nothing was sent.
@@ -373,7 +379,9 @@ public final class LuckgramAI {
         })
     }
 
-    public func chat(context: AccountContext?, present: ((ViewController) -> Void)?, task: AITask, effect: String? = nil, messages: [Message], stream: Bool) -> Signal<ChatEvent, LuckgramAIError> {
+    /// - Parameter params: extra top-level request fields (e.g. `agent_id` for `.agent`, S13), or nil;
+    ///   they never replace `task`, `messages` or `stream`.
+    public func chat(context: AccountContext?, present: ((ViewController) -> Void)?, task: AITask, effect: String? = nil, params: [String: String]? = nil, messages: [Message], stream: Bool) -> Signal<ChatEvent, LuckgramAIError> {
         let chars = messages.reduce(0) { $0 + $1.content.count }
         if chars > LuckgramSettings.shared.remoteInt("ai.max_input_chars", default: 60000) {
             return .fail(LuckgramAIError(code: LuckgramAIError.inputTooLarge))
@@ -385,6 +393,9 @@ public final class LuckgramAI {
         ]
         if let effect, task == .writing {
             body["effect"] = effect
+        }
+        for (key, value) in params ?? [:] where body[key] == nil {
+            body[key] = value
         }
         guard let payload = try? JSONSerialization.data(withJSONObject: body) else {
             return .fail(LuckgramAIError(code: LuckgramAIError.invalidRequest))
