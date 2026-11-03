@@ -6,6 +6,7 @@ import TelegramCore
 import AccountContext
 import ContextUI
 import AlertUI
+import PresentationDataUtils
 import UndoUI
 import DeviceAccess
 import QrCodeUI
