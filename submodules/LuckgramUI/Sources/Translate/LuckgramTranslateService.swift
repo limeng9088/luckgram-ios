@@ -23,6 +23,9 @@ public final class LuckgramTranslateService: LuckgramTranslationFallbackService 
     }
 
     private static let cacheQueue = Queue(name: "LuckgramTranslateCache")
+    /// Guards `cacheValue` and `saveScheduled`: `cache` / `remember` are called from the main queue, the save
+    /// runs on `cacheQueue`, and Telegram translate callbacks may arrive on other queues.
+    private static let stateLock = NSLock()
     private static var cacheValue: LuckgramTranslateCache?
     private static var saveScheduled = false
 
@@ -30,8 +33,10 @@ public final class LuckgramTranslateService: LuckgramTranslationFallbackService 
         return FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first?.appendingPathComponent("luckgram_translate_cache.json")
     }
 
-    /// spec 01 「翻译服务」5: the shared result cache (2000 entries, 7 days), loaded on first use.
+    /// spec 01 「翻译服务」5: the shared result cache (2000 entries, 7 days), loaded once on first use (thread-safe).
     public static var cache: LuckgramTranslateCache {
+        stateLock.lock()
+        defer { stateLock.unlock() }
         if let value = cacheValue {
             return value
         }
@@ -48,14 +53,17 @@ public final class LuckgramTranslateService: LuckgramTranslationFallbackService 
     /// Stores a translation and writes the cache file a little later (batched).
     public static func remember(toLang: String, text: String, translated: String, fromLang: String?) {
         cache.put(LuckgramTranslateCache.key(toLang: toLang, text: text), text: translated, fromLang: fromLang, now: Date().timeIntervalSince1970)
-        if saveScheduled {
+        stateLock.lock()
+        let alreadyScheduled = saveScheduled
+        saveScheduled = true
+        stateLock.unlock()
+        if alreadyScheduled {
             return
         }
-        saveScheduled = true
         cacheQueue.after(2.0) {
-            Queue.mainQueue().async {
-                saveScheduled = false
-            }
+            stateLock.lock()
+            saveScheduled = false
+            stateLock.unlock()
             guard let url = cacheURL else {
                 return
             }
