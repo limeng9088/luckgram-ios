@@ -1,0 +1,109 @@
+import Foundation
+import UIKit
+import Display
+import AccountContext
+import TelegramCore
+
+/// Entry points for image features (specs#106 OCR, specs#108 image translation): the photo
+/// long-press menu and the viewer's "⋯" menu (`.menu`), the small buttons at the bottom right of
+/// the full-screen viewer (`.viewerButton`) and the gallery preview before sending
+/// (`.attachPreview`). Those places list `actions(at:)`; a feature adds one `register(...)` line in
+/// `registerBuiltInsIfNeeded` and doesn't touch the chat / gallery code. Main thread only.
+public enum LuckgramImageActions {
+    public struct Place: OptionSet {
+        public let rawValue: Int
+
+        public init(rawValue: Int) {
+            self.rawValue = rawValue
+        }
+
+        public static let menu = Place(rawValue: 1)
+        public static let viewerButton = Place(rawValue: 2)
+        public static let attachPreview = Place(rawValue: 4)
+    }
+
+    /// Where an action runs and what it gets.
+    public struct Target {
+        public let context: AccountContext
+        /// The page to present on (chat, gallery, attach preview).
+        public let controller: ViewController?
+        public let image: UIImage
+        /// Cache key for `LuckgramOcr` (the image file's path), or nil.
+        public let imageKey: String?
+        /// The photo message, or nil in the gallery preview.
+        public let message: EngineMessage?
+
+        public init(context: AccountContext, controller: ViewController?, image: UIImage, imageKey: String?, message: EngineMessage?) {
+            self.context = context
+            self.controller = controller
+            self.image = image
+            self.imageKey = imageKey
+            self.message = message
+        }
+    }
+
+    public struct Action {
+        public let id: String
+        public let title: (String, String)
+        /// SF Symbol for menus.
+        public let icon: String?
+        /// Short label of the viewer button (e.g. 「文字」 / 「译」).
+        public let buttonTitle: (String, String)
+        public let places: Place
+        public let isVisible: (EngineMessage?) -> Bool
+        public let run: (Target) -> Void
+
+        public init(id: String, title: (String, String), icon: String? = nil, buttonTitle: (String, String), places: Place, isVisible: @escaping (EngineMessage?) -> Bool = { _ in true }, run: @escaping (Target) -> Void) {
+            self.id = id
+            self.title = title
+            self.icon = icon
+            self.buttonTitle = buttonTitle
+            self.places = places
+            self.isVisible = isVisible
+            self.run = run
+        }
+
+        public var localizedTitle: String {
+            return LuckgramStrings.pick(self.title.0, self.title.1)
+        }
+
+        public var localizedButtonTitle: String {
+            return LuckgramStrings.pick(self.buttonTitle.0, self.buttonTitle.1)
+        }
+    }
+
+    private static var list: [Action] = []
+    private static var builtInsRegistered = false
+
+    static func registerBuiltInsIfNeeded() {
+        if builtInsRegistered {
+            return
+        }
+        builtInsRegistered = true
+        // ---- image features register here, one line each ----
+        // specs#106 OCR (「识别文字」 / 「文字」): added with the implementation (feat/106-image-ocr)
+        // specs#108 image translation (「翻译图片」 / 「译」): w-1148
+    }
+
+    /// Replaces an action with the same id.
+    public static func register(_ action: Action) {
+        registerBuiltInsIfNeeded()
+        list.removeAll(where: { $0.id == action.id })
+        list.append(action)
+    }
+
+    public static func unregister(id: String) {
+        list.removeAll(where: { $0.id == id })
+    }
+
+    /// Registered actions shown at `place`, in registration order.
+    public static func actions(at place: Place) -> [Action] {
+        registerBuiltInsIfNeeded()
+        return list.filter { $0.places.contains(place) }
+    }
+
+    /// Actions at `place` that are visible for `message`.
+    public static func visibleActions(at place: Place, message: EngineMessage?) -> [Action] {
+        return actions(at: place).filter { $0.isVisible(message) }
+    }
+}
