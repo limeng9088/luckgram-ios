@@ -44,6 +44,68 @@ public enum LuckgramTranslateOut {
         return LuckgramSettings.shared.isEnabled(featureKey)
     }
 
+    // MARK: - specs#104: per chat 「发送翻译」 {on, language}
+
+    private static let chatsOnKey = "translate_out_chats_on"
+    private static func chatOnKey(_ peerId: EnginePeer.Id) -> String {
+        return "translate_out_on_\(peerId.toInt64())"
+    }
+    /// LuckgramSettings key; "1" = send the translation without the preview.
+    public static let noPreviewKey = "translate_out_no_preview"
+
+    /// The target language while 「发送翻译」 is on for this chat, else nil (per account, synchronous so the
+    /// input panel can show the capsule).
+    public static func chatLanguageIfOn(accountPeerId: EnginePeer.Id, peerId: EnginePeer.Id) -> String? {
+        guard let value = LuckgramSettings.shared.string(chatOnKey(peerId), forAccount: accountPeerId.toInt64(), default: nil), !value.isEmpty else {
+            return nil
+        }
+        return value
+    }
+
+    /// On with `code`, or off with nil. Also keeps the per-chat language (01) in sync.
+    public static func setChat(context: AccountContext, peerId: EnginePeer.Id, on code: String?) {
+        let accountId = context.account.peerId.toInt64()
+        LuckgramSettings.shared.setString(chatOnKey(peerId), code ?? "", forAccount: accountId)
+        let stored = LuckgramSettings.shared.string(chatsOnKey, forAccount: accountId, default: nil)
+        LuckgramSettings.shared.setString(chatsOnKey, LuckgramSendTranslateLogic.updatingChats(stored, peerId: peerId.toInt64(), on: code != nil), forAccount: accountId)
+        if let code {
+            saveLanguage(context: context, peerId: peerId, code: code)
+        }
+    }
+
+    /// specs#104 §6: the chats with 「发送翻译」 on (peer id, language).
+    public static func chatsOn(context: AccountContext) -> [(peerId: EnginePeer.Id, language: String)] {
+        let accountPeerId = context.account.peerId
+        let stored = LuckgramSettings.shared.string(chatsOnKey, forAccount: accountPeerId.toInt64(), default: nil)
+        return LuckgramSendTranslateLogic.decodeChats(stored).compactMap { raw in
+            let peerId = EnginePeer.Id(raw)
+            guard let language = chatLanguageIfOn(accountPeerId: accountPeerId, peerId: peerId) else {
+                return nil
+            }
+            return (peerId, language)
+        }
+    }
+
+    public static var previewEnabled: Bool {
+        get {
+            return LuckgramSettings.shared.string(noPreviewKey, default: nil) != "1"
+        }
+        set {
+            LuckgramSettings.shared.setString(noPreviewKey, newValue ? "" : "1")
+        }
+    }
+
+    /// 「发送前翻译…」 (chat menu, TelegramUI).
+    public static var chatMenuTitle: String {
+        return LuckgramStrings.isChinese ? "发送前翻译…" : "Translate before sending…"
+    }
+
+    /// 「中 → EN」 for a chat.
+    static func capsule(language: String) -> String {
+        let from = LuckgramStrings.appLanguageCode ?? Locale.preferredLanguages.first
+        return LuckgramSendTranslateLogic.capsule(from: from, to: language)
+    }
+
     // MARK: - Strings
 
     /// Same rule as every other Luckgram string (`LuckgramStrings`, feature 00).
@@ -67,6 +129,19 @@ public enum LuckgramTranslateOut {
         var all: String { return self.chinese ? "所有语言" : "All languages" }
         var cancel: String { return self.chinese ? "取消" : "Cancel" }
         var noResults: String { return self.chinese ? "没有找到该语言" : "No languages found" }
+
+        // specs#104
+        var chatMenu: String { return self.chinese ? "发送前翻译…" : "Translate before sending…" }
+        var turnOff: String { return self.chinese ? "关闭发送翻译" : "Turn off" }
+        var turnedOff: String { return self.chinese ? "已关闭发送翻译" : "Translate before sending is off" }
+        func turnedOn(_ language: String) -> String { return self.chinese ? "已开启发送翻译：发送前翻成\(language)" : "Translate before sending is on: messages go out in \(language)" }
+        var translateAndSend: String { return self.chinese ? "翻译后发送…" : "Translate and send…" }
+        var sendTranslation: String { return self.chinese ? "发送译文" : "Send translation" }
+        var sendOriginal: String { return self.chinese ? "发送原文" : "Send original" }
+        var edit: String { return self.chinese ? "编辑" : "Edit" }
+        func previewTitle(_ language: String) -> String { return self.chinese ? "发送前预览 · \(language)" : "Preview · \(language)" }
+        func failedSendOriginal(_ reason: String?) -> String { return (reason ?? self.failed) + (self.chinese ? "。要发送原文吗？" : ". Send the original instead?") }
+        var capsuleHint: String { return self.chinese ? "发送前翻译：点这里改语言或关闭" : "Translate before sending: tap to change the language or turn it off" }
 
         func translatedTo(_ language: String) -> String {
             return self.chinese ? "已翻译成 \(language)" : "Translated to \(language)"

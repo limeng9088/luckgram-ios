@@ -6140,6 +6140,15 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
                                 self?.luckgramShowSummaryRangePicker()
                             })))
                         }
+                        // Luckgram specs#104 §1: switch translate-before-sending on for this chat
+                        if LuckgramTranslateOut.isEnabled, peer.id.namespace != Namespaces.Peer.SecretChat {
+                            items.append(.action(ContextMenuActionItem(text: LuckgramTranslateOut.chatMenuTitle, icon: { theme in
+                                return generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Translate"), color: theme.actionSheet.primaryTextColor)
+                            }, action: { _, f in
+                                f(.dismissWithoutContent)
+                                self?.chatDisplayNode.textInputPanelNode?.luckgramOpenSendTranslate()
+                            })))
+                        }
                                                 
                         return items
                     }

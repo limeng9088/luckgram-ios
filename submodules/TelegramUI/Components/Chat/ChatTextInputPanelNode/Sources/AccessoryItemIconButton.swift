@@ -173,9 +173,22 @@ final class AccessoryItemIconButton: HighlightTrackingButton, GlassBackgroundVie
                 return (PresentationResourcesChat.chatInputTextFieldScheduleImage(theme), nil, strings.VoiceOver_ScheduledMessages, 1.0, UIEdgeInsets())
             case .gift:
                 return (PresentationResourcesChat.chatInputTextFieldGiftImage(theme), nil, strings.VoiceOver_GiftPremium, 1.0, UIEdgeInsets())
-            case .translate:
-                let image = generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Translate"), color: theme.chat.inputPanel.inputControlColor.withAlphaComponent(1.0))
-                return (image, nil, LuckgramTranslateOut.Strings(strings).button, 1.0, UIEdgeInsets())
+            case let .translate(label):
+                // specs#104: 「中 → EN」 pill in the accent colour
+                let font = UIFont.systemFont(ofSize: 11.0, weight: .bold)
+                let color = theme.chat.inputPanel.panelControlAccentColor
+                let textSize = (label as NSString).size(withAttributes: [.font: font])
+                let size = CGSize(width: ceil(textSize.width) + 12.0, height: 22.0)
+                let image = generateImage(size, rotatedContext: { size, context in
+                    context.clear(CGRect(origin: CGPoint(), size: size))
+                    context.setFillColor(color.withAlphaComponent(0.15).cgColor)
+                    context.addPath(UIBezierPath(roundedRect: CGRect(origin: CGPoint(), size: size), cornerRadius: size.height / 2.0).cgPath)
+                    context.fillPath()
+                    UIGraphicsPushContext(context)
+                    (label as NSString).draw(at: CGPoint(x: 6.0, y: floor((size.height - textSize.height) / 2.0)), withAttributes: [.font: font, .foregroundColor: color])
+                    UIGraphicsPopContext()
+                })
+                return (image, nil, LuckgramTranslateOut.Strings(strings).capsuleHint, 1.0, UIEdgeInsets())
             case .quickReplies:
                 let image = UIImage(systemName: "text.bubble", withConfiguration: UIImage.SymbolConfiguration(pointSize: 19.0, weight: .regular))?.withTintColor(theme.chat.inputPanel.inputControlColor.withAlphaComponent(1.0), renderingMode: .alwaysOriginal)
                 return (image, nil, LuckgramQuickReplies.Strings(strings).title, 1.0, UIEdgeInsets())
@@ -190,7 +203,9 @@ final class AccessoryItemIconButton: HighlightTrackingButton, GlassBackgroundVie
     
     private static func calculateWidth(item: ChatTextInputAccessoryItem, image: UIImage?, text: String?, strings: PresentationStrings) -> CGFloat {
         switch item {
-        case .input, .botInput, .silentPost, .commands, .scheduledMessages, .gift, .suggestPost, .translate, .quickReplies, .dictation, .aiWriting:
+        case .translate:
+            return max(32.0, (image?.size.width ?? 0.0) + 4.0)
+        case .input, .botInput, .silentPost, .commands, .scheduledMessages, .gift, .suggestPost, .quickReplies, .dictation, .aiWriting:
             return 32.0
         case let .messageAutoremoveTimeout(timeout):
             var imageWidth = (image?.size.width ?? 0.0) + CGFloat(8.0)
