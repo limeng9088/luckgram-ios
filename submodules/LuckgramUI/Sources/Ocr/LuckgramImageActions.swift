@@ -85,9 +85,12 @@ public enum LuckgramImageActions {
         }
         builtInsRegistered = true
         // ---- image features register here, one line each ----
-        // specs#106 OCR (「识别文字」 / 「文字」): added with the implementation (feat/106-image-ocr)
-        // specs#108 image translation (「翻译图片」 / 「译」)
-        list.append(LuckgramImageTranslateEntry.action())
+        list.append(Action(id: "ocr", title: ("识别文字", "Recognize Text"), icon: "text.viewfinder", buttonTitle: ("文字", "Text"), places: [.menu, .viewerButton, .attachPreview], isVisible: { _ in
+            return LuckgramOcr.isEnabled
+        }, run: { target in
+            LuckgramOcrSheetController.open(context: target.context, image: target.image, key: target.imageKey)
+        })) // specs#106
+        list.append(LuckgramImageTranslateEntry.action()) // specs#108
     }
 
     /// Replaces an action with the same id.
@@ -105,6 +108,42 @@ public enum LuckgramImageActions {
     public static func actions(at place: Place) -> [Action] {
         registerBuiltInsIfNeeded()
         return list.filter { $0.places.contains(place) }
+    }
+
+    /// Called once at startup: the gallery's 「⋯」 menu lists the `.menu` actions for photos.
+    public static func installGalleryHook() {
+        LuckgramGalleryHooks.menuItems = { context, message, controller in
+            guard isPhoto(message) else {
+                return []
+            }
+            return visibleActions(at: .menu, message: message).map { action in
+                LuckgramGalleryHooks.MenuItem(title: action.localizedTitle, icon: action.icon, action: { [weak controller] in
+                    guard let loaded = image(context: context, message: message) else {
+                        return
+                    }
+                    action.run(Target(context: context, controller: controller, image: loaded.0, imageKey: loaded.1, message: message))
+                })
+            }
+        }
+    }
+
+    /// Whether `message` is a photo (the menu entries only apply to photos).
+    public static func isPhoto(_ message: EngineMessage) -> Bool {
+        return message.media.contains(where: { $0 is TelegramMediaImage })
+    }
+
+    /// The downloaded full-size image of a photo message and its cache key (the file path), or nil
+    /// when it isn't a photo or hasn't been downloaded.
+    public static func image(context: AccountContext, message: EngineMessage) -> (UIImage, String)? {
+        for media in message.media {
+            guard let image = media as? TelegramMediaImage, let rep = largestImageRepresentation(image.representations) else {
+                continue
+            }
+            if let path = context.engine.resources.completedResourcePath(id: EngineMediaResource.Id(rep.resource.id)), let ui = UIImage(contentsOfFile: path) {
+                return (ui, path)
+            }
+        }
+        return nil
     }
 
     /// Actions at `place` that are visible for `message`.
