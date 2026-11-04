@@ -17,6 +17,8 @@ final class LuckgramTranslateOutLanguagePicker: UITableViewController, UISearchR
     private let selected: String?
     private let isDark: Bool
     private let completion: (String) -> Void
+    /// specs#104: an extra action at the top (e.g. 「关闭发送翻译」), shown as the right bar button.
+    var topAction: (title: String, action: () -> Void)?
 
     private var commonItems: [Item] = []
     private var allItems: [Item] = []
@@ -72,6 +74,11 @@ final class LuckgramTranslateOutLanguagePicker: UITableViewController, UISearchR
 
         self.title = self.strings.pickerTitle
         self.navigationItem.leftBarButtonItem = UIBarButtonItem(title: self.strings.cancel, style: .plain, target: self, action: #selector(self.cancelPressed))
+        if let topAction = self.topAction {
+            let item = UIBarButtonItem(title: topAction.title, style: .plain, target: self, action: #selector(self.topActionPressed))
+            item.tintColor = .systemRed
+            self.navigationItem.rightBarButtonItem = item
+        }
 
         self.searchController.searchResultsUpdater = self
         self.searchController.obscuresBackgroundDuringPresentation = false
@@ -81,6 +88,16 @@ final class LuckgramTranslateOutLanguagePicker: UITableViewController, UISearchR
         self.definesPresentationContext = true
 
         self.tableView.register(UITableViewCell.self, forCellReuseIdentifier: self.cellIdentifier)
+    }
+
+    @objc private func topActionPressed() {
+        guard let action = self.topAction?.action else {
+            return
+        }
+        let presenting = self.navigationController?.presentingViewController ?? self.presentingViewController
+        presenting?.dismiss(animated: true, completion: {
+            action()
+        })
     }
 
     @objc private func cancelPressed() {

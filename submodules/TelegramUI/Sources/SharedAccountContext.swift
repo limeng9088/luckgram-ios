@@ -529,6 +529,10 @@ public final class SharedAccountContextImpl: SharedAccountContext {
         let _ = LuckgramFeatures.find(LuckgramTranslateInLogic.featureKey)?.subpage { context in
             return luckgramTranslateInSettingsController(context: context)
         }
+        // specs#104: preview switch and the chats with translate-before-sending on
+        let _ = LuckgramFeatures.find(LuckgramTranslateOut.featureKey)?.subpage { context in
+            return luckgramTranslateOutSettingsController(context: context)
+        }
         // Luckgram spec 01: Luckgram AI translates when Telegram's translation fails.
         LuckgramTranslateService.install(context: { [weak self] in
             return self?.activeAccountsValue?.primary
