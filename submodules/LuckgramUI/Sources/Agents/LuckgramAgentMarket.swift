@@ -18,7 +18,7 @@ public enum LuckgramAgentMarket {
     /// spec 30 平台入口提示: the one registration line, called from the AI assistant's registry.
     /// Replaces 22's "智能体" entry with the same page plus a "市场" tab while the market is on.
     static func register() {
-        LuckgramAIRegistry.registerHeaderEntry(.init(id: "agents", title: ("智能体", "Agents"), icon: "person.2.crop.square.stack", isVisible: { LuckgramAgents.isEnabled }, action: { host in
+        var entry = LuckgramAIRegistry.HeaderEntry(id: "agents", title: ("智能体", "Agents"), icon: "person.2.crop.square.stack", isVisible: { LuckgramAgents.isEnabled }, action: { host in
             let controller: UIViewController
             if LuckgramAgentMarket.isEnabled {
                 controller = LuckgramAgentsHubController(context: host.context, host: host)
@@ -26,7 +26,10 @@ public enum LuckgramAgentMarket {
                 controller = LuckgramAgentsController(context: host.context, host: host)
             }
             host.viewController.navigationController?.pushViewController(controller, animated: true)
-        }))
+        })
+        // specs#101: the pinned bar's hint
+        entry.subtitle = { LuckgramAgentMarket.isEnabled ? ("浏览市场", "Browse market") : nil }
+        LuckgramAIRegistry.registerHeaderEntry(entry)
     }
 
     // MARK: - Local data (per account, removed on logout)

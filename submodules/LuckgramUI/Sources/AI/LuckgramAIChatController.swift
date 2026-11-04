@@ -4,6 +4,8 @@ import SwiftSignalKit
 import Display
 import TelegramPresentationData
 import AccountContext
+import AsyncDisplayKit
+import WallpaperBackgroundNode
 
 /// spec 18: the Luckgram AI assistant, a local chat page that looks like a Telegram chat. It is not
 /// a Telegram bot or chat: nothing is sent to Telegram, requests go only to the AI gateway through
@@ -69,10 +71,13 @@ public final class LuckgramAIChatController: UIViewController, LuckgramAIChatHos
     private var prefill: String?
     private let theme: PresentationTheme
 
+    private let wallpaper: TelegramWallpaper
+    private var backgroundNode: WallpaperBackgroundNode?
     private let tableView = UITableView(frame: .zero, style: .plain)
-    private let emptyLabel = PaddedLabel()
-    private let headerScroll = UIScrollView()
-    private let headerStack = UIStackView()
+    /// specs#101: welcome card with example questions while the conversation is empty.
+    private let welcomeCard = UIView()
+    /// specs#101: header entries (extension point 3) as Telegram-style pinned bars under the navigation bar.
+    private let pinnedStack = UIStackView()
     private let quickScroll = UIScrollView()
     private let quickStack = UIStackView()
     private let inputPanel = UIView()
@@ -93,7 +98,9 @@ public final class LuckgramAIChatController: UIViewController, LuckgramAIChatHos
         self.context = context
         self.conversation = conversation
         self.prefill = prefill
-        self.theme = context.sharedContext.currentPresentationData.with { $0 }.theme
+        let presentationData = context.sharedContext.currentPresentationData.with { $0 }
+        self.theme = presentationData.theme
+        self.wallpaper = presentationData.chatWallpaper
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -115,33 +122,41 @@ public final class LuckgramAIChatController: UIViewController, LuckgramAIChatHos
     public override func viewDidLoad() {
         super.viewDidLoad()
         let theme = self.theme
-        self.view.backgroundColor = theme.list.blocksBackgroundColor
+        let service = serviceMessageColorComponents(theme: theme, wallpaper: self.wallpaper)
+
+        // specs#101: the chat wallpaper behind everything, like a Telegram chat
+        self.view.backgroundColor = theme.chatList.backgroundColor
+        let backgroundNode = createWallpaperBackgroundNode(context: self.context, forChatDisplay: true)
+        backgroundNode.update(wallpaper: self.wallpaper, animated: false)
+        self.backgroundNode = backgroundNode
+        self.view.addSubview(backgroundNode.view)
+
+        // specs#101: Telegram navigation bar — back arrow, avatar + title, two plain icons
         self.navigationItem.titleView = self.makeTitleView()
+        self.navigationItem.leftBarButtonItems = nil
         if self.navigationController?.viewControllers.first === self {
-            self.navigationItem.leftBarButtonItem = UIBarButtonItem(barButtonSystemItem: .close, target: self, action: #selector(self.closePressed))
+            let back = UIBarButtonItem(image: UIImage(systemName: "chevron.backward", withConfiguration: UIImage.SymbolConfiguration(pointSize: 20.0, weight: .semibold)), style: .plain, target: self, action: #selector(self.closePressed))
+            back.accessibilityLabel = LuckgramStrings.pick("返回", "Back")
+            self.navigationItem.leftBarButtonItem = back
         }
         let newItem = UIBarButtonItem(image: UIImage(systemName: "square.and.pencil"), style: .plain, target: self, action: #selector(self.newPressed))
         newItem.accessibilityLabel = LuckgramStrings.pick("新对话", "New chat")
         let historyItem = UIBarButtonItem(image: UIImage(systemName: "clock.arrow.circlepath"), style: .plain, target: self, action: #selector(self.historyPressed))
         historyItem.accessibilityLabel = LuckgramStrings.pick("历史对话", "Chat history")
         self.navigationItem.rightBarButtonItems = [historyItem, newItem]
-
-        // extension point 3: entries at the top of the page
-        self.headerStack.axis = .horizontal
-        self.headerStack.spacing = 6.0
-        self.headerScroll.showsHorizontalScrollIndicator = false
-        // specs#96: no band of its own — the chips sit on the page background like the quick buttons
-        self.headerScroll.backgroundColor = .clear
-        self.headerScroll.addSubview(self.headerStack)
-        for entry in LuckgramAIRegistry.headerEntries {
-            self.headerStack.addArrangedSubview(self.makeChip(title: LuckgramStrings.pick(entry.title.0, entry.title.1), icon: entry.icon, action: { [weak self] in
-                guard let self else {
-                    return
-                }
-                entry.action(self)
-            }))
+        if #available(iOS 26.0, *) {
+            for item in [self.navigationItem.leftBarButtonItem, newItem, historyItem].compactMap({ $0 }) {
+                item.hidesSharedBackground = true
+            }
         }
-        self.headerScroll.isHidden = self.headerStack.arrangedSubviews.isEmpty
+        self.applyNavigationBarAppearance()
+
+        // extension point 3: entries at the top of the page, as pinned bars
+        self.pinnedStack.axis = .vertical
+        for entry in LuckgramAIRegistry.headerEntries {
+            self.pinnedStack.addArrangedSubview(self.makePinnedBar(entry))
+        }
+        self.pinnedStack.isHidden = self.pinnedStack.arrangedSubviews.isEmpty
 
         self.tableView.dataSource = self
         self.tableView.delegate = self
@@ -152,19 +167,13 @@ public final class LuckgramAIChatController: UIViewController, LuckgramAIChatHos
         self.tableView.contentInset = UIEdgeInsets(top: 6.0, left: 0.0, bottom: 6.0, right: 0.0)
         self.tableView.register(BubbleCell.self, forCellReuseIdentifier: "bubble")
 
-        self.emptyLabel.text = LuckgramStrings.pick("有什么可以帮你？\n可以提问、总结或改写长文、讲解、解题。", "How can I help?\nAsk anything, summarize or rewrite text, explain, solve problems.")
-        self.emptyLabel.numberOfLines = 0
-        self.emptyLabel.textAlignment = .center
-        self.emptyLabel.font = UIFont.systemFont(ofSize: 15.0)
-        self.emptyLabel.textColor = theme.chat.serviceMessage.components.withDefaultWallpaper.primaryText
-        self.emptyLabel.backgroundColor = theme.chat.serviceMessage.components.withDefaultWallpaper.fill
-        self.emptyLabel.layer.cornerRadius = 14.0
-        self.emptyLabel.clipsToBounds = true
+        self.buildWelcomeCard(service: service)
 
-        // spec 18 需求 3 + extension point 1: quick buttons above the input field
+        // spec 18 需求 3 + extension point 1: quick buttons, a scrollable row at the top of the input panel
         self.quickStack.axis = .horizontal
-        self.quickStack.spacing = 6.0
+        self.quickStack.spacing = 8.0
         self.quickScroll.showsHorizontalScrollIndicator = false
+        self.quickScroll.alwaysBounceHorizontal = true
         self.quickScroll.addSubview(self.quickStack)
         for action in LuckgramAIRegistry.quickActions {
             self.quickStack.addArrangedSubview(self.makeChip(title: LuckgramStrings.pick(action.title.0, action.title.1), icon: action.icon, action: { [weak self] in
@@ -174,34 +183,37 @@ public final class LuckgramAIChatController: UIViewController, LuckgramAIChatHos
                 action.action(self)
             }))
         }
+        let hasQuick = !self.quickStack.arrangedSubviews.isEmpty
 
+        // specs#101: Telegram message panel — panel color, hairline on top, rounded field with stroke
         self.inputPanel.backgroundColor = theme.chat.inputPanel.panelBackgroundColor
-        // specs#96: the hairline Telegram's message panel has on top
         let panelSeparator = UIView()
         panelSeparator.backgroundColor = theme.chat.inputPanel.panelSeparatorColor
-        panelSeparator.frame = CGRect(x: 0.0, y: 0.0, width: 1.0, height: 1.0 / UIScreen.main.scale)
-        panelSeparator.autoresizingMask = [.flexibleWidth, .flexibleBottomMargin]
+        panelSeparator.translatesAutoresizingMaskIntoConstraints = false
         self.inputPanel.addSubview(panelSeparator)
         self.inputView_.font = UIFont.systemFont(ofSize: 17.0)
         self.inputView_.textColor = theme.chat.inputPanel.inputTextColor
         self.inputView_.backgroundColor = theme.chat.inputPanel.inputBackgroundColor
         self.inputView_.layer.cornerRadius = 18.0
+        self.inputView_.layer.borderWidth = 1.0 / UIScreen.main.scale
+        self.inputView_.layer.borderColor = theme.chat.inputPanel.inputStrokeColor.cgColor
         self.inputView_.textContainerInset = UIEdgeInsets(top: 8.0, left: 8.0, bottom: 8.0, right: 8.0)
         self.inputView_.delegate = self
         self.inputView_.keyboardAppearance = theme.overallDarkAppearance ? .dark : .light
+        self.inputView_.tintColor = theme.chat.inputPanel.panelControlAccentColor
         self.placeholderLabel.text = LuckgramStrings.pick("给 Luckgram AI 发消息", "Message Luckgram AI")
         self.placeholderLabel.font = self.inputView_.font
         self.placeholderLabel.textColor = theme.chat.inputPanel.inputPlaceholderColor
         self.sendButton.addTarget(self, action: #selector(self.sendPressed), for: .touchUpInside)
 
-        for v in [self.headerScroll, self.tableView, self.emptyLabel, self.quickScroll, self.inputPanel, self.headerStack, self.quickStack, self.inputView_, self.placeholderLabel, self.sendButton] as [UIView] {
+        for v in [self.pinnedStack, self.tableView, self.welcomeCard, self.quickScroll, self.inputPanel, self.quickStack, self.inputView_, self.placeholderLabel, self.sendButton] as [UIView] {
             v.translatesAutoresizingMaskIntoConstraints = false
         }
-        self.view.addSubview(self.headerScroll)
         self.view.addSubview(self.tableView)
-        self.view.addSubview(self.emptyLabel)
-        self.view.addSubview(self.quickScroll)
+        self.view.addSubview(self.welcomeCard)
         self.view.addSubview(self.inputPanel)
+        self.view.addSubview(self.pinnedStack)
+        self.inputPanel.addSubview(self.quickScroll)
         self.inputPanel.addSubview(self.inputView_)
         self.inputPanel.addSubview(self.placeholderLabel)
         self.inputPanel.addSubview(self.sendButton)
@@ -210,37 +222,39 @@ public final class LuckgramAIChatController: UIViewController, LuckgramAIChatHos
         self.inputHeight = inputHeight
         let safe = self.view.safeAreaLayoutGuide
         NSLayoutConstraint.activate([
-            self.headerScroll.topAnchor.constraint(equalTo: safe.topAnchor),
-            self.headerScroll.leadingAnchor.constraint(equalTo: self.view.leadingAnchor),
-            self.headerScroll.trailingAnchor.constraint(equalTo: self.view.trailingAnchor),
-            self.headerScroll.heightAnchor.constraint(equalToConstant: self.headerScroll.isHidden ? 0.0 : 44.0),
-            self.headerStack.leadingAnchor.constraint(equalTo: self.headerScroll.contentLayoutGuide.leadingAnchor, constant: 8.0),
-            self.headerStack.trailingAnchor.constraint(equalTo: self.headerScroll.contentLayoutGuide.trailingAnchor, constant: -8.0),
-            self.headerStack.centerYAnchor.constraint(equalTo: self.headerScroll.frameLayoutGuide.centerYAnchor),
-            self.headerStack.heightAnchor.constraint(equalToConstant: 30.0),
+            self.pinnedStack.topAnchor.constraint(equalTo: safe.topAnchor),
+            self.pinnedStack.leadingAnchor.constraint(equalTo: self.view.leadingAnchor),
+            self.pinnedStack.trailingAnchor.constraint(equalTo: self.view.trailingAnchor),
 
-            self.tableView.topAnchor.constraint(equalTo: self.headerScroll.bottomAnchor),
+            self.tableView.topAnchor.constraint(equalTo: self.pinnedStack.isHidden ? safe.topAnchor : self.pinnedStack.bottomAnchor),
             self.tableView.leadingAnchor.constraint(equalTo: self.view.leadingAnchor),
             self.tableView.trailingAnchor.constraint(equalTo: self.view.trailingAnchor),
-            self.tableView.bottomAnchor.constraint(equalTo: self.quickScroll.topAnchor),
+            self.tableView.bottomAnchor.constraint(equalTo: self.inputPanel.topAnchor),
 
-            self.emptyLabel.centerXAnchor.constraint(equalTo: self.tableView.centerXAnchor),
-            self.emptyLabel.centerYAnchor.constraint(equalTo: self.tableView.centerYAnchor),
-            self.emptyLabel.widthAnchor.constraint(lessThanOrEqualTo: self.view.widthAnchor, constant: -64.0),
+            self.welcomeCard.centerXAnchor.constraint(equalTo: self.tableView.centerXAnchor),
+            self.welcomeCard.centerYAnchor.constraint(equalTo: self.tableView.centerYAnchor),
+            self.welcomeCard.widthAnchor.constraint(lessThanOrEqualTo: self.view.widthAnchor, constant: -48.0),
+            self.welcomeCard.widthAnchor.constraint(lessThanOrEqualToConstant: 340.0),
+            self.welcomeCard.topAnchor.constraint(greaterThanOrEqualTo: self.tableView.topAnchor, constant: 8.0),
 
-            self.quickScroll.leadingAnchor.constraint(equalTo: self.view.leadingAnchor),
-            self.quickScroll.trailingAnchor.constraint(equalTo: self.view.trailingAnchor),
-            self.quickScroll.heightAnchor.constraint(equalToConstant: 40.0),
-            self.quickScroll.bottomAnchor.constraint(equalTo: self.inputPanel.topAnchor),
-            self.quickStack.leadingAnchor.constraint(equalTo: self.quickScroll.contentLayoutGuide.leadingAnchor, constant: 8.0),
-            self.quickStack.trailingAnchor.constraint(equalTo: self.quickScroll.contentLayoutGuide.trailingAnchor, constant: -8.0),
+            panelSeparator.topAnchor.constraint(equalTo: self.inputPanel.topAnchor),
+            panelSeparator.leadingAnchor.constraint(equalTo: self.inputPanel.leadingAnchor),
+            panelSeparator.trailingAnchor.constraint(equalTo: self.inputPanel.trailingAnchor),
+            panelSeparator.heightAnchor.constraint(equalToConstant: 1.0 / UIScreen.main.scale),
+
+            self.quickScroll.topAnchor.constraint(equalTo: self.inputPanel.topAnchor, constant: hasQuick ? 6.0 : 0.0),
+            self.quickScroll.leadingAnchor.constraint(equalTo: self.inputPanel.leadingAnchor),
+            self.quickScroll.trailingAnchor.constraint(equalTo: self.inputPanel.trailingAnchor),
+            self.quickScroll.heightAnchor.constraint(equalToConstant: hasQuick ? 34.0 : 0.0),
+            self.quickStack.leadingAnchor.constraint(equalTo: self.quickScroll.contentLayoutGuide.leadingAnchor, constant: 10.0),
+            self.quickStack.trailingAnchor.constraint(equalTo: self.quickScroll.contentLayoutGuide.trailingAnchor, constant: -10.0),
             self.quickStack.centerYAnchor.constraint(equalTo: self.quickScroll.frameLayoutGuide.centerYAnchor),
             self.quickStack.heightAnchor.constraint(equalToConstant: 30.0),
 
             self.inputPanel.leadingAnchor.constraint(equalTo: self.view.leadingAnchor),
             self.inputPanel.trailingAnchor.constraint(equalTo: self.view.trailingAnchor),
             self.inputPanel.bottomAnchor.constraint(equalTo: self.view.keyboardLayoutGuide.topAnchor),
-            self.inputView_.topAnchor.constraint(equalTo: self.inputPanel.topAnchor, constant: 7.0),
+            self.inputView_.topAnchor.constraint(equalTo: self.quickScroll.bottomAnchor, constant: 7.0),
             self.inputView_.bottomAnchor.constraint(equalTo: self.inputPanel.bottomAnchor, constant: -7.0),
             self.inputView_.leadingAnchor.constraint(equalTo: self.inputPanel.leadingAnchor, constant: 10.0),
             self.inputView_.trailingAnchor.constraint(equalTo: self.sendButton.leadingAnchor, constant: -6.0),
@@ -318,16 +332,192 @@ public final class LuckgramAIChatController: UIViewController, LuckgramAIChatHos
         return stack
     }
 
+    public override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        if let backgroundNode = self.backgroundNode {
+            backgroundNode.frame = self.view.bounds
+            backgroundNode.updateLayout(size: self.view.bounds.size, displayMode: .aspectFill, transition: .immediate)
+        }
+    }
+
+    public override func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated)
+        self.applyNavigationBarAppearance()
+    }
+
+    /// specs#101: an opaque Telegram navigation bar in the app theme (no Liquid Glass capsules).
+    private func applyNavigationBarAppearance() {
+        let bar = self.theme.rootController.navigationBar
+        let appearance = UINavigationBarAppearance()
+        appearance.configureWithOpaqueBackground()
+        appearance.backgroundColor = bar.opaqueBackgroundColor
+        appearance.shadowColor = bar.separatorColor
+        appearance.titleTextAttributes = [.foregroundColor: bar.primaryTextColor]
+        self.navigationItem.standardAppearance = appearance
+        self.navigationItem.scrollEdgeAppearance = appearance
+        self.navigationItem.compactAppearance = appearance
+        self.navigationController?.navigationBar.tintColor = bar.accentTextColor
+    }
+
+    /// specs#101: like Telegram's pinned message bar — accent line, icon, title, hint ›; the whole bar is tappable.
+    private func makePinnedBar(_ entry: LuckgramAIRegistry.HeaderEntry) -> UIView {
+        let bar = self.theme.rootController.navigationBar
+        let accent = bar.accentTextColor
+        let control = UIControl()
+        control.backgroundColor = bar.opaqueBackgroundColor
+        control.accessibilityLabel = LuckgramStrings.pick(entry.title.0, entry.title.1)
+        control.accessibilityTraits = .button
+        control.addAction(UIAction { [weak self] _ in
+            guard let self else {
+                return
+            }
+            entry.action(self)
+        }, for: .touchUpInside)
+
+        let line = UIView()
+        line.backgroundColor = accent
+        line.layer.cornerRadius = 1.0
+        let icon = UIImageView(image: UIImage(systemName: entry.icon ?? "sparkles", withConfiguration: UIImage.SymbolConfiguration(pointSize: 17.0, weight: .medium)))
+        icon.tintColor = accent
+        icon.contentMode = .center
+        let title = UILabel()
+        title.text = LuckgramStrings.pick(entry.title.0, entry.title.1)
+        title.font = UIFont.systemFont(ofSize: 15.0, weight: .semibold)
+        title.textColor = bar.primaryTextColor
+        let hint = UILabel()
+        hint.text = (entry.subtitle?().map { LuckgramStrings.pick($0.0, $0.1) + " " } ?? "") + "›"
+        hint.font = UIFont.systemFont(ofSize: 15.0)
+        hint.textColor = accent
+        hint.setContentHuggingPriority(.required, for: .horizontal)
+        let separator = UIView()
+        separator.backgroundColor = bar.separatorColor
+        for v in [line, icon, title, hint, separator] {
+            v.translatesAutoresizingMaskIntoConstraints = false
+            v.isUserInteractionEnabled = false
+            control.addSubview(v)
+        }
+        NSLayoutConstraint.activate([
+            control.heightAnchor.constraint(equalToConstant: 48.0),
+            line.leadingAnchor.constraint(equalTo: control.leadingAnchor, constant: 10.0),
+            line.centerYAnchor.constraint(equalTo: control.centerYAnchor),
+            line.widthAnchor.constraint(equalToConstant: 2.0),
+            line.heightAnchor.constraint(equalToConstant: 32.0),
+            icon.leadingAnchor.constraint(equalTo: line.trailingAnchor, constant: 10.0),
+            icon.centerYAnchor.constraint(equalTo: control.centerYAnchor),
+            icon.widthAnchor.constraint(equalToConstant: 24.0),
+            title.leadingAnchor.constraint(equalTo: icon.trailingAnchor, constant: 8.0),
+            title.centerYAnchor.constraint(equalTo: control.centerYAnchor),
+            hint.leadingAnchor.constraint(greaterThanOrEqualTo: title.trailingAnchor, constant: 8.0),
+            hint.trailingAnchor.constraint(equalTo: control.trailingAnchor, constant: -14.0),
+            hint.centerYAnchor.constraint(equalTo: control.centerYAnchor),
+            separator.leadingAnchor.constraint(equalTo: control.leadingAnchor),
+            separator.trailingAnchor.constraint(equalTo: control.trailingAnchor),
+            separator.bottomAnchor.constraint(equalTo: control.bottomAnchor),
+            separator.heightAnchor.constraint(equalToConstant: 1.0 / UIScreen.main.scale)
+        ])
+        return control
+    }
+
+    /// specs#101: example questions on the welcome card (same on Android); a tap fills the input field.
+    static let welcomeExamples: [(String, String)] = [
+        ("把这段话改得更正式一点", "Make this paragraph more formal"),
+        ("用三句话解释什么是区块链", "Explain blockchain in three sentences"),
+        ("周末两天怎么安排一次短途旅行？", "Plan a two-day weekend trip for me"),
+        ("帮我写一条给同事的生日祝福", "Write a birthday message for a coworker")
+    ]
+
+    private func buildWelcomeCard(service: PresentationThemeServiceMessageColorComponents) {
+        let theme = self.theme
+        let incoming = theme.chat.message.incoming
+        let accent = theme.rootController.navigationBar.accentTextColor
+        self.welcomeCard.backgroundColor = incoming.bubble.withWallpaper.fill.first ?? theme.list.plainBackgroundColor
+        self.welcomeCard.layer.cornerRadius = 18.0
+        self.welcomeCard.layer.shadowColor = UIColor.black.cgColor
+        self.welcomeCard.layer.shadowOpacity = theme.overallDarkAppearance ? 0.0 : 0.08
+        self.welcomeCard.layer.shadowRadius = 8.0
+        self.welcomeCard.layer.shadowOffset = CGSize(width: 0.0, height: 2.0)
+
+        let badge = UIImageView(image: UIImage(systemName: "sparkles", withConfiguration: UIImage.SymbolConfiguration(pointSize: 22.0, weight: .semibold)))
+        badge.tintColor = .white
+        badge.contentMode = .center
+        badge.backgroundColor = accent
+        badge.layer.cornerRadius = 24.0
+        badge.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([badge.widthAnchor.constraint(equalToConstant: 48.0), badge.heightAnchor.constraint(equalToConstant: 48.0)])
+
+        let title = UILabel()
+        title.text = LuckgramStrings.pick("有什么可以帮你？", "How can I help?")
+        title.font = UIFont.systemFont(ofSize: 18.0, weight: .semibold)
+        title.textColor = incoming.primaryTextColor
+        title.textAlignment = .center
+        let subtitle = UILabel()
+        subtitle.text = LuckgramStrings.pick("可以提问、总结或改写长文、讲解、解题。", "Ask anything, summarize or rewrite text, explain, solve problems.")
+        subtitle.font = UIFont.systemFont(ofSize: 14.0)
+        subtitle.textColor = incoming.secondaryTextColor
+        subtitle.textAlignment = .center
+        subtitle.numberOfLines = 0
+
+        let examples = UIStackView()
+        examples.axis = .vertical
+        examples.spacing = 8.0
+        for example in LuckgramAIChatController.welcomeExamples {
+            let text = LuckgramStrings.pick(example.0, example.1)
+            var config = UIButton.Configuration.plain()
+            config.title = text
+            config.baseForegroundColor = accent
+            config.titleAlignment = .leading
+            config.contentInsets = NSDirectionalEdgeInsets(top: 9.0, leading: 12.0, bottom: 9.0, trailing: 12.0)
+            config.background.backgroundColor = accent.withAlphaComponent(0.1)
+            config.background.cornerRadius = 12.0
+            config.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer { attributes in
+                var attributes = attributes
+                attributes.font = UIFont.systemFont(ofSize: 15.0)
+                return attributes
+            }
+            let button = UIButton(configuration: config, primaryAction: UIAction { [weak self] _ in
+                guard let self else {
+                    return
+                }
+                self.inputText = text
+                self.inputView_.becomeFirstResponder()
+            })
+            button.contentHorizontalAlignment = .leading
+            button.titleLabel?.numberOfLines = 0
+            examples.addArrangedSubview(button)
+        }
+
+        let stack = UIStackView(arrangedSubviews: [badge, title, subtitle, examples])
+        stack.axis = .vertical
+        stack.alignment = .center
+        stack.spacing = 8.0
+        stack.setCustomSpacing(12.0, after: badge)
+        stack.setCustomSpacing(16.0, after: subtitle)
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        examples.translatesAutoresizingMaskIntoConstraints = false
+        self.welcomeCard.addSubview(stack)
+        NSLayoutConstraint.activate([
+            stack.topAnchor.constraint(equalTo: self.welcomeCard.topAnchor, constant: 20.0),
+            stack.bottomAnchor.constraint(equalTo: self.welcomeCard.bottomAnchor, constant: -16.0),
+            stack.leadingAnchor.constraint(equalTo: self.welcomeCard.leadingAnchor, constant: 16.0),
+            stack.trailingAnchor.constraint(equalTo: self.welcomeCard.trailingAnchor, constant: -16.0),
+            examples.widthAnchor.constraint(equalTo: stack.widthAnchor)
+        ])
+    }
+
+    /// specs#101: quick buttons — accent text on a light accent tint with an accent outline, never truncated.
     private func makeChip(title: String, icon: String?, action: @escaping () -> Void) -> UIView {
-        var config = UIButton.Configuration.filled()
+        let accent = self.theme.chat.inputPanel.panelControlAccentColor
+        var config = UIButton.Configuration.plain()
         config.title = title
         if let icon {
             config.image = UIImage(systemName: icon, withConfiguration: UIImage.SymbolConfiguration(pointSize: 13.0, weight: .medium))
             config.imagePadding = 4.0
         }
+        config.baseForegroundColor = accent
+        config.background.backgroundColor = accent.withAlphaComponent(0.1)
+        config.background.strokeColor = accent.withAlphaComponent(0.5)
+        config.background.strokeWidth = 1.0
         config.cornerStyle = .capsule
-        config.baseBackgroundColor = self.theme.chat.serviceMessage.components.withDefaultWallpaper.fill
-        config.baseForegroundColor = self.theme.chat.serviceMessage.components.withDefaultWallpaper.primaryText
         config.contentInsets = NSDirectionalEdgeInsets(top: 4.0, leading: 12.0, bottom: 4.0, trailing: 12.0)
         config.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer { attributes in
             var attributes = attributes
@@ -335,6 +525,7 @@ public final class LuckgramAIChatController: UIViewController, LuckgramAIChatHos
             return attributes
         }
         let button = UIButton(configuration: config, primaryAction: UIAction { _ in action() })
+        button.setContentCompressionResistancePriority(.required, for: .horizontal)
         return button
     }
 
@@ -363,7 +554,7 @@ public final class LuckgramAIChatController: UIViewController, LuckgramAIChatHos
     }
 
     private func updateEmpty() {
-        self.emptyLabel.isHidden = !self.conversation.messages.isEmpty
+        self.welcomeCard.isHidden = !self.conversation.messages.isEmpty
     }
 
     private func scrollToBottom(animated: Bool) {
@@ -705,7 +896,7 @@ private final class BubbleCell: UITableViewCell, UIContextMenuInteractionDelegat
     func configure(message: LuckgramAIConversation.Message, theme: PresentationTheme, width: CGFloat) {
         let isOut = message.isUser
         let colors = isOut ? theme.chat.message.outgoing : theme.chat.message.incoming
-        self.bubble.backgroundColor = colors.bubble.withoutWallpaper.fill.first ?? (isOut ? .systemBlue : .secondarySystemBackground)
+        self.bubble.backgroundColor = colors.bubble.withWallpaper.fill.first ?? (isOut ? .systemBlue : .secondarySystemBackground)
         self.leading?.isActive = !isOut
         self.trailing?.isActive = isOut
 

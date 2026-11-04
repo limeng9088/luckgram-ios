@@ -28,6 +28,7 @@ swift_library(
         "//submodules/OverlayStatusController:OverlayStatusController",
         "//submodules/ComponentFlow:ComponentFlow",
         "//submodules/TextFormat:TextFormat",
+        "//submodules/WallpaperBackgroundNode:WallpaperBackgroundNode",
     ],
     visibility = [
         "//visibility:public",
