@@ -6140,6 +6140,27 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
                                 self?.luckgramShowSummaryRangePicker()
                             })))
                         }
+                        // Luckgram specs#105 §1: this chat's reading-translation language
+                        if let translateIn = luckgramTranslateIn as? LuckgramTranslateInController, translateIn.isEnabled, peer.id.namespace != Namespaces.Peer.SecretChat {
+                            items.append(.action(ContextMenuActionItem(text: LuckgramStrings.pick("翻译设置…", "Translation settings…"), icon: { theme in
+                                return generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Translate"), color: theme.actionSheet.primaryTextColor)
+                            }, action: { _, f in
+                                f(.dismissWithoutContent)
+                                guard let self else {
+                                    return
+                                }
+                                let accountPeerId = self.context.account.peerId
+                                let peerId = peer.id
+                                translateIn.chooseLanguage(accountPeerId: accountPeerId, peerId: peerId, then: { [weak self] _ in
+                                    guard let self else {
+                                        return
+                                    }
+                                    let name = LuckgramTranslateInController.languageName(LuckgramTranslateInController.targetLanguage(accountPeerId: accountPeerId, peerId: peerId)) ?? ""
+                                    let presentationData = self.context.sharedContext.currentPresentationData.with { $0 }
+                                    self.present(UndoOverlayController(presentationData: presentationData, content: .info(title: nil, text: LuckgramStrings.pick("本聊天的消息将翻译成\(name)", "Messages here will be translated into \(name)"), timeout: nil, customUndoText: nil), action: { _ in return false }), in: .window(.root))
+                                })
+                            })))
+                        }
                         // Luckgram specs#104 §1: switch translate-before-sending on for this chat
                         if LuckgramTranslateOut.isEnabled, peer.id.namespace != Namespaces.Peer.SecretChat {
                             items.append(.action(ContextMenuActionItem(text: LuckgramTranslateOut.chatMenuTitle, icon: { theme in

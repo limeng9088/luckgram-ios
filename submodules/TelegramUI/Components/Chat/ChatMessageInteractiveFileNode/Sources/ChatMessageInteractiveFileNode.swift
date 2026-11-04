@@ -899,11 +899,14 @@ public final class ChatMessageInteractiveFileNode: ASDisplayNode {
                                     modifiedString.append(NSAttributedString(string: "\n", font: smallFont, textColor: messageTheme.secondaryTextColor))
                                     // specs#93: the header is tappable (change the language)
                                     modifiedString.append(NSAttributedString(string: service.header(fromLang: entry.fromLang, toLang: entry.toLang), attributes: [.font: smallFont, .foregroundColor: messageTheme.secondaryTextColor, luckgramTranslateHeaderKey: true]))
+                                    // specs#105 §1: an obvious 「🌐 中文 ▾」 button, same tap as the header
+                                    modifiedString.append(NSAttributedString(string: "   ", attributes: [.font: smallFont, luckgramTranslateHeaderKey: true]))
+                                    modifiedString.append(NSAttributedString(string: service.languageButton(toLang: entry.toLang), attributes: [.font: Font.semibold(smallFont.pointSize), .foregroundColor: messageTheme.linkTextColor, luckgramTranslateHeaderKey: true]))
                                     modifiedString.append(NSAttributedString(string: "\n", font: smallFont, textColor: messageTheme.secondaryTextColor))
                                     modifiedString.append(NSAttributedString(string: String(repeating: "\u{2500}", count: 14) + "\n", font: smallFont, textColor: messageTheme.secondaryTextColor.withAlphaComponent(0.5)))
                                     modifiedString.append(NSAttributedString(string: entry.text, font: textFont, textColor: messageTheme.primaryTextColor))
                                     textString = modifiedString
-                                } else if service.showVoiceLink(text: text) {
+                                } else if service.showVoiceLink(text: text, accountPeerId: arguments.context.account.peerId, peerId: arguments.message.id.peerId) {
                                     modifiedString.append(NSAttributedString(string: "\n", font: smallFont, textColor: messageTheme.primaryTextColor))
                                     modifiedString.append(NSAttributedString(string: LuckgramTranslateInLogic.menuLabel(translated: false, chinese: LuckgramStrings.isChinese), attributes: [
                                         .font: smallFont,

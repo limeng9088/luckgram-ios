@@ -516,12 +516,12 @@ public final class SharedAccountContextImpl: SharedAccountContext {
             return self?.activeAccountsValue?.primary
         })
         // specs#93: the language list for the first translation and the tappable header
-        luckgramTranslateIn.pickLanguage = { [weak self] selected, completion in
+        luckgramTranslateIn.pickLanguage = { [weak self] selected, recent, completion in
             guard let self else {
                 return
             }
             let presentationData = self.currentPresentationData.with { $0 }
-            let picker = LuckgramTranslateOut.makeLanguagePicker(strings: presentationData.strings, isDark: presentationData.theme.overallDarkAppearance, selected: selected, completion: completion)
+            let picker = LuckgramTranslateOut.makeReadingLanguagePicker(strings: presentationData.strings, isDark: presentationData.theme.overallDarkAppearance, selected: selected, recent: recent, completion: completion)
             self.mainWindow?.presentNative(picker)
         }
         let _ = (accountManager.sharedData(keys: [ApplicationSpecificSharedDataKeys.translationSettings])
