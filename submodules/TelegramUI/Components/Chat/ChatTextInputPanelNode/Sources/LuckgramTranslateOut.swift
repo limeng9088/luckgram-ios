@@ -101,8 +101,16 @@ public enum LuckgramTranslateOut {
     }
 
     /// 「中 → EN」 for a chat.
-    public static func capsule(language: String) -> String {
-        let from = LuckgramStrings.appLanguageCode ?? Locale.preferredLanguages.first
+    /// specs#110: the source is the language detected in what the user typed (not the app language);
+    /// unknown / too short → 「→ 日」.
+    public static func capsule(language: String, text: String) -> String {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        var from: String?
+        if trimmed.count >= 2 {
+            let recognizer = NLLanguageRecognizer()
+            recognizer.processString(String(trimmed.prefix(300)))
+            from = recognizer.dominantLanguage?.rawValue
+        }
         return LuckgramSendTranslateLogic.capsule(from: from, to: language)
     }
 
