@@ -68,6 +68,15 @@ public enum LuckgramWelcomeLogic {
         case login
     }
 
+    /// The privacy alert re-shows itself at most this many times when it didn't come up; after
+    /// that only a tap shows it again (no endless dismiss/present loop).
+    public static let maxPrivacyRetries = 3
+
+    /// Whether automatic re-show number `retry` (1-based) may run.
+    public static func shouldRetryPrivacy(retry: Int) -> Bool {
+        return retry >= 1 && retry <= maxPrivacyRetries
+    }
+
     public static func startAction(accepted: Bool, privacyOnScreen: Bool, onboarded: Bool, canPush: Bool) -> StartAction {
         if shouldAskPrivacy(accepted: accepted) {
             return privacyOnScreen ? .waitForPrivacy : .showPrivacy
