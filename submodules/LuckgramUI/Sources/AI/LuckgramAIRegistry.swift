@@ -63,6 +63,8 @@ public enum LuckgramAIRegistry {
         public let id: String
         public let title: (String, String)
         public let icon: String?
+        /// Optional hint on the right of the pinned bar, e.g. ("浏览市场", "Browse market") (specs#101).
+        public var subtitle: (() -> (String, String)?)?
         public let isVisible: () -> Bool
         /// Gets the assistant page, e.g. to push or present another screen.
         public let action: (LuckgramAIChatHost) -> Void
