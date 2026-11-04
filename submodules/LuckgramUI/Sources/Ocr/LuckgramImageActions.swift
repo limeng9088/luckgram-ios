@@ -110,6 +110,23 @@ public enum LuckgramImageActions {
         return list.filter { $0.places.contains(place) }
     }
 
+    /// Called once at startup: the gallery's 「⋯」 menu lists the `.menu` actions for photos.
+    public static func installGalleryHook() {
+        LuckgramGalleryHooks.menuItems = { context, message, controller in
+            guard isPhoto(message) else {
+                return []
+            }
+            return visibleActions(at: .menu, message: message).map { action in
+                LuckgramGalleryHooks.MenuItem(title: action.localizedTitle, icon: action.icon, action: { [weak controller] in
+                    guard let loaded = image(context: context, message: message) else {
+                        return
+                    }
+                    action.run(Target(context: context, controller: controller, image: loaded.0, imageKey: loaded.1, message: message))
+                })
+            }
+        }
+    }
+
     /// Whether `message` is a photo (the menu entries only apply to photos).
     public static func isPhoto(_ message: EngineMessage) -> Bool {
         return message.media.contains(where: { $0 is TelegramMediaImage })
