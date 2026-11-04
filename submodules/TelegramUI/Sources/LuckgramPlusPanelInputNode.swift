@@ -189,8 +189,8 @@ final class LuckgramPlusPanelInputNode: ChatInputNode, UIScrollViewDelegate {
         self.scrollView.contentSize = CGSize(width: pageWidth * CGFloat(pageCount), height: gridHeight)
 
         self.pageControl.numberOfPages = pageCount
-        self.pageControl.pageIndicatorTintColor = theme.chat.inputPanel.panelControlColor.withAlphaComponent(0.25)
-        self.pageControl.currentPageIndicatorTintColor = theme.chat.inputPanel.panelControlColor
+        self.pageControl.pageIndicatorTintColor = LuckgramPlusPanelColors.dotOther(dark: theme.overallDarkAppearance)
+        self.pageControl.currentPageIndicatorTintColor = LuckgramPlusPanelColors.dotCurrent(dark: theme.overallDarkAppearance)
         self.pageControl.frame = CGRect(x: 0.0, y: gridHeight + 4.0, width: width, height: 20.0)
 
         if self.lastWidth != width {
@@ -238,11 +238,11 @@ final class LuckgramPlusPanelInputNode: ChatInputNode, UIScrollViewDelegate {
         square.isUserInteractionEnabled = false
         square.layer.cornerRadius = 14.0
         square.layer.cornerCurve = .continuous
-        square.backgroundColor = theme.chat.inputPanel.panelControlColor.withAlphaComponent(theme.overallDarkAppearance ? 0.16 : 0.08)
+        square.backgroundColor = LuckgramPlusPanelColors.square(dark: theme.overallDarkAppearance)
         cell.addSubview(square)
 
         let icon = UIImageView(image: UIImage(systemName: item.action.systemImageName, withConfiguration: UIImage.SymbolConfiguration(pointSize: 24.0, weight: .regular)))
-        icon.tintColor = theme.chat.inputPanel.panelControlColor
+        icon.tintColor = LuckgramPlusPanelColors.icon(dark: theme.overallDarkAppearance)
         icon.contentMode = .center
         icon.frame = square.bounds
         square.addSubview(icon)
@@ -251,12 +251,12 @@ final class LuckgramPlusPanelInputNode: ChatInputNode, UIScrollViewDelegate {
         label.isUserInteractionEnabled = false
         label.text = item.action.title
         label.font = UIFont.systemFont(ofSize: 12.0)
-        label.textColor = theme.chat.inputPanel.inputPlaceholderColor
+        label.textColor = LuckgramPlusPanelColors.title(dark: theme.overallDarkAppearance)
         label.textAlignment = .center
         label.lineBreakMode = .byTruncatingTail
         cell.addSubview(label)
 
-        cell.alpha = item.dimmed ? 0.4 : 1.0
+        cell.alpha = item.dimmed ? LuckgramPlusPanelColors.dimmedAlpha : 1.0
         cell.addTarget(self, action: #selector(self.cellPressed(_:)), for: .touchUpInside)
         cell.addTarget(self, action: #selector(self.cellHighlight(_:)), for: [.touchDown, .touchDragEnter])
         cell.addTarget(self, action: #selector(self.cellUnhighlight(_:)), for: [.touchUpInside, .touchUpOutside, .touchDragExit, .touchCancel])
