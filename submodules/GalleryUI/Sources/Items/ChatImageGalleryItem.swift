@@ -254,6 +254,12 @@ final class ChatImageGalleryItemNode: ZoomableContentGalleryItemNode {
     private let statusDisposable = MetaDisposable()
     private let dataDisposable = MetaDisposable()
     private let recognitionDisposable = MetaDisposable()
+    // Luckgram specs#106 / #108: 「文字」 / 「译」 at the bottom right when the photo has text
+    private var luckgramButtons: UIStackView?
+    private var luckgramButtonItems: [LuckgramGalleryHooks.MenuItem] = []
+    private let luckgramButtonsDisposable = MetaDisposable()
+    private var luckgramControlsVisible = true
+    private var luckgramLayout: ContainerViewLayout?
     private var status: EngineMediaResource.FetchStatus?
     private var fetchedDimensions: PixelDimensions?
     
@@ -343,6 +349,7 @@ final class ChatImageGalleryItemNode: ZoomableContentGalleryItemNode {
         self.statusDisposable.dispose()
         self.dataDisposable.dispose()
         self.recognitionDisposable.dispose()
+        self.luckgramButtonsDisposable.dispose()
     }
     
     override func ready() -> Signal<Void, NoError> {
@@ -360,6 +367,72 @@ final class ChatImageGalleryItemNode: ZoomableContentGalleryItemNode {
         let statusSize = CGSize(width: 50.0, height: 50.0)
         transition.updateFrame(node: self.statusNodeContainer, frame: CGRect(origin: CGPoint(x: floor((layout.size.width - statusSize.width) / 2.0), y: floor((layout.size.height - statusSize.height) / 2.0)), size: statusSize))
         transition.updateFrame(node: self.statusNode, frame: CGRect(origin: CGPoint(), size: statusSize))
+        self.luckgramLayout = layout
+        self.luckgramLayoutButtons()
+    }
+
+    override func controlsVisibilityUpdated(isVisible: Bool, animated: Bool) {
+        super.controlsVisibilityUpdated(isVisible: isVisible, animated: animated)
+        self.luckgramControlsVisible = isVisible
+        if let buttons = self.luckgramButtons {
+            UIView.animate(withDuration: animated ? 0.2 : 0.0, animations: {
+                buttons.alpha = isVisible ? 1.0 : 0.0
+            })
+        }
+    }
+
+    private func luckgramUpdateButtons(_ message: Message) {
+        self.luckgramButtons?.removeFromSuperview()
+        self.luckgramButtons = nil
+        self.luckgramButtonItems = []
+        guard let hook = LuckgramGalleryHooks.viewerButtons, message.id.peerId.namespace != Namespaces.Peer.SecretChat else {
+            self.luckgramButtonsDisposable.set(nil)
+            return
+        }
+        self.luckgramButtonsDisposable.set((hook(self.context, EngineMessage(message), self.galleryController())
+        |> deliverOnMainQueue).start(next: { [weak self] items in
+            guard let self, self.message?.id == message.id, !items.isEmpty else {
+                return
+            }
+            self.luckgramButtons?.removeFromSuperview()
+            let stack = UIStackView()
+            stack.axis = .horizontal
+            stack.spacing = 8.0
+            for (i, item) in items.enumerated() {
+                let button = UIButton(type: .system)
+                button.setTitle(item.title, for: .normal)
+                button.setTitleColor(.white, for: .normal)
+                button.titleLabel?.font = UIFont.boldSystemFont(ofSize: 13.0)
+                button.backgroundColor = UIColor(white: 0.0, alpha: 0.6)
+                button.layer.cornerRadius = 16.0
+                button.tag = i
+                button.widthAnchor.constraint(equalToConstant: max(44.0, button.intrinsicContentSize.width + 24.0)).isActive = true
+                button.heightAnchor.constraint(equalToConstant: 32.0).isActive = true
+                button.addTarget(self, action: #selector(self.luckgramButtonPressed(_:)), for: .touchUpInside)
+                stack.addArrangedSubview(button)
+            }
+            self.luckgramButtonItems = items
+            stack.alpha = self.luckgramControlsVisible ? 1.0 : 0.0
+            self.view.addSubview(stack)
+            self.luckgramButtons = stack
+            self.luckgramLayoutButtons()
+        }))
+    }
+
+    private func luckgramLayoutButtons() {
+        guard let stack = self.luckgramButtons, let layout = self.luckgramLayout else {
+            return
+        }
+        let width = stack.systemLayoutSizeFitting(UIView.layoutFittingCompressedSize).width
+        let bottom = max(layout.intrinsicInsets.bottom, layout.safeInsets.bottom) + 120.0
+        stack.frame = CGRect(x: layout.size.width - layout.safeInsets.right - 12.0 - width, y: layout.size.height - bottom - 32.0, width: width, height: 32.0)
+    }
+
+    @objc private func luckgramButtonPressed(_ sender: UIButton) {
+        guard sender.tag >= 0, sender.tag < self.luckgramButtonItems.count else {
+            return
+        }
+        self.luckgramButtonItems[sender.tag].action()
     }
     
     private func setupImageRecognition(_ generate: @escaping (TransformImageArguments) -> DrawingContext?, dimensions: PixelDimensions) {
@@ -466,6 +539,7 @@ final class ChatImageGalleryItemNode: ZoomableContentGalleryItemNode {
         self.isSecret = isSecret
         self.imageNode.captureProtected = message.id.peerId.namespace == Namespaces.Peer.SecretChat || message.isCopyProtected() || peerIsCopyProtected || isSecret || message.paidContent != nil
         self.updateFooter(animated: false)
+        self.luckgramUpdateButtons(message)
         
         var title: String?
         if let _ = message.adAttribute {

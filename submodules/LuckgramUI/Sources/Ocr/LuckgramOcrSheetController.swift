@@ -10,34 +10,86 @@ import AccountContext
 /// the assistant's input) / Share. Same page as Android `LuckgramOcrSheet`.
 public final class LuckgramOcrSheetController: UIViewController {
     /// Recognizes `image` and opens the sheet; a short message if nothing is found.
-    public static func open(context: AccountContext, image: UIImage, key: String?) {
+    /// Recognizes `image` and opens the sheet; a short message if nothing is found. `presentNative`
+    /// shows native pages somewhere other than the main window (the attachment preview).
+    public static func open(context: AccountContext, image: UIImage, key: String?, presentNative: ((UIViewController) -> Void)? = nil) {
+        let present: (UIViewController) -> Void = presentNative ?? { c in
+            context.sharedContext.mainWindow?.presentNative(c)
+        }
         let _ = (LuckgramOcr.recognize(image: image, key: key)
         |> deliverOnMainQueue).startStandalone(next: { result in
             guard result.hasText else {
-                notice(context, LuckgramStrings.pick("图片里没有识别到文字", "No text found in this image"))
+                offerAI(context: context, image: image, key: key, langHint: nil, why: LuckgramStrings.pick("本机没有识别出文字", "No text found on the device"), present: present)
                 return
             }
-            present(context: context, image: image, result: result)
+            show(context: context, image: image, result: result, key: key, present: present)
         }, error: { _ in
-            notice(context, LuckgramStrings.pick("识别失败，请重试", "Couldn't recognize the text. Please try again."))
+            offerAI(context: context, image: image, key: key, langHint: nil, why: LuckgramStrings.pick("本机识别失败", "On-device recognition failed"), present: present)
         })
     }
 
-    static func present(context: AccountContext, image: UIImage, result: LuckgramOcrResult) {
+    /// 需求 2: "Recognize with Luckgram AI" when the switch is on, else just `why`.
+    static func offerAI(context: AccountContext, image: UIImage, key: String?, langHint: String?, why: String, present: @escaping (UIViewController) -> Void) {
+        guard LuckgramOcrResult.offerAI(configOn: LuckgramOcr.aiAvailable, deviceFoundText: false) else {
+            notice(context, why, present: present)
+            return
+        }
+        let alert = UIAlertController(title: why, message: LuckgramStrings.pick("可以把这张图片发给 Luckgram AI 识别（会使用 AI 额度）。", "You can send this image to Luckgram AI to recognize it (uses your AI quota)."), preferredStyle: .alert)
+        alert.addAction(UIAlertAction(title: LuckgramStrings.pick("取消", "Cancel"), style: .cancel))
+        alert.addAction(UIAlertAction(title: LuckgramStrings.pick("用 Luckgram AI 识别", "Recognize with Luckgram AI"), style: .default, handler: { _ in
+            recognizeWithAI(context: context, image: image, key: key, langHint: langHint, present: present)
+        }))
+        let presentationData = context.sharedContext.currentPresentationData.with { $0 }
+        alert.overrideUserInterfaceStyle = presentationData.theme.overallDarkAppearance ? .dark : .light
+        present(alert)
+    }
+
+    static func recognizeWithAI(context: AccountContext, image: UIImage, key: String?, langHint: String?, present: @escaping (UIViewController) -> Void) {
+        // The AI consent alert (spec 00) is a Telegram one in the main window; ask it there first.
+        if !LuckgramAI.shared.hasConsent {
+            let _ = (LuckgramAI.shared.requestConsent(context: context, present: { c in
+                context.sharedContext.mainWindow?.present(c, on: .root)
+            })
+            |> deliverOnMainQueue).startStandalone(next: { granted in
+                if granted {
+                    recognizeWithAI(context: context, image: image, key: key, langHint: langHint, present: present)
+                }
+            })
+            return
+        }
+        let _ = (LuckgramOcr.recognizeWithAI(image: image, key: key, langHint: langHint)
+        |> deliverOnMainQueue).startStandalone(next: { result in
+            guard result.hasText else {
+                notice(context, LuckgramStrings.pick("图片里没有识别到文字", "No text found in this image"), present: present)
+                return
+            }
+            show(context: context, image: image, result: result, key: key, present: present)
+        }, error: { error in
+            if error.code == LuckgramAIError.quotaExceeded {
+                notice(context, LuckgramProPerks.Texts(zh: LuckgramStrings.isChinese).upgradeReason(.quota), present: present)
+            } else if error.code != LuckgramAIError.consentDenied {
+                notice(context, error.localizedMessage, present: present)
+            }
+        })
+    }
+
+    static func show(context: AccountContext, image: UIImage, result: LuckgramOcrResult, key: String? = nil, present: @escaping (UIViewController) -> Void) {
         let controller = LuckgramOcrSheetController(context: context, image: image, result: result)
+        controller.presentNative = present
+        controller.imageKey = key
         let navigation = UINavigationController(rootViewController: controller)
         navigation.modalPresentationStyle = .pageSheet
         let presentationData = context.sharedContext.currentPresentationData.with { $0 }
         navigation.overrideUserInterfaceStyle = presentationData.theme.overallDarkAppearance ? .dark : .light
-        context.sharedContext.mainWindow?.presentNative(navigation)
+        present(navigation)
     }
 
-    private static func notice(_ context: AccountContext, _ text: String) {
+    static func notice(_ context: AccountContext, _ text: String, present: (UIViewController) -> Void) {
         let alert = UIAlertController(title: nil, message: text, preferredStyle: .alert)
         alert.addAction(UIAlertAction(title: "OK", style: .default))
         let presentationData = context.sharedContext.currentPresentationData.with { $0 }
         alert.overrideUserInterfaceStyle = presentationData.theme.overallDarkAppearance ? .dark : .light
-        context.sharedContext.mainWindow?.presentNative(alert)
+        present(alert)
     }
 
     private let context: AccountContext
@@ -48,6 +100,9 @@ public final class LuckgramOcrSheetController: UIViewController {
     private let highlights: LuckgramOcrHighlightView
     private var translating = false
     private let disposable = MetaDisposable()
+    private var imageKey: String?
+    /// Where this sheet was shown (main window or the attachment preview), to show it again there.
+    var presentNative: ((UIViewController) -> Void)?
 
     init(context: AccountContext, image: UIImage, result: LuckgramOcrResult) {
         self.context = context
@@ -105,6 +160,21 @@ public final class LuckgramOcrSheetController: UIViewController {
             self?.select(block)
         }
         stack.addArrangedSubview(imageWrap)
+
+        if self.result.source == .device && LuckgramOcr.aiAvailable {
+            // 需求 2: the device result may be wrong (unsupported language): try Luckgram AI instead
+            let retry = UIButton(type: .system)
+            retry.setTitle(LuckgramStrings.pick("识别得不对？用 Luckgram AI 识别", "Not right? Recognize with Luckgram AI"), for: .normal)
+            retry.contentHorizontalAlignment = .leading
+            retry.addTarget(self, action: #selector(self.aiPressed), for: .touchUpInside)
+            stack.addArrangedSubview(retry)
+        } else if self.result.source == .ai {
+            let by = UILabel()
+            by.text = LuckgramStrings.pick("由 Luckgram AI 识别", "Recognized by Luckgram AI")
+            by.font = UIFont.systemFont(ofSize: 13.0)
+            by.textColor = .secondaryLabel
+            stack.addArrangedSubview(by)
+        }
 
         self.textView.text = self.result.text
         self.textView.font = UIFont.systemFont(ofSize: 17.0)
@@ -190,6 +260,16 @@ public final class LuckgramOcrSheetController: UIViewController {
         self.textView.selectedRange = NSRange(r, in: text)
     }
 
+    @objc private func aiPressed() {
+        let context = self.context, image = self.image, key = self.imageKey, lang = self.result.language
+        let present: (UIViewController) -> Void = self.presentNative ?? { c in
+            context.sharedContext.mainWindow?.presentNative(c)
+        }
+        (self.navigationController ?? self).dismiss(animated: true, completion: {
+            LuckgramOcrSheetController.recognizeWithAI(context: context, image: image, key: key, langHint: lang, present: present)
+        })
+    }
+
     @objc private func closePressed() {
         self.dismiss(animated: true)
     }
@@ -221,7 +301,11 @@ public final class LuckgramOcrSheetController: UIViewController {
                     context.sharedContext.mainWindow?.present(c, on: .root)
                 })
                 |> deliverOnMainQueue).startStandalone(next: { [weak self] granted in
-                    context.sharedContext.mainWindow?.presentNative(navigation)
+                    if let present = self?.presentNative {
+                        present(navigation)
+                    } else {
+                        context.sharedContext.mainWindow?.presentNative(navigation)
+                    }
                     if granted {
                         self?.translatePressed()
                     }

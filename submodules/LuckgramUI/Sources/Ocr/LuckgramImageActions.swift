@@ -3,6 +3,7 @@ import UIKit
 import Display
 import AccountContext
 import TelegramCore
+import SwiftSignalKit
 
 /// Entry points for image features (specs#106 OCR, specs#108 image translation): the photo
 /// long-press menu and the viewer's "⋯" menu (`.menu`), the small buttons at the bottom right of
@@ -30,19 +31,31 @@ public enum LuckgramImageActions {
         public let image: UIImage
         /// Cache key for `LuckgramOcr` (the image file's path), or nil.
         public let imageKey: String?
+        /// Shows a native page where `controller` can't (the attachment preview); nil = the main window.
+        public let presentNative: ((UIViewController) -> Void)?
         /// The photo message, or nil in the gallery preview.
         public let message: EngineMessage?
         /// Gives a new image (e.g. the translated one, #108) back to the gallery preview, replacing
         /// the current item before sending. Only set for `.attachPreview`; nil = don't offer it.
         public let replaceImage: ((UIImage) -> Void)?
 
-        public init(context: AccountContext, controller: ViewController?, image: UIImage, imageKey: String?, message: EngineMessage?, replaceImage: ((UIImage) -> Void)? = nil) {
+        public init(context: AccountContext, controller: ViewController?, image: UIImage, imageKey: String?, message: EngineMessage?, replaceImage: ((UIImage) -> Void)? = nil, presentNative: ((UIViewController) -> Void)? = nil) {
             self.context = context
             self.controller = controller
             self.image = image
             self.imageKey = imageKey
             self.message = message
             self.replaceImage = replaceImage
+            self.presentNative = presentNative
+        }
+
+        /// Presents a native page: over the attachment preview there, else in the main window.
+        public func present(_ controller: UIViewController) {
+            if let presentNative = self.presentNative {
+                presentNative(controller)
+            } else {
+                self.context.sharedContext.mainWindow?.presentNative(controller)
+            }
         }
     }
 
@@ -88,7 +101,7 @@ public enum LuckgramImageActions {
         list.append(Action(id: "ocr", title: ("识别文字", "Recognize Text"), icon: "text.viewfinder", buttonTitle: ("文字", "Text"), places: [.menu, .viewerButton, .attachPreview], isVisible: { _ in
             return LuckgramOcr.isEnabled
         }, run: { target in
-            LuckgramOcrSheetController.open(context: target.context, image: target.image, key: target.imageKey)
+            LuckgramOcrSheetController.open(context: target.context, image: target.image, key: target.imageKey, presentNative: target.presentNative)
         })) // specs#106
         list.append(LuckgramImageTranslateEntry.action()) // specs#108
     }
@@ -110,8 +123,40 @@ public enum LuckgramImageActions {
         return list.filter { $0.places.contains(place) }
     }
 
-    /// Called once at startup: the gallery's 「⋯」 menu lists the `.menu` actions for photos.
+    /// Called once at startup: the gallery's 「⋯」 menu lists the `.menu` actions for photos, its
+    /// bottom-right buttons the `.viewerButton` ones (when the photo has text) and the attachment
+    /// preview the `.attachPreview` ones.
     public static func installGalleryHook() {
+        LuckgramGalleryHooks.viewerButtons = { context, message, controller in
+            let actions = visibleActions(at: .viewerButton, message: message)
+            guard isPhoto(message), !actions.isEmpty else {
+                return .single([])
+            }
+            return imageWhenReady(context: context, message: message)
+            |> mapToSignal { loaded -> Signal<[LuckgramGalleryHooks.MenuItem], NoError> in
+                guard let loaded else {
+                    return .single([])
+                }
+                return LuckgramOcr.hasText(image: loaded.0, key: loaded.1)
+                |> map { hasText -> [LuckgramGalleryHooks.MenuItem] in
+                    guard hasText else {
+                        return []
+                    }
+                    return actions.map { action in
+                        LuckgramGalleryHooks.MenuItem(title: action.localizedButtonTitle, icon: action.icon, action: { [weak controller] in
+                            action.run(Target(context: context, controller: controller, image: loaded.0, imageKey: loaded.1, message: message))
+                        })
+                    }
+                }
+            }
+        }
+        LuckgramGalleryHooks.attachPreviewActions = { context in
+            return visibleActions(at: .attachPreview, message: nil).map { action in
+                LuckgramGalleryHooks.AttachAction(title: action.localizedTitle, run: { image, present, replace in
+                    action.run(Target(context: context, controller: nil, image: image, imageKey: nil, message: nil, replaceImage: replace, presentNative: present))
+                })
+            }
+        }
         LuckgramGalleryHooks.menuItems = { context, message, controller in
             guard isPhoto(message) else {
                 return []
@@ -144,6 +189,22 @@ public enum LuckgramImageActions {
             }
         }
         return nil
+    }
+
+    /// Like `image(context:message:)`, but waits until the photo has finished downloading.
+    public static func imageWhenReady(context: AccountContext, message: EngineMessage) -> Signal<(UIImage, String)?, NoError> {
+        for media in message.media {
+            guard let image = media as? TelegramMediaImage, let rep = largestImageRepresentation(image.representations) else {
+                continue
+            }
+            return context.engine.resources.data(id: EngineMediaResource.Id(rep.resource.id))
+            |> filter { $0.isComplete }
+            |> take(1)
+            |> map { data -> (UIImage, String)? in
+                return UIImage(contentsOfFile: data.path).map { ($0, data.path) }
+            }
+        }
+        return .single(nil)
     }
 
     /// Actions at `place` that are visible for `message`.

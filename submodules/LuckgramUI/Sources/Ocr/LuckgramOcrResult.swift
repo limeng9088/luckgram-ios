@@ -241,6 +241,58 @@ public struct LuckgramOcrResult: Equatable {
         return nil
     }
 
+    // MARK: - Luckgram AI fallback (specs#106 需求 2), same as Android `OcrAi`
+
+    public static let aiPath = "/v1/ai/ocr"
+    public static let aiConfigKey = "ai.ocr_enabled"
+    public static let aiMaxSide: Double = 2048.0
+    public static let aiMaxBytes = 4 * 1024 * 1024
+
+    /// Offered when the switch is on and the device found no text (or failed).
+    public static func offerAI(configOn: Bool, deviceFoundText: Bool) -> Bool {
+        return configOn && !deviceFoundText
+    }
+
+    public static func aiBody(base64Jpeg: String, langHint: String?) -> [String: Any] {
+        var body: [String: Any] = ["image": base64Jpeg]
+        if let langHint, !langHint.isEmpty {
+            body["lang_hint"] = langHint
+        }
+        return body
+    }
+
+    /// `{language, blocks:[{text, language, box:{x,y,width,height}}]}` → a result with `source == .ai`.
+    public static func parseAI(_ json: [String: Any]?, imageWidth: Int, imageHeight: Int) -> LuckgramOcrResult {
+        func number(_ v: Any?) -> Double {
+            if let d = v as? Double {
+                return d
+            }
+            if let i = v as? Int {
+                return Double(i)
+            }
+            if let n = v as? NSNumber {
+                return n.doubleValue
+            }
+            return 0.0
+        }
+        var blocks: [Block] = []
+        for item in (json?["blocks"] as? [[String: Any]]) ?? [] {
+            let text = ((item["text"] as? String) ?? "").replacingOccurrences(of: "\r\n", with: "\n")
+            if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                continue
+            }
+            var box = Box(x: 0.0, y: 0.0, width: 0.0, height: 0.0)
+            if let b = item["box"] as? [String: Any] {
+                let x = Box.clamp(number(b["x"])), y = Box.clamp(number(b["y"]))
+                box = Box(x: x, y: y, width: min(Box.clamp(number(b["width"])), 1.0 - x), height: min(Box.clamp(number(b["height"])), 1.0 - y))
+            }
+            let lines = text.components(separatedBy: "\n").map { Line(text: $0, box: box) }
+            blocks.append(Block(text: text, language: item["language"] as? String, box: box, lines: lines))
+        }
+        let language = normalizedLanguage(json?["language"] as? String) ?? mainLanguage(blocks)
+        return LuckgramOcrResult(imageWidth: imageWidth, imageHeight: imageHeight, language: language, source: .ai, blocks: blocks)
+    }
+
     static func normalizedLanguage(_ s: String?) -> String? {
         guard let s = s?.trimmingCharacters(in: .whitespaces), !s.isEmpty, s != "und" else {
             return nil

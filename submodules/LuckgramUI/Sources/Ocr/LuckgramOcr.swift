@@ -97,6 +97,45 @@ public enum LuckgramOcr {
         return signal |> deliverOnMainQueue
     }
 
+    /// Whether "Recognize with Luckgram AI" can be offered (remote config; the server endpoint is new).
+    public static var aiAvailable: Bool {
+        return LuckgramSettings.shared.remoteConfig.bool(LuckgramOcrResult.aiConfigKey, default: false)
+    }
+
+    /// specs#106 需求 2: recognizes with Luckgram AI (the server's vision model): a JPEG of at most
+    /// 2048 px is sent; counts against the AI quota. The caller asks the AI consent first. The result
+    /// replaces the cached on-device one. Errors are `LuckgramAIError` codes.
+    public static func recognizeWithAI(image: UIImage, key: String?, langHint: String?) -> Signal<LuckgramOcrResult, LuckgramAIError> {
+        guard let jpeg = aiJpeg(image) else {
+            return .fail(LuckgramAIError(code: LuckgramOcrError.noImage))
+        }
+        let width = Int(image.size.width * image.scale), height = Int(image.size.height * image.scale)
+        return LuckgramAI.shared.requestJSON(method: "POST", path: LuckgramOcrResult.aiPath, body: LuckgramOcrResult.aiBody(base64Jpeg: jpeg.base64EncodedString(), langHint: langHint))
+        |> map { json -> LuckgramOcrResult in
+            let result = LuckgramOcrResult.parseAI(json, imageWidth: width, imageHeight: height)
+            store(key: key, result: result)
+            return result
+        }
+        |> deliverOnMainQueue
+    }
+
+    private static func aiJpeg(_ image: UIImage) -> Data? {
+        let side = CGFloat(LuckgramOcrResult.aiMaxSide)
+        let scale = min(1.0, side / max(1.0, max(image.size.width, image.size.height)))
+        let size = CGSize(width: max(1.0, floor(image.size.width * scale)), height: max(1.0, floor(image.size.height * scale)))
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = 1.0
+        let resized = UIGraphicsImageRenderer(size: size, format: format).image { _ in
+            image.draw(in: CGRect(origin: .zero, size: size))
+        }
+        for quality in [0.85, 0.65, 0.45] as [CGFloat] {
+            if let data = resized.jpegData(compressionQuality: quality), data.count <= LuckgramOcrResult.aiMaxBytes {
+                return data
+            }
+        }
+        return nil
+    }
+
     /// Whether the switch `image_ocr` is on (default on).
     public static var isEnabled: Bool {
         return LuckgramSettings.shared.isEnabled(featureKey)
