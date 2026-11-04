@@ -302,14 +302,15 @@ func inputTextPanelStateForChatPresentationInterfaceState(_ chatPresentationInte
                     accessoryItems.append(.botInput(isEnabled: true, inputMode: .bot))
                 }
                 
-                // Luckgram: "translate before sending" sits right next to the send button while there is text.
-                if canSendTextMessages, !luckgramCompactBar, !chatPresentationInterfaceState.interfaceState.composeInputState.content.isEmptyWhitespaceTrimmed, LuckgramTranslateOut.isEnabled, chatPresentationInterfaceState.chatLocation.peerId != nil, !(chatPresentationInterfaceState.renderedPeer?.peer is TelegramSecretChat) {
+                // Luckgram specs#104: the 「中 → EN」 capsule while 「发送翻译」 is on for this chat (with or without
+                // text, also in the compact bar: it is the only sign that sending translates).
+                if canSendTextMessages, LuckgramTranslateOut.isEnabled, let luckgramPeerId = chatPresentationInterfaceState.chatLocation.peerId, chatPresentationInterfaceState.interfaceState.editMessage == nil, let luckgramLanguage = LuckgramTranslateOut.chatLanguageIfOn(accountPeerId: context.account.peerId, peerId: luckgramPeerId), !(chatPresentationInterfaceState.renderedPeer?.peer is TelegramSecretChat) {
                     var isCustomContents = false
                     if case .customChatContents = chatPresentationInterfaceState.subject {
                         isCustomContents = true
                     }
                     if !isCustomContents {
-                        accessoryItems.append(.translate)
+                        accessoryItems.append(.translate(LuckgramTranslateOut.capsule(language: luckgramLanguage)))
                     }
                 }
                 

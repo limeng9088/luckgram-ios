@@ -31,6 +31,7 @@ import EmojiSuggestionsComponent
 import AudioToolbox
 import ChatControllerInteraction
 import UndoUI
+import PresentationDataUtils
 import PremiumUI
 import StickerPeekUI
 import LottieComponent
@@ -5907,6 +5908,8 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
         if let presentationInterfaceState = self.presentationInterfaceState, presentationInterfaceState.interfaceState.mediaDraftState != nil {
             self.interfaceInteraction?.sendRecordedMedia(false, self.viewOnce)
             self.viewOnce = false
+        } else if self.interceptSendForTranslation() {
+            // Luckgram specs#104: translated (and previewed) first
         } else {
             self.sendMessage()
         }
@@ -6034,25 +6037,15 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
         self.interfaceInteraction?.stopIncomingStreamingMessage()
     }
     
-    // MARK: - Luckgram: translate before sending (feature 01)
+    // MARK: - Luckgram: translate before sending (feature 01, specs#104)
 
     private var translateOutDisposable: Disposable?
     private var translateOutIsBusy = false
+    /// Set while sending the text chosen in the preview, so that send is not intercepted again.
+    private var translateOutBypass = false
 
     private func setupTranslateOutLongPress(button: AccessoryItemIconButton, item: ChatTextInputAccessoryItem) {
-        guard case .translate = item else {
-            return
-        }
-        let recognizer = UILongPressGestureRecognizer(target: self, action: #selector(self.translateOutLongPressed(_:)))
-        recognizer.minimumPressDuration = 0.4
-        button.addGestureRecognizer(recognizer)
-    }
-
-    @objc private func translateOutLongPressed(_ recognizer: UILongPressGestureRecognizer) {
-        guard recognizer.state == .began else {
-            return
-        }
-        self.showTranslateOutLanguages()
+        // specs#104: the capsule is tapped (change / turn off); no long press any more
     }
 
     private func translateOutPeer() -> (peerId: EnginePeer.Id, threadId: Int64?)? {
@@ -6062,136 +6055,203 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
         return (peerId, interfaceState.chatLocation.threadId)
     }
 
-    /// Luckgram spec 01 C.2: 「翻译成…」 / 「翻译」 in the send button's long-press menu, when translate-before-
-    /// sending applies (feature on, text in the field, not a secret chat, not editing).
+    /// Translate-before-sending can be used here at all (feature on, a peer, not secret, not editing).
+    private func canTranslateOut() -> Bool {
+        guard LuckgramTranslateOut.isEnabled, let interfaceState = self.presentationInterfaceState, let peer = self.translateOutPeer() else {
+            return false
+        }
+        if interfaceState.interfaceState.editMessage != nil || peer.peerId.namespace == Namespaces.Peer.SecretChat {
+            return false
+        }
+        return true
+    }
+
+    private func translateOutHasText() -> Bool {
+        guard let interfaceState = self.presentationInterfaceState else {
+            return false
+        }
+        return !interfaceState.interfaceState.composeInputState.inputText.string.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private func translateOutChatLanguage() -> String? {
+        guard let context = self.context, let peer = self.translateOutPeer() else {
+            return nil
+        }
+        return LuckgramTranslateOut.chatLanguageIfOn(accountPeerId: context.account.peerId, peerId: peer.peerId)
+    }
+
+    /// Recomputes the accessory items (the capsule) after the per-chat state changed.
+    private func refreshTranslateOutCapsule() {
+        self.interfaceInteraction?.updateTextInputStateAndMode { state, inputMode in
+            return (state, inputMode)
+        }
+    }
+
+    private func presentTranslateOutToast(_ text: String) {
+        guard let context = self.context else {
+            return
+        }
+        let presentationData = context.sharedContext.currentPresentationData.with { $0 }
+        self.interfaceInteraction?.presentController(UndoOverlayController(presentationData: presentationData, content: .info(title: nil, text: text, timeout: nil, customUndoText: nil), elevatedLayout: false, action: { _ in return false }), nil)
+    }
+
+    private func presentTranslateOutPicker(selected: String?, topAction: (title: String, action: () -> Void)?, completion: @escaping (String) -> Void) {
+        guard let context = self.context, let interfaceState = self.presentationInterfaceState else {
+            return
+        }
+        let strings = LuckgramTranslateOut.Strings(interfaceState.strings)
+        let isDark = interfaceState.theme.overallDarkAppearance
+        let _ = (LuckgramTranslateOut.recentLanguages(context: context)
+        |> take(1)
+        |> deliverOnMainQueue).startStandalone(next: { recent in
+            let picker = LuckgramTranslateOutLanguagePicker(strings: strings, selected: selected, recent: recent, isDark: isDark, completion: completion)
+            picker.topAction = topAction
+            context.sharedContext.mainWindow?.presentNative(picker.wrappedInNavigation())
+        })
+    }
+
+    /// specs#104 §1: chat menu 「发送前翻译…」 and the 「+」 panel's 「翻译」. Off: pick the language (the peer's
+    /// detected language suggested) and switch it on for this chat. On: the capsule menu.
+    public func luckgramOpenSendTranslate() {
+        guard self.canTranslateOut(), let context = self.context, let interfaceState = self.presentationInterfaceState, let peer = self.translateOutPeer() else {
+            return
+        }
+        if self.translateOutChatLanguage() != nil {
+            self.showSendTranslateMenu()
+            return
+        }
+        let strings = LuckgramTranslateOut.Strings(interfaceState.strings)
+        let peerId = peer.peerId
+        let _ = (LuckgramTranslateOut.resolveLanguage(context: context, peerId: peerId, threadId: peer.threadId)
+        |> take(1)
+        |> deliverOnMainQueue).startStandalone(next: { [weak self] suggested in
+            self?.presentTranslateOutPicker(selected: suggested, topAction: nil, completion: { [weak self] code in
+                LuckgramTranslateOut.setChat(context: context, peerId: peerId, on: code)
+                self?.refreshTranslateOutCapsule()
+                self?.presentTranslateOutToast(strings.turnedOn(strings.languageName(code)))
+            })
+        })
+    }
+
+    /// specs#104 §2: tap on the capsule: change the language (saved for this chat) or turn it off.
+    private func showSendTranslateMenu() {
+        guard let context = self.context, let interfaceState = self.presentationInterfaceState, let peer = self.translateOutPeer() else {
+            return
+        }
+        let strings = LuckgramTranslateOut.Strings(interfaceState.strings)
+        let peerId = peer.peerId
+        self.presentTranslateOutPicker(selected: self.translateOutChatLanguage(), topAction: (strings.turnOff, { [weak self] in
+            LuckgramTranslateOut.setChat(context: context, peerId: peerId, on: nil)
+            self?.refreshTranslateOutCapsule()
+            self?.presentTranslateOutToast(strings.turnedOff)
+        }), completion: { [weak self] code in
+            LuckgramTranslateOut.setChat(context: context, peerId: peerId, on: code)
+            self?.refreshTranslateOutCapsule()
+        })
+    }
+
+    /// specs#104 §4: the send button's long-press menu has one item, 「翻译后发送…」 (pick a language once,
+    /// then preview), when there is text to translate.
     public func luckgramTranslateOutMenuActions() -> [(title: String, action: () -> Void)] {
-        guard LuckgramTranslateOut.isEnabled, !self.translateOutIsBusy, let interfaceState = self.presentationInterfaceState, self.translateOutPeer() != nil else {
-            return []
-        }
-        if interfaceState.interfaceState.editMessage != nil {
-            return []
-        }
-        if let peerId = interfaceState.chatLocation.peerId, peerId.namespace == Namespaces.Peer.SecretChat {
-            return []
-        }
-        if interfaceState.interfaceState.composeInputState.inputText.string.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+        guard self.canTranslateOut(), !self.translateOutIsBusy, self.translateOutHasText(), let interfaceState = self.presentationInterfaceState else {
             return []
         }
         let strings = LuckgramTranslateOut.Strings(interfaceState.strings)
         return [
-            (strings.chinese ? "翻译成…" : "Translate to…", { [weak self] in
-                self?.showTranslateOutLanguages()
-            }),
-            (strings.button, { [weak self] in
-                self?.translateOutPressed(language: nil)
+            (strings.translateAndSend, { [weak self] in
+                guard let self else {
+                    return
+                }
+                self.presentTranslateOutPicker(selected: self.translateOutChatLanguage(), topAction: nil, completion: { [weak self] code in
+                    self?.translateThenSend(language: code, preview: true)
+                })
             })
         ]
     }
 
-    private func translateOutPressed(language: String?) {
-        guard !self.translateOutIsBusy, let context = self.context, let interfaceState = self.presentationInterfaceState, let peer = self.translateOutPeer() else {
+    /// specs#104 §3: with 「发送翻译」 on, the send button translates first. Returns true when it took over.
+    private func interceptSendForTranslation() -> Bool {
+        if self.translateOutBypass || self.translateOutIsBusy || !self.canTranslateOut() || !self.translateOutHasText() {
+            return false
+        }
+        guard let language = self.translateOutChatLanguage() else {
+            return false
+        }
+        self.translateThenSend(language: language, preview: LuckgramTranslateOut.previewEnabled)
+        return true
+    }
+
+    private func translateThenSend(language: String, preview: Bool) {
+        guard !self.translateOutIsBusy, let context = self.context, let interfaceState = self.presentationInterfaceState else {
             return
         }
-        let peerId = peer.peerId
-        let threadId = peer.threadId
         let sourceState = interfaceState.interfaceState.composeInputState
         let sourceText = sourceState.inputText
         if sourceText.string.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             return
         }
         let strings = LuckgramTranslateOut.Strings(interfaceState.strings)
-        let _ = threadId
-
-        guard let language else {
-            // specs#93: the language saved for this chat, otherwise ask (no guessing, no English default)
-            let _ = (LuckgramTranslateOut.savedLanguage(context: context, peerId: peerId)
-            |> take(1)
-            |> deliverOnMainQueue).startStandalone(next: { [weak self] saved in
-                guard let self else {
-                    return
-                }
-                if let saved, !saved.isEmpty {
-                    self.translateOutPressed(language: saved)
-                } else {
-                    self.showTranslateOutLanguages()
-                }
-            })
-            return
-        }
-        let languageSignal: Signal<String, NoError> = .single(language)
-
         self.translateOutIsBusy = true
         self.translateOutDisposable?.dispose()
-        self.translateOutDisposable = (languageSignal
-        |> mapToSignal { toLang -> Signal<(String, LuckgramTranslateOut.Outcome), NoError> in
-            return LuckgramTranslateOut.translate(context: context, text: sourceText, toLang: toLang)
-            |> map { result in
-                return (toLang, result)
-            }
-        }
-        |> deliverOnMainQueue).startStrict(next: { [weak self] toLang, outcome in
+        self.translateOutDisposable = (LuckgramTranslateOut.translate(context: context, text: sourceText, toLang: language)
+        |> deliverOnMainQueue).startStrict(next: { [weak self] outcome in
             guard let self else {
                 return
             }
             self.translateOutIsBusy = false
-            let presentationData = context.sharedContext.currentPresentationData.with { $0 }
-            let result: NSAttributedString
-            switch outcome {
-            case let .translated(value):
-                result = value
-            case let .failed(reason):
-                self.interfaceInteraction?.presentController(UndoOverlayController(presentationData: presentationData, content: .info(title: nil, text: reason ?? strings.failed, timeout: nil, customUndoText: nil), elevatedLayout: false, action: { _ in return false }), nil)
-                return
-            }
-            // Don't overwrite what the user typed meanwhile.
+            // Don't send if the user kept typing meanwhile.
             guard let currentState = self.presentationInterfaceState?.interfaceState.composeInputState, currentState == sourceState else {
                 return
             }
-            let translatedState = ChatTextInputState(inputText: result)
-            self.interfaceInteraction?.updateTextInputStateAndMode { _, inputMode in
-                return (translatedState, inputMode)
+            switch outcome {
+            case let .failed(reason):
+                // §验收: offline / failed → say so, offer the original
+                let alert = textAlertController(context: context, title: strings.button, text: strings.failedSendOriginal(reason), actions: [
+                    TextAlertAction(type: .genericAction, title: strings.cancel, action: {}),
+                    TextAlertAction(type: .defaultAction, title: strings.sendOriginal, action: { [weak self] in
+                        self?.sendTranslateOutChoice(nil)
+                    })
+                ])
+                self.interfaceInteraction?.presentController(alert, nil)
+            case let .translated(result):
+                if !preview {
+                    self.sendTranslateOutChoice(result)
+                    return
+                }
+                let text = sourceText.string + "\n\n→ " + result.string
+                let alert = textAlertController(context: context, title: strings.previewTitle(strings.languageName(language)), text: text, actions: [
+                    TextAlertAction(type: .defaultAction, title: strings.sendTranslation, action: { [weak self] in
+                        self?.sendTranslateOutChoice(result)
+                    }),
+                    TextAlertAction(type: .genericAction, title: strings.sendOriginal, action: { [weak self] in
+                        self?.sendTranslateOutChoice(nil)
+                    }),
+                    TextAlertAction(type: .genericAction, title: strings.edit, action: { [weak self] in
+                        self?.interfaceInteraction?.updateTextInputStateAndMode { _, inputMode in
+                            return (ChatTextInputState(inputText: result), inputMode)
+                        }
+                    })
+                ], actionLayout: .vertical)
+                self.interfaceInteraction?.presentController(alert, nil)
             }
-            let undoController = UndoOverlayController(presentationData: presentationData, content: .info(title: nil, text: strings.translatedTo(strings.languageName(toLang)), timeout: 5.0, customUndoText: strings.undo), elevatedLayout: false, action: { [weak self] action in
-                guard let self, case .undo = action else {
-                    return false
-                }
-                // Restore the original only if the translation is still untouched.
-                if let currentState = self.presentationInterfaceState?.interfaceState.composeInputState, currentState.inputText.string == translatedState.inputText.string {
-                    self.interfaceInteraction?.updateTextInputStateAndMode { _, inputMode in
-                        return (sourceState, inputMode)
-                    }
-                }
-                return true
-            })
-            self.interfaceInteraction?.presentController(undoController, nil)
         })
     }
 
-    private func showTranslateOutLanguages() {
-        guard let context = self.context, let interfaceState = self.presentationInterfaceState, let peer = self.translateOutPeer() else {
-            return
+    /// Sends the translation (or, with nil, the original as typed) without intercepting again.
+    private func sendTranslateOutChoice(_ translation: NSAttributedString?) {
+        if let translation {
+            self.interfaceInteraction?.updateTextInputStateAndMode { _, inputMode in
+                return (ChatTextInputState(inputText: translation), inputMode)
+            }
         }
-        let peerId = peer.peerId
-        let strings = LuckgramTranslateOut.Strings(interfaceState.strings)
-        let isDark = interfaceState.theme.overallDarkAppearance
-        let _ = (combineLatest(
-            LuckgramTranslateOut.savedLanguage(context: context, peerId: peerId),
-            LuckgramTranslateOut.recentLanguages(context: context)
-        )
-        |> take(1)
-        |> deliverOnMainQueue).startStandalone(next: { [weak self] saved, recent in
+        Queue.mainQueue().justDispatch { [weak self] in
             guard let self else {
                 return
             }
-            let picker = LuckgramTranslateOutLanguagePicker(strings: strings, selected: saved, recent: recent, isDark: isDark, completion: { [weak self] code in
-                guard let self else {
-                    return
-                }
-                LuckgramTranslateOut.saveLanguage(context: context, peerId: peerId, code: code)
-                self.translateOutPressed(language: code)
-            })
-            context.sharedContext.mainWindow?.presentNative(picker.wrappedInNavigation())
-        })
+            self.translateOutBypass = true
+            self.sendMessage()
+            self.translateOutBypass = false
+        }
     }
 
     // MARK: - Luckgram: AI writing (feature 21)
@@ -6352,7 +6412,7 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
                 case .suggestPost:
                     self.interfaceInteraction?.openSuggestPost(nil, .default)
                 case .translate:
-                    self.translateOutPressed(language: nil)
+                    self.showSendTranslateMenu()
                 case .quickReplies:
                     self.showQuickReplies()
                 case .dictation:
@@ -6438,12 +6498,9 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
                 self.ensureFocused()
             }
         case .translate:
-            // spec 01 translate-before-sending: with text, translate now; empty field, pick the language
-            if hasText {
-                self.translateOutPressed(language: nil)
-            } else {
-                self.showTranslateOutLanguages()
-            }
+            // specs#104 §1: switch 「发送翻译」 on for this chat (or change / turn it off)
+            let _ = hasText
+            self.luckgramOpenSendTranslate()
         case .gallery, .camera, .file, .location, .contact, .poll:
             break
         }

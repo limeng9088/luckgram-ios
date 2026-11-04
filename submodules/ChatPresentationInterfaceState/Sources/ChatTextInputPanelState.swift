@@ -33,8 +33,9 @@ public enum ChatTextInputAccessoryItem: Equatable {
     case scheduledMessages
     case gift
     case suggestPost
-    /// Luckgram: "translate before sending" button (feature 01).
-    case translate
+    /// Luckgram: "translate before sending" (feature 01); since specs#104 the 「中 → EN」 capsule shown while it
+    /// is on for the chat (the text).
+    case translate(String)
     /// Luckgram: local quick reply templates (feature 02).
     case quickReplies
     /// Luckgram: voice input (feature 17).

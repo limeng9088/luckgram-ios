@@ -90,7 +90,7 @@ public enum LuckgramImageActions {
         }, run: { target in
             LuckgramOcrSheetController.open(context: target.context, image: target.image, key: target.imageKey)
         })) // specs#106
-        // specs#108 image translation (「翻译图片」 / 「译」): w-1148
+        list.append(LuckgramImageTranslateEntry.action()) // specs#108
     }
 
     /// Replaces an action with the same id.
