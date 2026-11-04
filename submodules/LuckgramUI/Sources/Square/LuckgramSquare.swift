@@ -344,7 +344,8 @@ public enum LuckgramSquare {
     }
 
     /// Post "⋯" menu: like, comment, delete (own) / report / block author.
-    static func showPostMenu(context: AccountContext, post: SquareLogic.Post, present: @escaping (ViewController) -> Void, push: @escaping (ViewController) -> Void, onLiked: @escaping (SquareLogic.Post) -> Void, onComment: @escaping () -> Void, onDeleted: @escaping () -> Void, onBlocked: @escaping () -> Void) {
+    /// `onNotInterested`: set in the recommend tab only — adds 「不感兴趣」 (specs#115).
+    static func showPostMenu(context: AccountContext, post: SquareLogic.Post, present: @escaping (ViewController) -> Void, push: @escaping (ViewController) -> Void, onLiked: @escaping (SquareLogic.Post) -> Void, onComment: @escaping () -> Void, onDeleted: @escaping () -> Void, onBlocked: @escaping () -> Void, onNotInterested: (() -> Void)? = nil) {
         let tx = texts
         var actions: [TextAlertAction] = []
         actions.append(TextAlertAction(type: .genericAction, title: post.liked ? tx.unlike : tx.like, action: {
@@ -356,6 +357,9 @@ public enum LuckgramSquare {
                 deletePost(context: context, post: post, present: present, push: push, done: onDeleted)
             }))
         } else {
+            if let onNotInterested {
+                actions.append(TextAlertAction(type: .genericAction, title: tx.notInterested, action: onNotInterested))
+            }
             actions.append(TextAlertAction(type: .genericAction, title: tx.reportPost, action: {
                 report(context: context, target: "post", id: post.id, present: present, push: push)
             }))
