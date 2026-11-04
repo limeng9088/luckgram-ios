@@ -86,7 +86,8 @@ public enum LuckgramImageActions {
         builtInsRegistered = true
         // ---- image features register here, one line each ----
         // specs#106 OCR (「识别文字」 / 「文字」): added with the implementation (feat/106-image-ocr)
-        // specs#108 image translation (「翻译图片」 / 「译」): w-1148
+        // specs#108 image translation (「翻译图片」 / 「译」)
+        list.append(LuckgramImageTranslateEntry.action())
     }
 
     /// Replaces an action with the same id.
