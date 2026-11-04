@@ -185,6 +185,39 @@ jobs:
             --title "Luckgram iOS ${APP_VERSION} (${BUILD_NUMBER})" \
             "${KIND[@]}" --notes "$NOTES"
 
+      # luckgram-specs#100: point the luckgram.cc download buttons at this release. Clones
+      # luckgram-site with a deploy key that can only write to that repo, updates
+      # download/latest.json with the site's scripts/update_latest.py and pushes to master
+      # (GitHub Pages redeploys in about a minute). A failure here does not fail the build.
+      - name: Update luckgram.cc download links
+        if: github.ref == 'refs/heads/master'
+        continue-on-error: true
+        env:
+          SITE_DEPLOY_KEY: ${{ secrets.SITE_DEPLOY_KEY }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          [ -n "$SITE_DEPLOY_KEY" ] || { echo "::warning::SITE_DEPLOY_KEY missing; luckgram.cc not updated"; exit 0; }
+          VER="$APP_VERSION"; BUILD="$BUILD_NUMBER"; TAG="ios-${APP_VERSION}-${BUILD_NUMBER}"
+          PUBLISHED=$(gh release view "$TAG" -R "$GITHUB_REPOSITORY" --json publishedAt -q .publishedAt)
+          K="$RUNNER_TEMP/site_key"; printf '%s\n' "$SITE_DEPLOY_KEY" > "$K"; chmod 600 "$K"
+          echo 'github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl' > "$RUNNER_TEMP/github_known_hosts"
+          export GIT_SSH_COMMAND="ssh -i $K -o IdentitiesOnly=yes -o UserKnownHostsFile=$RUNNER_TEMP/github_known_hosts"
+          SITE="$RUNNER_TEMP/luckgram-site"
+          for i in 1 2 3 4 5; do
+            rm -rf "$SITE"
+            git clone -q --depth 1 git@github.com:limeng9088/luckgram-site.git "$SITE"
+            python3 -I "$SITE/scripts/update_latest.py" ios --repo "$GITHUB_REPOSITORY" --tag "$TAG" \
+              --version "$VER" --build "$BUILD" --commit "$GITHUB_SHA" --published-at "$PUBLISHED" \
+              --file ipa="$(ls "$GITHUB_WORKSPACE"/out/*.ipa)"
+            if git -C "$SITE" diff --quiet; then echo "latest.json already up to date"; exit 0; fi
+            git -C "$SITE" -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
+              commit -qam "download: iOS $VER ($BUILD)" -m "From $GITHUB_REPOSITORY@$GITHUB_SHA run $GITHUB_RUN_ID."
+            git -C "$SITE" push -q origin HEAD:master && { echo "luckgram.cc now points at $TAG"; exit 0; }
+            sleep $((i * 5))   # the other app pushed at the same time: clone again and retry
+          done
+          echo "::error::could not push download/latest.json"; exit 1
+
       # S5: tell the Luckgram API about the new release (GET /v1/version).
       # master only: workflow_dispatch on feature branches also creates releases.
       - name: Publish version to Luckgram API
