@@ -119,7 +119,8 @@ public final class LuckgramWelcomeController: ViewController {
         return alert.displayNode.view.window != nil
     }
 
-    private func showPrivacy(thenStart: Bool) {
+    /// `retry`: 0 for a tap or the first automatic show, else which automatic re-show this is.
+    private func showPrivacy(thenStart: Bool, retry: Int = 0) {
         if self.privacyOnScreen {
             return
         }
@@ -154,9 +155,10 @@ public final class LuckgramWelcomeController: ViewController {
             guard let self, !LuckgramWelcomeController.isAccepted, !self.privacyOnScreen else {
                 return
             }
-            LuckgramWelcomeController.log("privacy", "not-on-screen window=\(self.window != nil)")
-            if self.window != nil {
-                self.showPrivacy(thenStart: false)
+            LuckgramWelcomeController.log("privacy", "not-on-screen window=\(self.window != nil) retry=\(retry)")
+            // At most maxPrivacyRetries automatic re-shows; after that the next tap tries again.
+            if self.window != nil && LuckgramWelcomeLogic.shouldRetryPrivacy(retry: retry + 1) {
+                self.showPrivacy(thenStart: false, retry: retry + 1)
             }
         })
     }

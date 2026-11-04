@@ -86,6 +86,13 @@ final class LuckgramWelcomeLogicTests: XCTestCase {
     }
 
     // specs#76 P0: "Get Started" always does something.
+    func testPrivacyRetryIsCapped() {
+        XCTAssertFalse(LuckgramWelcomeLogic.shouldRetryPrivacy(retry: 0))
+        XCTAssertTrue(LuckgramWelcomeLogic.shouldRetryPrivacy(retry: 1))
+        XCTAssertTrue(LuckgramWelcomeLogic.shouldRetryPrivacy(retry: 3))
+        XCTAssertFalse(LuckgramWelcomeLogic.shouldRetryPrivacy(retry: 4))
+    }
+
     func testStartAlwaysResponds() {
         typealias L = LuckgramWelcomeLogic
         // not accepted: the alert again unless it is on screen right now (never stuck on a flag)
