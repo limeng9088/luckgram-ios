@@ -9,9 +9,12 @@ on:
     branches: [master]
     paths-ignore: ['**.md']
 
+# master: never cancel a running build (a cancelled run also loses its bazel cache). GitHub keeps
+# one running and only the newest one waiting, so merging several PRs builds the running one and
+# the last one. Branch builds (workflow_dispatch) still cancel each other.
 concurrency:
   group: luckgram-ios-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.ref != 'refs/heads/master' }}
 
 permissions:
   contents: write

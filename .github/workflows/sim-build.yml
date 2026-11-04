@@ -21,7 +21,7 @@ jobs:
     timeout-minutes: 180
     concurrency:
       group: luckgram-ios-sim-${{ github.ref }}
-      cancel-in-progress: false
+      cancel-in-progress: ${{ github.ref != 'refs/heads/master' }}
     env:
       SOURCE_DIR: /Users/Shared/telegram-ios
       BAZEL_USER_ROOT: /private/var/tmp/_bazel_containerhost
