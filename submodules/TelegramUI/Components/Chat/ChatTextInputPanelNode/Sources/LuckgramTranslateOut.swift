@@ -101,7 +101,7 @@ public enum LuckgramTranslateOut {
     }
 
     /// 「中 → EN」 for a chat.
-    static func capsule(language: String) -> String {
+    public static func capsule(language: String) -> String {
         let from = LuckgramStrings.appLanguageCode ?? Locale.preferredLanguages.first
         return LuckgramSendTranslateLogic.capsule(from: from, to: language)
     }
