@@ -33,8 +33,12 @@ public enum LuckgramSendTranslateLogic {
         }
     }
 
-    /// 「中 → EN」 (from = the user's language).
+    /// 「EN → 日」; `from` is the language detected in what the user typed. Unknown (or the same as the
+    /// target) → just 「→ 日」, never a guessed 「中」 (specs#110).
     public static func capsule(from: String?, to: String?) -> String {
+        guard let f = base(from), f != base(to) else {
+            return "→ " + shortLabel(to)
+        }
         return shortLabel(from) + " → " + shortLabel(to)
     }
 

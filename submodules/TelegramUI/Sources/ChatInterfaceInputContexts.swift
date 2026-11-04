@@ -310,7 +310,7 @@ func inputTextPanelStateForChatPresentationInterfaceState(_ chatPresentationInte
                         isCustomContents = true
                     }
                     if !isCustomContents {
-                        accessoryItems.append(.translate(LuckgramTranslateOut.capsule(language: luckgramLanguage)))
+                        accessoryItems.append(.translate(LuckgramTranslateOut.capsule(language: luckgramLanguage, text: chatPresentationInterfaceState.interfaceState.composeInputState.inputText.string)))
                     }
                 }
                 

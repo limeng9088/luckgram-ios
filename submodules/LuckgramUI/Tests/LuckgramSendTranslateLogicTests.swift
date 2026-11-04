@@ -9,6 +9,10 @@ final class LuckgramSendTranslateLogicTests: XCTestCase {
         XCTAssertEqual(L.capsule(from: "zh-Hans", to: "en"), "中 → EN")
         XCTAssertEqual(L.capsule(from: "en", to: "ja"), "EN → 日")
         XCTAssertEqual(L.capsule(from: "zh", to: "pt_BR"), "中 → PT")
+        // specs#110: unknown source → no guessed 「中」
+        XCTAssertEqual(L.capsule(from: nil, to: "ja"), "→ 日")
+        XCTAssertEqual(L.capsule(from: "und", to: "ja"), "→ 日")
+        XCTAssertEqual(L.capsule(from: "ja", to: "ja"), "→ 日")
         XCTAssertEqual(L.shortLabel("ko"), "한")
         XCTAssertEqual(L.shortLabel(nil), "?")
         XCTAssertEqual(L.shortLabel("und"), "?")
