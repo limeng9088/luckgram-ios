@@ -32,13 +32,17 @@ public enum LuckgramImageActions {
         public let imageKey: String?
         /// The photo message, or nil in the gallery preview.
         public let message: EngineMessage?
+        /// Gives a new image (e.g. the translated one, #108) back to the gallery preview, replacing
+        /// the current item before sending. Only set for `.attachPreview`; nil = don't offer it.
+        public let replaceImage: ((UIImage) -> Void)?
 
-        public init(context: AccountContext, controller: ViewController?, image: UIImage, imageKey: String?, message: EngineMessage?) {
+        public init(context: AccountContext, controller: ViewController?, image: UIImage, imageKey: String?, message: EngineMessage?, replaceImage: ((UIImage) -> Void)? = nil) {
             self.context = context
             self.controller = controller
             self.image = image
             self.imageKey = imageKey
             self.message = message
+            self.replaceImage = replaceImage
         }
     }
 
