@@ -10,34 +10,40 @@ import AccountContext
 /// the assistant's input) / Share. Same page as Android `LuckgramOcrSheet`.
 public final class LuckgramOcrSheetController: UIViewController {
     /// Recognizes `image` and opens the sheet; a short message if nothing is found.
-    public static func open(context: AccountContext, image: UIImage, key: String?) {
+    /// Recognizes `image` and opens the sheet; a short message if nothing is found. `presentNative`
+    /// shows native pages somewhere other than the main window (the attachment preview).
+    public static func open(context: AccountContext, image: UIImage, key: String?, presentNative: ((UIViewController) -> Void)? = nil) {
+        let present: (UIViewController) -> Void = presentNative ?? { c in
+            context.sharedContext.mainWindow?.presentNative(c)
+        }
         let _ = (LuckgramOcr.recognize(image: image, key: key)
         |> deliverOnMainQueue).startStandalone(next: { result in
             guard result.hasText else {
-                notice(context, LuckgramStrings.pick("图片里没有识别到文字", "No text found in this image"))
+                notice(context, LuckgramStrings.pick("图片里没有识别到文字", "No text found in this image"), present: present)
                 return
             }
-            present(context: context, image: image, result: result)
+            show(context: context, image: image, result: result, present: present)
         }, error: { _ in
-            notice(context, LuckgramStrings.pick("识别失败，请重试", "Couldn't recognize the text. Please try again."))
+            notice(context, LuckgramStrings.pick("识别失败，请重试", "Couldn't recognize the text. Please try again."), present: present)
         })
     }
 
-    static func present(context: AccountContext, image: UIImage, result: LuckgramOcrResult) {
+    static func show(context: AccountContext, image: UIImage, result: LuckgramOcrResult, present: @escaping (UIViewController) -> Void) {
         let controller = LuckgramOcrSheetController(context: context, image: image, result: result)
+        controller.presentNative = present
         let navigation = UINavigationController(rootViewController: controller)
         navigation.modalPresentationStyle = .pageSheet
         let presentationData = context.sharedContext.currentPresentationData.with { $0 }
         navigation.overrideUserInterfaceStyle = presentationData.theme.overallDarkAppearance ? .dark : .light
-        context.sharedContext.mainWindow?.presentNative(navigation)
+        present(navigation)
     }
 
-    private static func notice(_ context: AccountContext, _ text: String) {
+    static func notice(_ context: AccountContext, _ text: String, present: (UIViewController) -> Void) {
         let alert = UIAlertController(title: nil, message: text, preferredStyle: .alert)
         alert.addAction(UIAlertAction(title: "OK", style: .default))
         let presentationData = context.sharedContext.currentPresentationData.with { $0 }
         alert.overrideUserInterfaceStyle = presentationData.theme.overallDarkAppearance ? .dark : .light
-        context.sharedContext.mainWindow?.presentNative(alert)
+        present(alert)
     }
 
     private let context: AccountContext
@@ -48,6 +54,8 @@ public final class LuckgramOcrSheetController: UIViewController {
     private let highlights: LuckgramOcrHighlightView
     private var translating = false
     private let disposable = MetaDisposable()
+    /// Where this sheet was shown (main window or the attachment preview), to show it again there.
+    var presentNative: ((UIViewController) -> Void)?
 
     init(context: AccountContext, image: UIImage, result: LuckgramOcrResult) {
         self.context = context
@@ -221,7 +229,11 @@ public final class LuckgramOcrSheetController: UIViewController {
                     context.sharedContext.mainWindow?.present(c, on: .root)
                 })
                 |> deliverOnMainQueue).startStandalone(next: { [weak self] granted in
-                    context.sharedContext.mainWindow?.presentNative(navigation)
+                    if let present = self?.presentNative {
+                        present(navigation)
+                    } else {
+                        context.sharedContext.mainWindow?.presentNative(navigation)
+                    }
                     if granted {
                         self?.translatePressed()
                     }

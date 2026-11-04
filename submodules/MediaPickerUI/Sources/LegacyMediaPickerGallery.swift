@@ -258,11 +258,53 @@ func presentLegacyMediaPickerGallery(
         return transitionHostView()
     }
     var transitionedIn = false
+    // Luckgram specs#106 / #108: actions on the photo before sending (「识别文字」, 「翻译图片」)
+    let luckgramActions = LuckgramGalleryHooks.attachPreviewActions?(context) ?? []
+    var luckgramCurrent: TGMediaPickerGalleryItem? = focusItem as? TGMediaPickerGalleryItem
+    let luckgramStack = UIStackView()
+    luckgramStack.axis = .horizontal
+    luckgramStack.spacing = 8.0
+    let luckgramUpdate = {
+        let isPhoto = (luckgramCurrent?.asset as? TGMediaAsset).map { !$0.isVideo } ?? false
+        luckgramStack.isHidden = !isPhoto || luckgramActions.isEmpty
+    }
     controller.itemFocused = { item in
         if let item = item as? TGMediaPickerGalleryItem, transitionedIn {
             updateHiddenMedia(item.asset.uniqueIdentifier)
         }
+        luckgramCurrent = item as? TGMediaPickerGalleryItem
+        luckgramUpdate()
     }
+    for action in luckgramActions {
+        let button = LuckgramClosureButton(type: .system)
+        button.setTitle(action.title, for: .normal)
+        button.setTitleColor(.white, for: .normal)
+        button.titleLabel?.font = UIFont.boldSystemFont(ofSize: 13.0)
+        button.backgroundColor = UIColor(white: 0.0, alpha: 0.6)
+        button.layer.cornerRadius = 16.0
+        button.widthAnchor.constraint(equalToConstant: max(44.0, button.intrinsicContentSize.width + 24.0)).isActive = true
+        button.heightAnchor.constraint(equalToConstant: 32.0).isActive = true
+        button.onTap = { [weak controller, weak editingContext, weak selectionContext] in
+            guard let item = luckgramCurrent, let asset = item.asset as? TGMediaAsset else {
+                return
+            }
+            luckgramLoadImage(asset, { image in
+                guard let image else {
+                    return
+                }
+                action.run(image, { c in
+                    controller?.present(c, animated: true)
+                }, { newImage in
+                    // #108: the new image is sent instead of this photo (as if it had been edited)
+                    editingContext?.setImage(newImage, thumbnailImage: luckgramThumbnail(newImage), for: item.asset, synchronous: false)
+                    editingContext?.setFullSizeImage(newImage, for: item.asset)
+                    selectionContext?.setItem(item.asset, selected: true)
+                })
+            })
+        }
+        luckgramStack.addArrangedSubview(button)
+    }
+    luckgramUpdate()
     controller.beginTransitionIn = { item, itemView in
         if let item = item as? TGMediaPickerGalleryItem {
             if let itemView = itemView as? TGMediaPickerGalleryVideoItemView {
@@ -293,8 +335,16 @@ func presentLegacyMediaPickerGallery(
             return nil
         }
     }
-    controller.finishedTransitionIn = { [weak model] _, _ in
+    controller.finishedTransitionIn = { [weak model, weak controller] _, _ in
         model?.interfaceView.setSelectedItemsModel(model?.selectedItemsModel)
+        if let view = controller?.view, !luckgramActions.isEmpty, luckgramStack.superview == nil {
+            luckgramStack.translatesAutoresizingMaskIntoConstraints = false
+            view.addSubview(luckgramStack)
+            NSLayoutConstraint.activate([
+                luckgramStack.trailingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.trailingAnchor, constant: -12.0),
+                luckgramStack.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -150.0)
+            ])
+        }
         
         finishedTransitionIn()
     }
@@ -464,4 +514,49 @@ func presentLegacyMediaPickerGallery(
     present(legacyController, nil)
     
     return controller
+}
+
+// MARK: - Luckgram specs#106 / #108
+
+private final class LuckgramClosureButton: UIButton {
+    var onTap: (() -> Void)?
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        self.addTarget(self, action: #selector(self.tapped), for: .touchUpInside)
+    }
+
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    @objc private func tapped() {
+        self.onTap?()
+    }
+}
+
+/// The photo of an asset (up to 2048 px), from iCloud if needed; main queue.
+private func luckgramLoadImage(_ asset: TGMediaAsset, _ done: @escaping (UIImage?) -> Void) {
+    guard let backing = asset.backingAsset else {
+        done(nil)
+        return
+    }
+    let options = PHImageRequestOptions()
+    options.isNetworkAccessAllowed = true
+    options.deliveryMode = .highQualityFormat
+    options.resizeMode = .fast
+    PHImageManager.default().requestImage(for: backing, targetSize: CGSize(width: 2048.0, height: 2048.0), contentMode: .aspectFit, options: options, resultHandler: { image, _ in
+        DispatchQueue.main.async {
+            done(image)
+        }
+    })
+}
+
+private func luckgramThumbnail(_ image: UIImage) -> UIImage {
+    let side: CGFloat = 256.0
+    let scale = min(1.0, side / max(image.size.width, image.size.height))
+    let size = CGSize(width: max(1.0, floor(image.size.width * scale)), height: max(1.0, floor(image.size.height * scale)))
+    return UIGraphicsImageRenderer(size: size).image { _ in
+        image.draw(in: CGRect(origin: .zero, size: size))
+    }
 }
