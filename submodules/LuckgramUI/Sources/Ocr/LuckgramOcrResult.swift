@@ -192,6 +192,55 @@ public struct LuckgramOcrResult: Equatable {
         return best
     }
 
+    /// Vision gives lines only: consecutive lines (in reading order) form one paragraph when the gap
+    /// between them is under a line height, their left edges are close and heights similar.
+    public static func paragraphs(_ lines: [Line]) -> [[Line]] {
+        let ordered = lines.sorted(by: { $0.box.y < $1.box.y })
+        var out: [[Line]] = []
+        for line in ordered {
+            if var last = out.last, let prev = last.last {
+                let gap = line.box.y - (prev.box.y + prev.box.height)
+                let h = max(prev.box.height, line.box.height)
+                let similar = min(prev.box.height, line.box.height) >= h * 0.6
+                if gap >= -h * 0.3 && gap < h * 1.0 && abs(line.box.x - prev.box.x) < max(0.04, h) && similar {
+                    last.append(line)
+                    out[out.count - 1] = last
+                    continue
+                }
+            }
+            out.append([line])
+        }
+        return out
+    }
+
+    /// Language from the script (same rules as Android `OcrLogic`): kana → "ja", hangul → "ko",
+    /// Han → "zh", else nil.
+    public static func scriptLanguage(_ text: String) -> String? {
+        var kana = 0, hangul = 0, han = 0, latin = 0
+        for u in text.unicodeScalars {
+            let c = u.value
+            if (0x3040...0x30FF).contains(c) || (0x31F0...0x31FF).contains(c) || (0xFF66...0xFF9D).contains(c) {
+                kana += 1
+            } else if (0xAC00...0xD7AF).contains(c) || (0x1100...0x11FF).contains(c) || (0x3130...0x318F).contains(c) {
+                hangul += 1
+            } else if (0x4E00...0x9FFF).contains(c) || (0x3400...0x4DBF).contains(c) || (0xF900...0xFAFF).contains(c) {
+                han += 1
+            } else if (0x41...0x5A).contains(c) || (0x61...0x7A).contains(c) || (0xC0...0x24F).contains(c) {
+                latin += 1
+            }
+        }
+        if kana > 0 && kana * 5 >= han / 2 {
+            return "ja"
+        }
+        if hangul > 0 && hangul >= han {
+            return "ko"
+        }
+        if han > 0 && han * 3 >= latin {
+            return "zh"
+        }
+        return nil
+    }
+
     static func normalizedLanguage(_ s: String?) -> String? {
         guard let s = s?.trimmingCharacters(in: .whitespaces), !s.isEmpty, s != "und" else {
             return nil

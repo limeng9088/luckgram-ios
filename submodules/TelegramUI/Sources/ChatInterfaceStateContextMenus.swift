@@ -1541,6 +1541,26 @@ func contextMenuForChatPresentationInterfaceState(chatPresentationInterfaceState
                 })
             })))
         }
+
+        // Luckgram (specs#106 / #108): image actions from LuckgramImageActions (「识别文字」, 「翻译图片」).
+        if messages.count == 1, message.id.peerId.namespace != Namespaces.Peer.SecretChat, LuckgramImageActions.isPhoto(EngineMessage(message)) {
+            let engineMessage = EngineMessage(message)
+            let chatController = (controllerInteraction.chatControllerNode() as? ChatControllerNode)?.luckgramController
+            for imageAction in LuckgramImageActions.visibleActions(at: .menu, message: engineMessage) {
+                actions.append(.action(ContextMenuActionItem(text: imageAction.localizedTitle, icon: { theme in
+                    return generateTintedImage(image: UIImage(systemName: imageAction.icon ?? "photo"), color: theme.actionSheet.primaryTextColor)
+                }, action: { [weak chatController] _, f in
+                    f(.default)
+                    guard let loaded = LuckgramImageActions.image(context: context, message: engineMessage) else {
+                        let alert = UIAlertController(title: nil, message: LuckgramStrings.pick("图片还没有下载完", "The image hasn't finished downloading"), preferredStyle: .alert)
+                        alert.addAction(UIAlertAction(title: "OK", style: .default))
+                        context.sharedContext.mainWindow?.presentNative(alert)
+                        return
+                    }
+                    imageAction.run(LuckgramImageActions.Target(context: context, controller: chatController, image: loaded.0, imageKey: loaded.1, message: engineMessage))
+                })))
+            }
+        }
         
         if resourceAvailable, !message.containsSecretMedia && !isCopyProtected {
             var mediaReference: AnyMediaReference?

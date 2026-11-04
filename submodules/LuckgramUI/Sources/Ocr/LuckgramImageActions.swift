@@ -85,7 +85,11 @@ public enum LuckgramImageActions {
         }
         builtInsRegistered = true
         // ---- image features register here, one line each ----
-        // specs#106 OCR (「识别文字」 / 「文字」): added with the implementation (feat/106-image-ocr)
+        list.append(Action(id: "ocr", title: ("识别文字", "Recognize Text"), icon: "text.viewfinder", buttonTitle: ("文字", "Text"), places: [.menu, .viewerButton, .attachPreview], isVisible: { _ in
+            return LuckgramOcr.isEnabled
+        }, run: { target in
+            LuckgramOcrSheetController.open(context: target.context, image: target.image, key: target.imageKey)
+        })) // specs#106
         // specs#108 image translation (「翻译图片」 / 「译」): w-1148
     }
 
@@ -104,6 +108,25 @@ public enum LuckgramImageActions {
     public static func actions(at place: Place) -> [Action] {
         registerBuiltInsIfNeeded()
         return list.filter { $0.places.contains(place) }
+    }
+
+    /// Whether `message` is a photo (the menu entries only apply to photos).
+    public static func isPhoto(_ message: EngineMessage) -> Bool {
+        return message.media.contains(where: { $0 is TelegramMediaImage })
+    }
+
+    /// The downloaded full-size image of a photo message and its cache key (the file path), or nil
+    /// when it isn't a photo or hasn't been downloaded.
+    public static func image(context: AccountContext, message: EngineMessage) -> (UIImage, String)? {
+        for media in message.media {
+            guard let image = media as? TelegramMediaImage, let rep = largestImageRepresentation(image.representations) else {
+                continue
+            }
+            if let path = context.engine.resources.completedResourcePath(id: EngineMediaResource.Id(rep.resource.id)), let ui = UIImage(contentsOfFile: path) {
+                return (ui, path)
+            }
+        }
+        return nil
     }
 
     /// Actions at `place` that are visible for `message`.

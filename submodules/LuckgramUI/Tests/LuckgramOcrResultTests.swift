@@ -49,4 +49,17 @@ final class LuckgramOcrResultTests: XCTestCase {
         XCTAssertNil(r.block(atX: 0.9, y: 0.9))
         XCTAssertFalse(LuckgramOcrResult(imageWidth: 1, imageHeight: 1, language: nil, source: .ai, blocks: []).hasText)
     }
+
+    func testParagraphsAndScript() {
+        let a = line("第一段第一行", 0.1, 0.10, 0.5, 0.04)
+        let b = line("第一段第二行", 0.1, 0.15, 0.5, 0.04)
+        let c = line("Second paragraph", 0.1, 0.40, 0.5, 0.04)
+        let p = LuckgramOcrResult.paragraphs([c, b, a])
+        XCTAssertEqual(p.map { $0.map { $0.text } }, [["第一段第一行", "第一段第二行"], ["Second paragraph"]])
+        XCTAssertEqual(LuckgramOcrResult.scriptLanguage("今天下午三点开会"), "zh")
+        XCTAssertEqual(LuckgramOcrResult.scriptLanguage("ラーメン 800円"), "ja")
+        XCTAssertEqual(LuckgramOcrResult.scriptLanguage("안녕하세요"), "ko")
+        XCTAssertNil(LuckgramOcrResult.scriptLanguage("Hello world"))
+        XCTAssertEqual(LuckgramOcrResult.scriptLanguage("会议 Meeting 3pm 下午"), "zh")
+    }
 }
