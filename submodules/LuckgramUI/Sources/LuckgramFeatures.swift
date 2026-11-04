@@ -87,6 +87,10 @@ public enum LuckgramFeatures {
         add(.toggle("translate_in", group: .messagesLanguage, default: true,
             title: ("收到消息翻译", "Translate received messages"),
             description: ("长按或点消息旁的图标，译文显示在原文下方", "Long-press or tap the icon next to a message; the translation appears below the original")))
+        add(.toggle(LuckgramImageTranslateLogic.featureKey, group: .messagesLanguage, default: true,
+            title: ("图片翻译", "Translate images"),
+            description: ("把图片里的文字翻译后覆盖显示在原图上；只发送识别出的文字，不上传图片", "Shows the translation over the text in an image; only the recognized text is sent, never the image"))
+            .subpage { context in luckgramImageTranslateSettingsController(context: context) })
         // Quick replies "Manage" subpage is attached by TelegramUI at startup (it lives in
         // ChatTextInputPanelNode, which depends on LuckgramUI).
         add(.toggle("quick_replies", group: .messagesLanguage, default: true,
