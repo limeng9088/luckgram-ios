@@ -62,4 +62,28 @@ final class LuckgramOcrResultTests: XCTestCase {
         XCTAssertNil(LuckgramOcrResult.scriptLanguage("Hello world"))
         XCTAssertEqual(LuckgramOcrResult.scriptLanguage("会议 Meeting 3pm 下午"), "zh")
     }
+
+    func testAIFallback() {
+        XCTAssertTrue(LuckgramOcrResult.offerAI(configOn: true, deviceFoundText: false))
+        XCTAssertFalse(LuckgramOcrResult.offerAI(configOn: true, deviceFoundText: true))
+        XCTAssertFalse(LuckgramOcrResult.offerAI(configOn: false, deviceFoundText: false))
+        XCTAssertEqual(LuckgramOcrResult.aiBody(base64Jpeg: "abc", langHint: "ja")["lang_hint"] as? String, "ja")
+        XCTAssertNil(LuckgramOcrResult.aiBody(base64Jpeg: "abc", langHint: nil)["lang_hint"])
+        let json: [String: Any] = ["language": "th", "blocks": [
+            ["text": "สวัสดี\r\nครับ", "language": "th", "box": ["x": 0.1, "y": 0.2, "width": 0.5, "height": 0.1]],
+            ["text": "  "],
+            ["text": "x", "box": ["x": 0.9, "y": -1, "width": 0.5, "height": 2]]
+        ]]
+        let r = LuckgramOcrResult.parseAI(json, imageWidth: 800, imageHeight: 600)
+        XCTAssertEqual(r.source, .ai)
+        XCTAssertEqual(r.language, "th")
+        XCTAssertEqual(r.blocks.count, 2)
+        XCTAssertEqual(r.blocks[0].text, "สวัสดี\nครับ")
+        XCTAssertEqual(r.blocks[0].lines.count, 2)
+        XCTAssertEqual(r.blocks[1].box.width, 0.1, accuracy: 1e-9)
+        XCTAssertEqual(r.blocks[1].box.height, 1.0, accuracy: 1e-9)
+        XCTAssertNil(r.blocks[1].language)
+        XCTAssertEqual(r.text, "สวัสดี\nครับ\nx")
+        XCTAssertTrue(LuckgramOcrResult.parseAI(nil, imageWidth: 1, imageHeight: 1).blocks.isEmpty)
+    }
 }
