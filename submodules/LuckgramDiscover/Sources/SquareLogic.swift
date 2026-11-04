@@ -26,6 +26,8 @@ public enum SquareLogic {
 
     public static let tabLatest = "latest"
     public static let tabHot = "hot"
+    /// specs#115: personalized feed (server ranks by the user's behavior).
+    public static let tabRecommend = "recommend"
 
     /// Posts are public as soon as they are created; reported ones are hidden (S11 governance).
     public static let statusPublished = "published"
@@ -433,7 +435,7 @@ public enum SquareLogic {
     }
 
     public static func feedPath(tab: String, cursor: String?) -> String {
-        let t = tab == tabHot ? tabHot : tabLatest
+        let t = (tab == tabHot || tab == tabRecommend) ? tab : tabLatest
         return "/v1/square/feed?tab=\(t)" + (cursor.map { "&cursor=" + urlEncode($0) } ?? "")
     }
 
@@ -527,6 +529,9 @@ public enum SquareLogic {
         public var title: String { t("广场", "Square") }
         public var latest: String { t("最新", "Latest") }
         public var hot: String { t("热门", "Trending") }
+        public var recommend: String { t("推荐", "For you") }
+        public var notInterested: String { t("不感兴趣", "Not interested") }
+        public var notInterestedDone: String { t("将减少推荐类似内容", "You'll see fewer posts like this") }
         public var compose: String { t("发帖", "Post") }
         public var loadMore: String { t("加载更多", "Load more") }
         public var loading: String { t("正在加载…", "Loading…") }

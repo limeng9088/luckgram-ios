@@ -197,7 +197,12 @@ private final class SquareFeedState {
     var seenChange = 0
     var pullArmed = true
     let avatars = LuckgramSquareAvatars()
+    /// specs#115: impressions / views of the current load.
+    var tracker = SquareEvents.Tracker(tab: SquareLogic.tabLatest)
 }
+
+/// specs#115: 最新 / 热门 / 推荐 (default stays 最新).
+private let squareTabOrder = [SquareLogic.tabLatest, SquareLogic.tabHot, SquareLogic.tabRecommend]
 
 public func luckgramSquareController(context: AccountContext) -> ViewController {
     let tx = LuckgramSquare.texts
@@ -219,6 +224,9 @@ public func luckgramSquareController(context: AccountContext) -> ViewController 
 
     func load(reset: Bool) {
         if reset {
+            // a new load: impressions count again (contract: once per load)
+            LuckgramSquareEvents.add(state.tracker.hideAll(now: SquareEvents.nowMs()))
+            state.tracker = SquareEvents.Tracker(tab: state.tab)
             state.posts = []
             state.nextCursor = nil
             state.loadedOnce = false
@@ -254,6 +262,7 @@ public func luckgramSquareController(context: AccountContext) -> ViewController 
         guard index < state.posts.count else {
             return
         }
+        LuckgramSquareEvents.add(type: SquareEvents.open, postId: state.posts[index].id, tab: state.tab, rank: index)
         push(luckgramSquarePostController(context: context, post: state.posts[index]))
     }, openVideo: { index in
         guard index < state.posts.count, let video = state.posts[index].video else {
@@ -278,7 +287,12 @@ public func luckgramSquareController(context: AccountContext) -> ViewController 
         }, onBlocked: {
             state.posts.removeAll(where: { $0.author.id == post.author.id })
             refresh()
-        })
+        }, onNotInterested: state.tab == SquareLogic.tabRecommend ? {
+            // specs#115: removed at once, server stops recommending it
+            LuckgramSquareEvents.add(type: SquareEvents.notInterested, postId: post.id, tab: state.tab, rank: index)
+            state.posts.removeAll(where: { $0.id == post.id })
+            refresh()
+        } : nil)
     }, loadMore: {
         if !state.loading && state.nextCursor != nil {
             load(reset: false)
@@ -316,7 +330,7 @@ public func luckgramSquareController(context: AccountContext) -> ViewController 
             })
             requests.add(d)
         })
-        let controllerState = ItemListControllerState(presentationData: ItemListPresentationData(presentationData), title: .sectionControl([tx.latest, tx.hot], state.tab == SquareLogic.tabHot ? 1 : 0), leftNavigationButton: nil, rightNavigationButton: rightButton, backNavigationButton: ItemListBackButton(title: presentationData.strings.Common_Back))
+        let controllerState = ItemListControllerState(presentationData: ItemListPresentationData(presentationData), title: .sectionControl([tx.latest, tx.hot, tx.recommend], squareTabOrder.firstIndex(of: state.tab) ?? 0), leftNavigationButton: nil, rightNavigationButton: rightButton, backNavigationButton: ItemListBackButton(title: presentationData.strings.Common_Back))
         let listState = ItemListNodeState(presentationData: ItemListPresentationData(presentationData), entries: entries, style: .blocks, emptyStateItem: nil, animateChanges: false)
         return (controllerState, (listState, arguments))
     }
@@ -329,7 +343,7 @@ public func luckgramSquareController(context: AccountContext) -> ViewController 
         (controller?.navigationController as? NavigationController)?.pushViewController(c)
     }
     controller.titleControlValueChanged = { index in
-        let next = index == 1 ? SquareLogic.tabHot : SquareLogic.tabLatest
+        let next = squareTabOrder[max(0, min(squareTabOrder.count - 1, index))]
         if next != state.tab {
             state.tab = next
             load(reset: true)
@@ -339,6 +353,28 @@ public func luckgramSquareController(context: AccountContext) -> ViewController 
         if case let .known(value) = offset, value < 300.0, !state.loading, state.nextCursor != nil, state.loadedOnce {
             load(reset: false)
         }
+    }
+    // specs#115: posts with a row on screen → impressions; leaving the screen → views with dwell
+    controller.visibleEntriesUpdated = { entries in
+        var visible: [String: Int] = [:]
+        for entry in entries {
+            guard let entry = entry as? LuckgramSquarePostEntry else {
+                continue
+            }
+            switch entry {
+            case let .text(_, i, _, _), let .images(_, i, _), let .video(_, i, _), let .hidden(_, i, _):
+                if i < state.posts.count {
+                    visible[state.posts[i].id] = i
+                }
+            default:
+                break
+            }
+        }
+        LuckgramSquareEvents.add(state.tracker.update(visible: visible, now: SquareEvents.nowMs()))
+    }
+    controller.didDisappear = { _ in
+        LuckgramSquareEvents.add(state.tracker.hideAll(now: SquareEvents.nowMs()))
+        LuckgramSquareEvents.flush(force: true)
     }
     var pullInstalled = false
     controller.didAppear = { [weak controller] _ in

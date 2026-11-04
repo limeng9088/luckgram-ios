@@ -384,6 +384,22 @@ public func luckgramSquarePostController(context: AccountContext, postId: String
     dismissImpl = { [weak controller] in
         controller?.dismiss()
     }
+    // specs#115: time on this page, reported as a view with tab=detail when it goes away
+    var shownAt: Int64 = 0
+    controller.didAppear = { _ in
+        shownAt = SquareEvents.nowMs()
+    }
+    controller.didDisappear = { _ in
+        if shownAt > 0 {
+            let now = SquareEvents.nowMs()
+            let dwell = min(SquareEvents.maxDwellMs, now - shownAt)
+            shownAt = 0
+            if dwell > 0 {
+                LuckgramSquareEvents.add([SquareEvents.Event(type: SquareEvents.view, postId: postId, tab: SquareEvents.tabDetail, dwellMs: dwell, timeMs: now)])
+            }
+            LuckgramSquareEvents.flush(force: true)
+        }
+    }
     LuckgramSquare.prefetchMe()
     reload()
     return controller
