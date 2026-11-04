@@ -6,6 +6,7 @@ import TelegramPresentationData
 import AccountContext
 import AsyncDisplayKit
 import WallpaperBackgroundNode
+import TelegramCore
 
 /// spec 18: the Luckgram AI assistant, a local chat page that looks like a Telegram chat. It is not
 /// a Telegram bot or chat: nothing is sent to Telegram, requests go only to the AI gateway through
