@@ -5,6 +5,16 @@ name: Build Luckgram iOS (unsigned IPA)
 # Re-sign the IPA (Sideloadly / AltStore / your own certificate) before installing.
 on:
   workflow_dispatch:
+    inputs:
+      remote_cache:
+        description: 'Bazel remote cache: auto (repo variable BAZEL_REMOTE_CACHE), on, off'
+        required: false
+        default: auto
+      remote_cache_write:
+        description: 'Branch build may write to the remote cache (seed it); master always writes'
+        type: boolean
+        required: false
+        default: false
   push:
     branches: [master]
     paths-ignore: ['**.md']
@@ -83,10 +93,52 @@ jobs:
           sudo chown "$USER" /Users/Shared
           mv "$GITHUB_WORKSPACE/src" "$SOURCE_DIR"
 
+      # Bazel remote cache on the xs-master VM (bazel-remote behind Caddy basic auth), reached
+      # through an SSH tunnel on the VM's frp ssh port with a forward-only key. Switched by the
+      # repo variable BAZEL_REMOTE_CACHE=on (or the dispatch input). master writes, branches only
+      # read. If the tunnel or the cache is down, the build falls back to the actions cache below.
+      - name: Bazel remote cache (SSH tunnel)
+        if: inputs.remote_cache == 'on' || ((inputs.remote_cache == '' || inputs.remote_cache == 'auto') && vars.BAZEL_REMOTE_CACHE == 'on')
+        env:
+          SSH_KEY: ${{ secrets.BAZEL_CACHE_SSH_KEY }}
+          CRED_W: ${{ secrets.BAZEL_CACHE_WRITE }}
+          CRED_R: ${{ secrets.BAZEL_CACHE_READ }}
+          WRITE: ${{ github.ref == 'refs/heads/master' || inputs.remote_cache_write == true }}
+        run: |
+          set -uo pipefail
+          [ -n "$SSH_KEY" ] && [ -n "$CRED_W" ] && [ -n "$CRED_R" ] || { echo "::warning::remote cache secrets missing"; exit 0; }
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/bazel_cache && chmod 600 ~/.ssh/bazel_cache
+          echo '[ws.cicy-ai.com]:20035 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFd96g4CS3uBk6Tl6vdDBCtgUqOVuTKzzai5mAAu/rG+' >> ~/.ssh/known_hosts
+          if ! ssh -f -N -o ExitOnForwardFailure=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=6 \
+               -o ConnectTimeout=30 -o IdentitiesOnly=yes -i ~/.ssh/bazel_cache \
+               -L 19480:127.0.0.1:19480 -p 20035 cicy@ws.cicy-ai.com; then
+            echo "::warning::SSH tunnel to the bazel cache failed; using the actions cache"; exit 0
+          fi
+          if [ "$WRITE" = true ]; then CRED=$CRED_W; UPLOAD=true; else CRED=$CRED_R; UPLOAD=false; fi
+          curl -sf -m 20 -u "$CRED" -o /dev/null http://127.0.0.1:19480/status \
+            || { echo "::warning::bazel cache not answering; using the actions cache"; exit 0; }
+          # quick throughput probe for the log (1 MiB blob; read-only accounts just get 401)
+          head -c 1048576 /dev/urandom > /tmp/probe.bin
+          curl -s -m 60 -u "$CRED" -o /dev/null -w 'cache upload probe: %{speed_upload} B/s\n' -X PUT --data-binary @/tmp/probe.bin http://127.0.0.1:19480/cas/$(shasum -a 256 /tmp/probe.bin | cut -d' ' -f1) || true
+          cat >> "$SOURCE_DIR/.bazelrc" <<EOF
+
+          # CI only (not committed): remote cache through the SSH tunnel
+          build --remote_cache=http://${CRED}@127.0.0.1:19480
+          build --remote_upload_local_results=${UPLOAD}
+          build --remote_download_toplevel
+          build --remote_local_fallback
+          build --remote_timeout=300
+          build --remote_max_connections=32
+          EOF
+          echo "REMOTE_CACHE=1" >> "$GITHUB_ENV"
+          echo "remote cache on (write=$UPLOAD)"
+
       # Only master saves the cache (see "Save bazel cache"). Branches read master's newest one:
       # GitHub keeps 10GB per repo and one cache is ~7GB, so branch caches used to evict master's
       # and every build after that started cold (67 min instead of ~25).
       - name: Restore bazel cache
+        if: env.REMOTE_CACHE != '1'
         uses: actions/cache/restore@v4
         with:
           path: ${{ env.CACHE_DIR }}
@@ -104,9 +156,11 @@ jobs:
           echo "BUILD_NUMBER=$BUILD_NUMBER" >> "$GITHUB_ENV"
 
           python3 build-system/Make/ImportCertificates.py --path build-system/fake-codesigning/certs
+          CACHE_ARGS=(--cacheDir="$CACHE_DIR")
+          [ "${REMOTE_CACHE:-}" = 1 ] && CACHE_ARGS=()
           python3 -u build-system/Make/Make.py \
             --bazelUserRoot="$BAZEL_USER_ROOT" \
-            --cacheDir="$CACHE_DIR" \
+            "${CACHE_ARGS[@]}" \
             --overrideXcodeVersion \
             build \
             --configurationPath=build-system/appstore-configuration.json \
@@ -135,7 +189,7 @@ jobs:
 
       # Not on cancel: a cancelled run's cache upload is aborted and nothing is saved.
       - name: Save bazel cache
-        if: (success() || failure()) && github.ref == 'refs/heads/master'
+        if: (success() || failure()) && github.ref == 'refs/heads/master' && env.REMOTE_CACHE != '1'
         uses: actions/cache/save@v4
         with:
           path: ${{ env.CACHE_DIR }}
@@ -145,7 +199,7 @@ jobs:
       # Only bazel-master-* (sim-build.yml keeps its own bazel-sim-x86-master-*), and only after
       # this run's cache is really there; otherwise the old one stays.
       - name: Delete older master caches
-        if: (success() || failure()) && github.ref == 'refs/heads/master'
+        if: (success() || failure()) && github.ref == 'refs/heads/master' && env.REMOTE_CACHE != '1'
         continue-on-error: true
         env:
           GH_TOKEN: ${{ github.token }}
