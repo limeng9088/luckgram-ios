@@ -90,7 +90,7 @@ public enum LuckgramImageTranslateSettings {
         guard let pick = (luckgramTranslateIn as? LuckgramTranslateInController)?.pickLanguage else {
             return false
         }
-        pick(LuckgramImageTranslateLogic.base(selected), completion)
+        pick(LuckgramImageTranslateLogic.base(selected), [], completion) // specs#105 added the recent list
         return true
     }
 }

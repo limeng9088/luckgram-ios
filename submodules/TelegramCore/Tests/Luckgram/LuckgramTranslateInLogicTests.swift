@@ -60,4 +60,18 @@ final class LuckgramTranslateInLogicTests: XCTestCase {
         XCTAssertNil(b.from)
         XCTAssertEqual(b.to, "zh")
     }
+
+    func testChatLanguageOverridesDefault() {
+        XCTAssertEqual(L.effectiveLanguage(chatChosen: "ja", defaultChosen: "zh"), "ja")
+        XCTAssertEqual(L.effectiveLanguage(chatChosen: nil, defaultChosen: "zh"), "zh")
+        XCTAssertEqual(L.effectiveLanguage(chatChosen: "  ", defaultChosen: "zh"), "zh")
+        XCTAssertNil(L.effectiveLanguage(chatChosen: nil, defaultChosen: ""))
+    }
+
+    func testLanguageButtonAndRecent() {
+        XCTAssertEqual(L.languageButton(toName: "日本語"), "\u{1F310} 日本語 \u{25BE}")
+        XCTAssertEqual(L.updatingRecent(nil, code: "ja"), "ja")
+        XCTAssertEqual(L.updatingRecent("en,ja,zh", code: "zh"), "zh,en,ja")
+        XCTAssertEqual(L.updatingRecent("a,b,c,d,e", code: "f"), "f,a,b,c,d")
+    }
 }

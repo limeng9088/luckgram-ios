@@ -88,16 +88,18 @@ public protocol LuckgramTranslateInService: AnyObject {
     /// `translate_in` is on.
     var isEnabled: Bool { get }
     /// spec 01 A.2: whether the one-tap button shows next to an incoming message with this text.
-    func showButton(text: String) -> Bool
+    func showButton(text: String, accountPeerId: PeerId, peerId: PeerId) -> Bool
     /// spec 01 B.2: whether 「翻译」 shows under a transcription with this text.
-    func showVoiceLink(text: String) -> Bool
+    func showVoiceLink(text: String, accountPeerId: PeerId, peerId: PeerId) -> Bool
+    /// specs#105 §1: the 「🌐 中文 ▾」 button after the header (same tap as the header).
+    func languageButton(toLang: String?) -> String
     /// spec 01 A.1: header line of a translation, e.g. 「已翻译 · 英语 → 中文」.
     func header(fromLang: String?, toLang: String?) -> String
     /// Translates the message's `text` (or removes its translation); `updated` runs on the main
     /// queue when the bubble should be redrawn. Failures are shown to the user by the service.
     func toggle(accountPeerId: PeerId, messageId: MessageId, text: String, voice: Bool, updated: @escaping () -> Void)
-    /// specs#93: the header 「英语 → 中文」 was tapped: pick another language (saved as the default) and
-    /// translate this message again.
+    /// specs#93 / #105: the header or its language button was tapped (or the one-tap button long-pressed):
+    /// pick another language (this chat only or the default) and translate this message again.
     func changeLanguage(accountPeerId: PeerId, messageId: MessageId, text: String, voice: Bool, updated: @escaping () -> Void)
 }
 

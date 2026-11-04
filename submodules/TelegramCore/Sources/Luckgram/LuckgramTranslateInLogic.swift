@@ -56,6 +56,24 @@ public enum LuckgramTranslateInLogic {
         return nil
     }
 
+    /// specs#105: the language a chat translates into — its own choice, else the default, else nil (nothing
+    /// chosen yet: the first translation asks).
+    public static func effectiveLanguage(chatChosen: String?, defaultChosen: String?) -> String? {
+        return targetLanguage(chosen: chatChosen) ?? targetLanguage(chosen: defaultChosen)
+    }
+
+    /// specs#105: the language button next to a translation's header, e.g. 「🌐 中文 ▾」.
+    public static func languageButton(toName: String) -> String {
+        return "\u{1F310} " + toName + " \u{25BE}"
+    }
+
+    /// specs#105 §3: puts `code` first in the recently used languages (max 5), stored comma separated.
+    public static func updatingRecent(_ stored: String?, code: String) -> String {
+        var list = (stored ?? "").split(separator: ",").map(String.init).filter { !$0.isEmpty && $0 != code }
+        list.insert(code, at: 0)
+        return list.prefix(5).joined(separator: ",")
+    }
+
     /// spec 01 A.1: 「已翻译 · 英语 → 中文」; without a known source just the target.
     public static func header(fromName: String?, toName: String, chinese: Bool) -> String {
         let prefix = chinese ? "已翻译 · " : "Translated · "

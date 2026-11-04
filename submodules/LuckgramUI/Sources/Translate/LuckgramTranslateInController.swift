@@ -41,21 +41,105 @@ public final class LuckgramTranslateInController: LuckgramTranslateInService {
     }
 
     /// specs#93: shows the language list (set by TelegramUI: it lives in ChatTextInputPanelNode); calls back
-    /// with the chosen code.
-    public var pickLanguage: ((_ selected: String?, _ completion: @escaping (String) -> Void) -> Void)?
+    /// with the chosen code. specs#105: `recent` goes on top.
+    public var pickLanguage: ((_ selected: String?, _ recent: [String], _ completion: @escaping (String) -> Void) -> Void)?
 
-    private func askLanguage(_ then: @escaping (String) -> Void) {
+    // MARK: - specs#105: default + per chat
+
+    private static let recentKey = "translate_in_recent"
+    private static func chatKey(_ peerId: EnginePeer.Id) -> String {
+        return "translate_in_to_lang_\(peerId.toInt64())"
+    }
+
+    /// This chat's own 「翻译成」 (per account), or nil when it follows the default.
+    public static func chatLanguage(accountPeerId: EnginePeer.Id, peerId: EnginePeer.Id) -> String? {
+        return LuckgramTranslateInLogic.targetLanguage(chosen: LuckgramSettings.shared.string(chatKey(peerId), forAccount: accountPeerId.toInt64(), default: nil))
+    }
+
+    /// `code` nil = follow the default again.
+    public static func setChatLanguage(accountPeerId: EnginePeer.Id, peerId: EnginePeer.Id, _ code: String?) {
+        LuckgramSettings.shared.setString(chatKey(peerId), code ?? "", forAccount: accountPeerId.toInt64())
+    }
+
+    /// The language messages of this chat are translated into: its own choice ?? the default ?? nil.
+    public static func targetLanguage(accountPeerId: EnginePeer.Id, peerId: EnginePeer.Id) -> String? {
+        return LuckgramTranslateInLogic.effectiveLanguage(chatChosen: chatLanguage(accountPeerId: accountPeerId, peerId: peerId), defaultChosen: LuckgramSettings.shared.string(toLangKey, default: nil))
+    }
+
+    /// The default for every chat without its own choice (settings 「翻译成」).
+    public static func setDefaultLanguage(_ code: String) {
+        LuckgramSettings.shared.setString(toLangKey, code)
+    }
+
+    public static func recentLanguages(accountPeerId: EnginePeer.Id) -> [String] {
+        let stored = LuckgramSettings.shared.string(recentKey, forAccount: accountPeerId.toInt64(), default: nil) ?? ""
+        return stored.split(separator: ",").map(String.init)
+    }
+
+    private static func addRecent(accountPeerId: EnginePeer.Id, code: String) {
+        let stored = LuckgramSettings.shared.string(recentKey, forAccount: accountPeerId.toInt64(), default: nil)
+        LuckgramSettings.shared.setString(recentKey, LuckgramTranslateInLogic.updatingRecent(stored, code: code), forAccount: accountPeerId.toInt64())
+    }
+
+    /// specs#105 §2: asks whether `languageName` is for this chat only (`true`) or the new default (`false`).
+    /// Only asks; the caller saves, so other features (e.g. image translation) can reuse it.
+    public static func askScope(context: AccountContext, languageName: String, completion: @escaping (_ chatOnly: Bool) -> Void) {
+        let zh = LuckgramStrings.isChinese
+        let alert = UIAlertController(
+            title: zh ? "翻译成\(languageName)" : "Translate into \(languageName)",
+            message: zh ? "只在这个聊天里使用，还是设为所有聊天的默认语言？" : "Use it only in this chat, or make it the default for all chats?",
+            preferredStyle: .alert
+        )
+        alert.addAction(UIAlertAction(title: zh ? "仅本聊天" : "This chat only", style: .default, handler: { _ in completion(true) }))
+        alert.addAction(UIAlertAction(title: zh ? "设为默认" : "Set as default", style: .default, handler: { _ in completion(false) }))
+        alert.addAction(UIAlertAction(title: zh ? "取消" : "Cancel", style: .cancel, handler: nil))
+        context.sharedContext.mainWindow?.presentNative(alert)
+    }
+
+    public static func languageName(_ code: String?) -> String? {
+        guard let code = LuckgramTranslateInLogic.base(code) else {
+            return nil
+        }
+        let locale = Locale(identifier: LuckgramStrings.isChinese ? "zh-Hans" : "en")
+        return locale.localizedString(forLanguageCode: code) ?? code
+    }
+
+    /// specs#105: the language list for a chat (current first, recently used next). The first choice ever
+    /// becomes the default; later changes ask 「仅本聊天 / 设为默认」. `then` runs once it is saved.
+    public func chooseLanguage(accountPeerId: EnginePeer.Id, peerId: EnginePeer.Id, then: @escaping (String) -> Void) {
         guard let pickLanguage = self.pickLanguage else {
             return
         }
-        pickLanguage(LuckgramTranslateInLogic.base(LuckgramTranslateInController.targetLanguage), { code in
-            LuckgramSettings.shared.setString(LuckgramTranslateInController.toLangKey, code)
-            then(code)
+        let current = LuckgramTranslateInController.targetLanguage(accountPeerId: accountPeerId, peerId: peerId)
+        pickLanguage(LuckgramTranslateInLogic.base(current), LuckgramTranslateInController.recentLanguages(accountPeerId: accountPeerId), { [weak self] code in
+            LuckgramTranslateInController.addRecent(accountPeerId: accountPeerId, code: code)
+            if LuckgramTranslateInController.targetLanguage == nil {
+                LuckgramTranslateInController.setDefaultLanguage(code)
+                LuckgramTranslateInController.setChatLanguage(accountPeerId: accountPeerId, peerId: peerId, nil)
+                then(code)
+                return
+            }
+            if code == current && LuckgramTranslateInController.chatLanguage(accountPeerId: accountPeerId, peerId: peerId) != nil {
+                then(code)
+                return
+            }
+            guard let context = self?.context() else {
+                return
+            }
+            LuckgramTranslateInController.askScope(context: context, languageName: LuckgramTranslateInController.languageName(code) ?? code, completion: { chatOnly in
+                if chatOnly {
+                    LuckgramTranslateInController.setChatLanguage(accountPeerId: accountPeerId, peerId: peerId, code)
+                } else {
+                    LuckgramTranslateInController.setDefaultLanguage(code)
+                    LuckgramTranslateInController.setChatLanguage(accountPeerId: accountPeerId, peerId: peerId, nil)
+                }
+                then(code)
+            })
         })
     }
 
     public func changeLanguage(accountPeerId: EnginePeer.Id, messageId: EngineMessage.Id, text: String, voice: Bool, updated: @escaping () -> Void) {
-        self.askLanguage { [weak self] _ in
+        self.chooseLanguage(accountPeerId: accountPeerId, peerId: messageId.peerId) { [weak self] _ in
             LuckgramMessageTranslations.shared.remove(accountPeerId: accountPeerId, messageId: messageId, text: text, voice: voice)
             updated()
             self?.toggle(accountPeerId: accountPeerId, messageId: messageId, text: text, voice: voice, updated: updated)
@@ -85,15 +169,19 @@ public final class LuckgramTranslateInController: LuckgramTranslateInService {
         return value.isEmpty ? nil : value
     }
 
-    public func showButton(text: String) -> Bool {
+    public func showButton(text: String, accountPeerId: EnginePeer.Id, peerId: EnginePeer.Id) -> Bool {
         if !self.isEnabled || text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             return false
         }
-        return LuckgramTranslateInLogic.showButton(featureOn: true, outgoing: false, hasText: true, detectedLang: self.language(of: text), doNotTranslate: self.excluded, toLang: LuckgramTranslateInController.targetLanguage)
+        return LuckgramTranslateInLogic.showButton(featureOn: true, outgoing: false, hasText: true, detectedLang: self.language(of: text), doNotTranslate: self.excluded, toLang: LuckgramTranslateInController.targetLanguage(accountPeerId: accountPeerId, peerId: peerId))
     }
 
-    public func showVoiceLink(text: String) -> Bool {
-        return self.showButton(text: text)
+    public func showVoiceLink(text: String, accountPeerId: EnginePeer.Id, peerId: EnginePeer.Id) -> Bool {
+        return self.showButton(text: text, accountPeerId: accountPeerId, peerId: peerId)
+    }
+
+    public func languageButton(toLang: String?) -> String {
+        return LuckgramTranslateInLogic.languageButton(toName: LuckgramTranslateInController.languageName(toLang ?? LuckgramTranslateInController.targetLanguage) ?? "")
     }
 
     public func header(fromLang: String?, toLang: String?) -> String {
@@ -115,9 +203,9 @@ public final class LuckgramTranslateInController: LuckgramTranslateInService {
             updated()
             return
         }
-        guard let toLang = LuckgramTranslateInController.targetLanguage else {
+        guard let toLang = LuckgramTranslateInController.targetLanguage(accountPeerId: accountPeerId, peerId: messageId.peerId) else {
             // specs#93: the first translation asks for the language, then translates this message
-            self.askLanguage { [weak self] _ in
+            self.chooseLanguage(accountPeerId: accountPeerId, peerId: messageId.peerId) { [weak self] _ in
                 self?.toggle(accountPeerId: accountPeerId, messageId: messageId, text: text, voice: voice, updated: updated)
             }
             return

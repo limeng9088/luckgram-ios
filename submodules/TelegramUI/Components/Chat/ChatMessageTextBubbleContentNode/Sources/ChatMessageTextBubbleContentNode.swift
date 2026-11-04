@@ -613,6 +613,9 @@ public class ChatMessageTextBubbleContentNode: ChatMessageBubbleContentNode {
                     combined.append(NSAttributedString(string: "\n", font: smallFont, textColor: messageTheme.secondaryTextColor))
                     // specs#93: the header is tappable (change the language)
                     combined.append(NSAttributedString(string: service.header(fromLang: entry.fromLang, toLang: entry.toLang), attributes: [.font: smallFont, .foregroundColor: messageTheme.secondaryTextColor, luckgramTranslateHeaderKey: true]))
+                    // specs#105 §1: an obvious 「🌐 中文 ▾」 button, same tap as the header
+                    combined.append(NSAttributedString(string: "   ", attributes: [.font: smallFont, luckgramTranslateHeaderKey: true]))
+                    combined.append(NSAttributedString(string: service.languageButton(toLang: entry.toLang), attributes: [.font: Font.semibold(smallFont.pointSize), .foregroundColor: messageTheme.linkTextColor, luckgramTranslateHeaderKey: true]))
                     combined.append(NSAttributedString(string: "\n", font: smallFont, textColor: messageTheme.secondaryTextColor))
                     combined.append(NSAttributedString(string: String(repeating: "\u{2500}", count: 14) + "\n", font: smallFont, textColor: messageTheme.secondaryTextColor.withAlphaComponent(0.5)))
                     combined.append(NSAttributedString(string: entry.text, font: textFont, textColor: messageTheme.primaryTextColor))

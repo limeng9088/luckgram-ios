@@ -2033,7 +2033,7 @@ public class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewI
         // language is not a "don't translate" language.
         var needsLuckgramTranslateButton = false
         if incoming, !isUnsupportedContent, !needsSummarizeButton, !isFailed, item.message.adAttribute == nil, !item.presentationData.isPreview, !item.message.text.isEmpty, let service = luckgramTranslateIn {
-            needsLuckgramTranslateButton = service.showButton(text: item.message.text)
+            needsLuckgramTranslateButton = service.showButton(text: item.message.text, accountPeerId: item.context.account.peerId, peerId: item.message.id.peerId)
         }
 
         var tmpWidth: CGFloat
@@ -5411,6 +5411,8 @@ public class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewI
                 buttonNode.pressed = { [weak strongSelf] in
                     strongSelf?.luckgramToggleTranslation()
                 }
+                // specs#105 §1: long-press picks the language, then translates into it
+                buttonNode.view.addGestureRecognizer(UILongPressGestureRecognizer(target: strongSelf, action: #selector(strongSelf.luckgramTranslateLongPressed(_:))))
             }
         } else if let buttonNode = strongSelf.luckgramTranslateButtonNode {
             strongSelf.luckgramTranslateButtonNode = nil
@@ -7821,6 +7823,17 @@ public class ChatMessageBubbleItemNode: ChatMessageItemView, ChatMessagePreviewI
         let messageId = item.message.id
         let controllerInteraction = item.controllerInteraction
         service.toggle(accountPeerId: item.context.account.peerId, messageId: messageId, text: item.message.text, voice: false, updated: {
+            let _ = controllerInteraction.requestMessageUpdate(messageId, false, nil)
+        })
+    }
+
+    @objc private func luckgramTranslateLongPressed(_ recognizer: UILongPressGestureRecognizer) {
+        guard recognizer.state == .began, let item = self.item, let service = luckgramTranslateIn, !item.message.text.isEmpty else {
+            return
+        }
+        let messageId = item.message.id
+        let controllerInteraction = item.controllerInteraction
+        service.changeLanguage(accountPeerId: item.context.account.peerId, messageId: messageId, text: item.message.text, voice: false, updated: {
             let _ = controllerInteraction.requestMessageUpdate(messageId, false, nil)
         })
     }
