@@ -28,6 +28,8 @@ final class ProxySettingsServerItem: ListViewItem, ItemListItem, ItemListRevealO
     let color: ItemListCheckboxItemColor
     let label: String
     let labelAccent: Bool
+    /// Luckgram 117: exit IP / country, shown as a second status line.
+    let exitLabel: String?
     let editing: ProxySettingsServerItemEditing
     let sectionId: ItemListSectionId
     let action: () -> Void
@@ -39,7 +41,7 @@ final class ProxySettingsServerItem: ListViewItem, ItemListItem, ItemListRevealO
         return self.editing.revealed
     }
     
-    init(theme: PresentationTheme, strings: PresentationStrings, systemStyle: ItemListSystemStyle = .legacy, server: ProxyServerSettings, activity: Bool, active: Bool, color: ItemListCheckboxItemColor, label: String, labelAccent: Bool, editing: ProxySettingsServerItemEditing, sectionId: ItemListSectionId, action: @escaping () -> Void, infoAction: @escaping () -> Void, setServerWithRevealedOptions: @escaping (ProxyServerSettings?, ProxyServerSettings?) -> Void, removeServer: @escaping (ProxyServerSettings) -> Void) {
+    init(theme: PresentationTheme, strings: PresentationStrings, systemStyle: ItemListSystemStyle = .legacy, server: ProxyServerSettings, activity: Bool, active: Bool, color: ItemListCheckboxItemColor, label: String, labelAccent: Bool, exitLabel: String? = nil, editing: ProxySettingsServerItemEditing, sectionId: ItemListSectionId, action: @escaping () -> Void, infoAction: @escaping () -> Void, setServerWithRevealedOptions: @escaping (ProxyServerSettings?, ProxyServerSettings?) -> Void, removeServer: @escaping (ProxyServerSettings) -> Void) {
         self.theme = theme
         self.strings = strings
         self.systemStyle = systemStyle
@@ -49,6 +51,7 @@ final class ProxySettingsServerItem: ListViewItem, ItemListItem, ItemListRevealO
         self.color = color
         self.label = label
         self.labelAccent = labelAccent
+        self.exitLabel = exitLabel
         self.editing = editing
         self.sectionId = sectionId
         self.action = action
@@ -254,7 +257,11 @@ private final class ProxySettingsServerItemNode: ItemListRevealOptionsItemNode {
             if webProxyAddress == nil {
                 titleAttributedString.append(NSAttributedString(string: ":\(item.server.port)", font: titleFont, textColor: item.theme.list.itemSecondaryTextColor))
             }
-            let statusAttributedString = NSAttributedString(string: item.label, font: statusFont, textColor: item.labelAccent ? item.theme.list.itemAccentColor : item.theme.list.itemSecondaryTextColor)
+            let statusAttributedString = NSMutableAttributedString(string: item.label, font: statusFont, textColor: item.labelAccent ? item.theme.list.itemAccentColor : item.theme.list.itemSecondaryTextColor)
+            let hasExitLine = !(item.exitLabel ?? "").isEmpty
+            if let exitLabel = item.exitLabel, hasExitLine {
+                statusAttributedString.append(NSAttributedString(string: "\n" + exitLabel, font: statusFont, textColor: item.theme.list.itemSecondaryTextColor))
+            }
             
             var editableControlSizeAndApply: (CGFloat, (CGFloat) -> ItemListEditableControlNode)?
             var reorderControlSizeAndApply: (CGFloat, (CGFloat, Bool, ContainedViewLayoutTransition) -> ItemListEditableReorderControlNode)?
@@ -278,7 +285,7 @@ private final class ProxySettingsServerItemNode: ItemListRevealOptionsItemNode {
             let rightInset: CGFloat = params.rightInset + max(reorderInset, 55.0)
             
             let (titleLayout, titleApply) = makeTitleLayout(TextNodeLayoutArguments(attributedString: titleAttributedString, backgroundColor: nil, maximumNumberOfLines: 1, truncationType: .middle, constrainedSize: CGSize(width: params.width - leftInset - 12.0 - editingOffset - rightInset, height: CGFloat.greatestFiniteMagnitude), alignment: .natural, cutout: nil, insets: UIEdgeInsets()))
-            let (statusLayout, statusApply) = makeStatusLayout(TextNodeLayoutArguments(attributedString: statusAttributedString, backgroundColor: nil, maximumNumberOfLines: 1, truncationType: .end, constrainedSize: CGSize(width: params.width - leftInset - 8.0 - editingOffset - rightInset, height: CGFloat.greatestFiniteMagnitude), alignment: .natural, cutout: nil, insets: UIEdgeInsets()))
+            let (statusLayout, statusApply) = makeStatusLayout(TextNodeLayoutArguments(attributedString: statusAttributedString, backgroundColor: nil, maximumNumberOfLines: hasExitLine ? 2 : 1, truncationType: .end, constrainedSize: CGSize(width: params.width - leftInset - 8.0 - editingOffset - rightInset, height: CGFloat.greatestFiniteMagnitude), alignment: .natural, cutout: nil, insets: UIEdgeInsets()))
             
             var verticalInset: CGFloat = 0.0
             if case .glass = item.systemStyle {
@@ -286,7 +293,7 @@ private final class ProxySettingsServerItemNode: ItemListRevealOptionsItemNode {
             }
             
             let insets = itemListNeighborsGroupedInsets(neighbors, params)
-            let contentSize = CGSize(width: params.width, height: 64.0 + verticalInset * 2.0)
+            let contentSize = CGSize(width: params.width, height: (hasExitLine ? 82.0 : 64.0) + verticalInset * 2.0)
             let separatorHeight = UIScreenPixel
             let separatorRightInset: CGFloat = item.systemStyle == .glass ? 16.0 : 0.0
             
