@@ -10,6 +10,7 @@ import PresentationDataUtils
 import AccountContext
 import ShareController
 import UrlEscaping
+import LuckgramUI
 
 private final class ProxySettingsControllerArguments {
     let toggleEnabled: (Bool) -> Void
@@ -20,8 +21,9 @@ private final class ProxySettingsControllerArguments {
     let setServerWithRevealedOptions: (ProxyServerSettings?, ProxyServerSettings?) -> Void
     let toggleUseForCalls: (Bool) -> Void
     let shareProxyList: () -> Void
+    let refreshExits: () -> Void
     
-    init(toggleEnabled: @escaping (Bool) -> Void, addNewServer: @escaping () -> Void, activateServer: @escaping (ProxyServerSettings) -> Void, editServer: @escaping (ProxyServerSettings) -> Void, removeServer: @escaping (ProxyServerSettings) -> Void, setServerWithRevealedOptions: @escaping (ProxyServerSettings?, ProxyServerSettings?) -> Void, toggleUseForCalls: @escaping (Bool) -> Void, shareProxyList: @escaping () -> Void) {
+    init(toggleEnabled: @escaping (Bool) -> Void, addNewServer: @escaping () -> Void, activateServer: @escaping (ProxyServerSettings) -> Void, editServer: @escaping (ProxyServerSettings) -> Void, removeServer: @escaping (ProxyServerSettings) -> Void, setServerWithRevealedOptions: @escaping (ProxyServerSettings?, ProxyServerSettings?) -> Void, toggleUseForCalls: @escaping (Bool) -> Void, shareProxyList: @escaping () -> Void, refreshExits: @escaping () -> Void) {
         self.toggleEnabled = toggleEnabled
         self.addNewServer = addNewServer
         self.activateServer = activateServer
@@ -30,6 +32,7 @@ private final class ProxySettingsControllerArguments {
         self.setServerWithRevealedOptions = setServerWithRevealedOptions
         self.toggleUseForCalls = toggleUseForCalls
         self.shareProxyList = shareProxyList
+        self.refreshExits = refreshExits
     }
 }
 
@@ -47,6 +50,8 @@ private enum ProxyServerAvailabilityStatus: Equatable {
 }
 
 private struct DisplayProxyServerStatus: Equatable {
+    /// Luckgram 117: exit line ("出口：🇸🇬 新加坡 · 1.2.3.4"), nil when not checked (MTProto / iOS < 17).
+    var exit: String? = nil
     let activity: Bool
     let text: String
     let textActive: Bool
@@ -75,6 +80,7 @@ public enum ProxySettingsEntryTag: ItemListItemTag, Equatable {
 private enum ProxySettingsControllerEntry: ItemListNodeEntry {
     case enabled(PresentationTheme, String, Bool, Bool)
     case serversHeader(PresentationTheme, String)
+    case directExit(PresentationTheme, String, String) // Luckgram 117
     case addServer(PresentationTheme, String, Bool)
     case server(Int, PresentationTheme, PresentationStrings, ProxyServerSettings, Bool, DisplayProxyServerStatus, ProxySettingsServerItemEditing, Bool)
     case shareProxyList(PresentationTheme, String)
@@ -85,7 +91,7 @@ private enum ProxySettingsControllerEntry: ItemListNodeEntry {
         switch self {
             case .enabled:
                 return ProxySettingsControllerSection.enabled.rawValue
-            case .serversHeader, .addServer, .server:
+            case .serversHeader, .directExit, .addServer, .server:
                 return ProxySettingsControllerSection.servers.rawValue
             case .shareProxyList:
                 return ProxySettingsControllerSection.share.rawValue
@@ -110,6 +116,8 @@ private enum ProxySettingsControllerEntry: ItemListNodeEntry {
                 return .index(4)
             case .useForCallsInfo:
                 return .index(5)
+            case .directExit:
+                return .index(6)
         }
     }
     
@@ -123,6 +131,12 @@ private enum ProxySettingsControllerEntry: ItemListNodeEntry {
                 }
             case let .serversHeader(lhsTheme, lhsText):
                 if case let .serversHeader(rhsTheme, rhsText) = rhs, lhsTheme === rhsTheme, lhsText == rhsText {
+                    return true
+                } else {
+                    return false
+                }
+            case let .directExit(lhsTheme, lhsTitle, lhsText):
+                if case let .directExit(rhsTheme, rhsTitle, rhsText) = rhs, lhsTheme === rhsTheme, lhsTitle == rhsTitle, lhsText == rhsText {
                     return true
                 } else {
                     return false
@@ -176,16 +190,23 @@ private enum ProxySettingsControllerEntry: ItemListNodeEntry {
                     default:
                         return true
                 }
+            case .directExit:
+                switch rhs {
+                    case .enabled, .serversHeader, .directExit:
+                        return false
+                    default:
+                        return true
+                }
             case .addServer:
                 switch rhs {
-                    case .enabled, .serversHeader, .addServer:
+                    case .enabled, .serversHeader, .directExit, .addServer:
                         return false
                     default:
                         return true
                 }
             case let .server(lhsIndex, _, _, _, _, _, _, _):
                 switch rhs {
-                    case .enabled, .serversHeader, .addServer:
+                    case .enabled, .serversHeader, .directExit, .addServer:
                         return false
                     case let .server(rhsIndex, _, _, _, _, _, _, _):
                         return lhsIndex < rhsIndex
@@ -194,14 +215,14 @@ private enum ProxySettingsControllerEntry: ItemListNodeEntry {
                 }
             case .shareProxyList:
                 switch rhs {
-                    case .enabled, .serversHeader, .addServer, .server, .shareProxyList:
+                    case .enabled, .serversHeader, .directExit, .addServer, .server, .shareProxyList:
                         return false
                     default:
                         return true
             }
             case .useForCalls:
                 switch rhs {
-                    case .enabled, .serversHeader, .addServer, .server, .shareProxyList, .useForCalls:
+                    case .enabled, .serversHeader, .directExit, .addServer, .server, .shareProxyList, .useForCalls:
                         return false
                     default:
                         return true
@@ -224,12 +245,16 @@ private enum ProxySettingsControllerEntry: ItemListNodeEntry {
                 }, tag: ProxySettingsEntryTag.useProxy)
             case let .serversHeader(_, text):
                 return ItemListSectionHeaderItem(presentationData: presentationData, text: text, sectionId: self.section)
+            case let .directExit(_, title, text):
+                return ItemListDisclosureItem(presentationData: presentationData, systemStyle: .glass, title: title, label: text, labelStyle: .multilineDetailText, sectionId: self.section, style: .blocks, disclosureStyle: .none, action: {
+                    arguments.refreshExits()
+                })
             case let .addServer(_, text, _):
                 return ProxySettingsActionItem(presentationData: presentationData, systemStyle: .glass, title: text, icon: .add, sectionId: self.section, editing: false, action: {
                     arguments.addNewServer()
                 })
             case let .server(_, theme, strings, settings, active, status, editing, enabled):
-                return ProxySettingsServerItem(theme: theme, strings: strings, systemStyle: .glass, server: settings, activity: status.activity, active: active, color: enabled ? .accent : .secondary, label: status.text, labelAccent: status.textActive, editing: editing, sectionId: self.section, action: {
+                return ProxySettingsServerItem(theme: theme, strings: strings, systemStyle: .glass, server: settings, activity: status.activity, active: active, color: enabled ? .accent : .secondary, label: status.text, labelAccent: status.textActive, exitLabel: status.exit, editing: editing, sectionId: self.section, action: {
                     arguments.activateServer(settings)
                 }, infoAction: {
                     arguments.editServer(settings)
@@ -252,11 +277,23 @@ private enum ProxySettingsControllerEntry: ItemListNodeEntry {
     }
 }
 
-private func proxySettingsControllerEntries(theme: PresentationTheme, strings: PresentationStrings, state: ProxySettingsControllerState, proxySettings: ProxySettings, statuses: [ProxyServerSettings: ProxyServerStatus], connectionStatus: ConnectionStatus) -> [ProxySettingsControllerEntry] {
+private func proxySettingsControllerEntries(theme: PresentationTheme, strings: PresentationStrings, state: ProxySettingsControllerState, proxySettings: ProxySettings, statuses: [ProxyServerSettings: ProxyServerStatus], connectionStatus: ConnectionStatus, exits: [String: LuckgramProxyExitChecker.State]) -> [ProxySettingsControllerEntry] {
     var entries: [ProxySettingsControllerEntry] = []
+    let exitTexts = LuckgramProxyExitTexts(zh: LuckgramStrings.isChinese)
+    func exitText(_ key: String) -> String {
+        switch exits[key] {
+        case let .done(exit):
+            return exitTexts.line(for: exit)
+        case .failed:
+            return exitTexts.failed
+        case .checking, .none:
+            return exitTexts.checking
+        }
+    }
 
     entries.append(.enabled(theme, strings.ChatSettings_ConnectionType_UseProxy, proxySettings.enabled, proxySettings.servers.isEmpty))
     entries.append(.serversHeader(theme, strings.SocksProxySetup_SavedProxies))
+    entries.append(.directExit(theme, exitTexts.directTitle, exitText(LuckgramProxyExitChecker.directKey)))
     entries.append(.addServer(theme, strings.SocksProxySetup_AddProxy, state.editing))
     var index = 0
     var existingServers = Set<ProxyServerSettings>()
@@ -265,7 +302,7 @@ private func proxySettingsControllerEntries(theme: PresentationTheme, strings: P
             continue
         }
         let status: ProxyServerStatus = statuses[server] ?? .checking
-        let displayStatus: DisplayProxyServerStatus
+        var displayStatus: DisplayProxyServerStatus
         if proxySettings.enabled && server == proxySettings.activeServer {
             switch connectionStatus {
                 case .waitingForNetwork:
@@ -310,6 +347,9 @@ private func proxySettingsControllerEntries(theme: PresentationTheme, strings: P
                     displayStatus = DisplayProxyServerStatus(activity: false, text: text, textActive: false)
             }
         }
+        if let socks = luckgramExitSocks(server), let key = LuckgramProxyExitChecker.key(socks) {
+            displayStatus.exit = exitText(key)
+        }
         entries.append(.server(index, theme, strings, server, server == proxySettings.activeServer, displayStatus, ProxySettingsServerItemEditing(editable: true, editing: state.editing, revealed: state.revealedServer == server), proxySettings.enabled))
         index += 1
     }
@@ -323,6 +363,14 @@ private func proxySettingsControllerEntries(theme: PresentationTheme, strings: P
     }
     
     return entries
+}
+
+/// Luckgram 117: the SOCKS5 parameters of a server whose exit can be checked.
+private func luckgramExitSocks(_ server: ProxyServerSettings) -> LuckgramProxyExitChecker.Socks? {
+    if case let .socks5(username, password) = server.connection {
+        return LuckgramProxyExitChecker.Socks(host: server.host, port: Int(server.port), username: username, password: password)
+    }
+    return nil
 }
 
 private struct ProxySettingsControllerState: Equatable {
@@ -368,6 +416,7 @@ public func proxySettingsController(accountManager: AccountManager<TelegramAccou
     }
     
     var shareProxyListImpl: (() -> Void)?
+    var refreshExitsImpl: (() -> Void)?
     
     let arguments = ProxySettingsControllerArguments(toggleEnabled: { value in
         let _ = updateProxySettingsInteractively(accountManager: accountManager, { current in
@@ -418,6 +467,8 @@ public func proxySettingsController(accountManager: AccountManager<TelegramAccou
         }).start()
     }, shareProxyList: {
        shareProxyListImpl?()
+    }, refreshExits: {
+        refreshExitsImpl?()
     })
     
     let proxySettings = Promise<ProxySettings>()
@@ -435,8 +486,16 @@ public func proxySettingsController(accountManager: AccountManager<TelegramAccou
         return proxySettings.servers
     })
     
-    let signal = combineLatest(updatedPresentationData, statePromise.get(), proxySettings.get(), statusesContext.statuses(), network.connectionStatus)
-    |> map { presentationData, state, proxySettings, statuses, connectionStatus -> (ItemListControllerState, (ItemListNodeState, Any)) in
+    // Luckgram 117: exits of the direct connection and of each SOCKS5 proxy (cached 10 minutes).
+    let exitChecker = LuckgramProxyExitChecker.shared
+    refreshExitsImpl = {
+        let _ = (proxySettings.get() |> take(1)).start(next: { settings in
+            exitChecker.ensure(proxies: settings.servers.compactMap(luckgramExitSocks), force: true)
+        })
+    }
+    let signal = combineLatest(updatedPresentationData, statePromise.get(), proxySettings.get(), statusesContext.statuses(), network.connectionStatus, exitChecker.statesSignal())
+    |> map { presentationData, state, proxySettings, statuses, connectionStatus, exits -> (ItemListControllerState, (ItemListNodeState, Any)) in
+        exitChecker.ensure(proxies: proxySettings.servers.compactMap(luckgramExitSocks), force: false)
         var presentationData = presentationData
         let updatedTheme = presentationData.theme.withModalBlocksBackground()
         presentationData = presentationData.withUpdated(theme: updatedTheme)
@@ -470,7 +529,7 @@ public func proxySettingsController(accountManager: AccountManager<TelegramAccou
         }
         
         let controllerState = ItemListControllerState(presentationData: ItemListPresentationData(presentationData), title: .text(presentationData.strings.SocksProxySetup_Title), leftNavigationButton: leftNavigationButton, rightNavigationButton: rightNavigationButton, backNavigationButton: ItemListBackButton(title: presentationData.strings.Common_Back))
-        let listState = ItemListNodeState(presentationData: ItemListPresentationData(presentationData), entries: proxySettingsControllerEntries(theme: presentationData.theme, strings: presentationData.strings, state: state, proxySettings: proxySettings, statuses: statuses, connectionStatus: connectionStatus), style: .blocks, ensureVisibleItemTag: focusOnItemTag)
+        let listState = ItemListNodeState(presentationData: ItemListPresentationData(presentationData), entries: proxySettingsControllerEntries(theme: presentationData.theme, strings: presentationData.strings, state: state, proxySettings: proxySettings, statuses: statuses, connectionStatus: connectionStatus, exits: exits), style: .blocks, ensureVisibleItemTag: focusOnItemTag)
         
         return (controllerState, (listState, arguments))
     }
