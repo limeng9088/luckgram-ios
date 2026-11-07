@@ -632,10 +632,13 @@ public func proxySettingsController(accountManager: AccountManager<TelegramAccou
         }
         var added = 0
         var removed = 0
+        var owned: [String] = []
         let _ = (updateProxySettingsInteractively(accountManager: accountManager, { current in
             var current = current
             let existing = Set(current.servers.compactMap { luckgramEntry($0)?.key })
             let diff = LuckgramProxyImportLogic.diff(previouslyImported: previous, now: now.map { $0.0 }, existing: existing)
+            // the subscription owns what it added now or before; proxies added by hand stay the user's
+            owned = LuckgramProxyImportLogic.owned(previouslyOwned: previous, now: now.map { $0.0 }, diff: diff)
             let removeKeys = Set(diff.remove)
             let before = current.servers.count
             current.servers.removeAll(where: { server in luckgramEntry(server).map { removeKeys.contains($0.key) } ?? false })
@@ -651,7 +654,7 @@ public func proxySettingsController(accountManager: AccountManager<TelegramAccou
             }
             return current
         }) |> deliverOnMainQueue).start(completed: {
-            LuckgramProxyImport.record(url: url, keys: now.map { $0.0.key })
+            LuckgramProxyImport.record(url: url, keys: owned)
             subsPromise.set(LuckgramProxyImport.subs())
             alert(isRefresh ? importTexts.refreshTitle : importTexts.importTitle, importTexts.result(total: now.count, added: added, removed: removed, skipped: result.skipped))
         })

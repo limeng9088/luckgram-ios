@@ -363,6 +363,18 @@ public enum LuckgramProxyImportLogic {
 
     // MARK: - refresh
 
+    /// Keys a subscription owns after a refresh: the entries it still lists that it owned before or
+    /// adds now. A proxy already in the list (added by hand) is not owned, so deleting the
+    /// subscription never removes it.
+    public static func owned(previouslyOwned: Set<String>, now: [Entry], diff: Diff) -> [String] {
+        let added = Set(diff.add.map { $0.key })
+        var out: [String] = []
+        for e in now where previouslyOwned.contains(e.key) || added.contains(e.key) {
+            if !out.contains(e.key) { out.append(e.key) }
+        }
+        return out
+    }
+
     /// Proxies now in the subscription that are not in the list yet are added; keys imported before
     /// that are gone are removed. `existing` are the keys of every proxy in the list.
     public static func diff(previouslyImported: Set<String>, now: [Entry], existing: Set<String>) -> Diff {

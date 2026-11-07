@@ -117,6 +117,16 @@ final class LuckgramProxyImportLogicTests: XCTestCase {
         XCTAssertTrue(d2.remove.isEmpty)
     }
 
+    func testOwnership() {
+        let a = L.Entry(type: L.typeSocks5, host: "198.51.100.1", port: 1, user: nil, password: nil, secret: nil)
+        let b = L.Entry(type: L.typeSocks5, host: "198.51.100.2", port: 1, user: nil, password: nil, secret: nil)
+        let c = L.Entry(type: L.typeSocks5, host: "198.51.100.3", port: 1, user: nil, password: nil, secret: nil)
+        let first = L.diff(previouslyImported: [], now: [a, b], existing: [a.key])
+        XCTAssertEqual(L.owned(previouslyOwned: [], now: [a, b], diff: first), [b.key])
+        let second = L.diff(previouslyImported: [b.key], now: [a, b, c], existing: [a.key, b.key])
+        XCTAssertEqual(L.owned(previouslyOwned: [b.key], now: [a, b, c], diff: second), [b.key, c.key])
+    }
+
     func testHosts() {
         XCTAssertEqual(L.hostOf("https://agg.example.com/clash/1?x=y"), "agg.example.com")
         XCTAssertEqual(L.hostOf("https://u:p@A.B:8443/"), "a.b")
