@@ -400,7 +400,8 @@ private func proxySettingsControllerEntries(theme: PresentationTheme, strings: P
         entries.append(.useForCallsInfo(theme, strings.SocksProxySetup_UseForCallsHelp))
     }
     
-    return entries
+    // ItemList asserts sorted entries; Luckgram 118 rows are appended out of rank order
+    return entries.sorted(by: <)
 }
 
 /// Luckgram 118: a proxy from a link or subscription as Telegram's server settings.
