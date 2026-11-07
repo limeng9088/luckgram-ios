@@ -11,6 +11,9 @@ import AccountContext
 import ShareController
 import UrlEscaping
 import LuckgramUI
+import OverlayStatusController
+import QrCodeUI
+import DeviceAccess
 
 private final class ProxySettingsControllerArguments {
     let toggleEnabled: (Bool) -> Void
@@ -22,8 +25,11 @@ private final class ProxySettingsControllerArguments {
     let toggleUseForCalls: (Bool) -> Void
     let shareProxyList: () -> Void
     let refreshExits: () -> Void
+    let scanQr: () -> Void
+    let inputLink: () -> Void
+    let openSub: (String) -> Void
     
-    init(toggleEnabled: @escaping (Bool) -> Void, addNewServer: @escaping () -> Void, activateServer: @escaping (ProxyServerSettings) -> Void, editServer: @escaping (ProxyServerSettings) -> Void, removeServer: @escaping (ProxyServerSettings) -> Void, setServerWithRevealedOptions: @escaping (ProxyServerSettings?, ProxyServerSettings?) -> Void, toggleUseForCalls: @escaping (Bool) -> Void, shareProxyList: @escaping () -> Void, refreshExits: @escaping () -> Void) {
+    init(toggleEnabled: @escaping (Bool) -> Void, addNewServer: @escaping () -> Void, activateServer: @escaping (ProxyServerSettings) -> Void, editServer: @escaping (ProxyServerSettings) -> Void, removeServer: @escaping (ProxyServerSettings) -> Void, setServerWithRevealedOptions: @escaping (ProxyServerSettings?, ProxyServerSettings?) -> Void, toggleUseForCalls: @escaping (Bool) -> Void, shareProxyList: @escaping () -> Void, refreshExits: @escaping () -> Void, scanQr: @escaping () -> Void, inputLink: @escaping () -> Void, openSub: @escaping (String) -> Void) {
         self.toggleEnabled = toggleEnabled
         self.addNewServer = addNewServer
         self.activateServer = activateServer
@@ -33,6 +39,9 @@ private final class ProxySettingsControllerArguments {
         self.toggleUseForCalls = toggleUseForCalls
         self.shareProxyList = shareProxyList
         self.refreshExits = refreshExits
+        self.scanQr = scanQr
+        self.inputLink = inputLink
+        self.openSub = openSub
     }
 }
 
@@ -41,6 +50,7 @@ private enum ProxySettingsControllerSection: Int32 {
     case servers
     case share
     case calls
+    case subs // Luckgram 118
 }
 
 private enum ProxyServerAvailabilityStatus: Equatable {
@@ -83,6 +93,10 @@ private enum ProxySettingsControllerEntry: ItemListNodeEntry {
     case directExit(PresentationTheme, String, String) // Luckgram 117
     case addServer(PresentationTheme, String, Bool)
     case server(Int, PresentationTheme, PresentationStrings, ProxyServerSettings, Bool, DisplayProxyServerStatus, ProxySettingsServerItemEditing, Bool)
+    case scanQr(PresentationTheme, String) // Luckgram 118
+    case inputLink(PresentationTheme, String) // Luckgram 118
+    case subsHeader(PresentationTheme, String) // Luckgram 118
+    case sub(Int, PresentationTheme, String, String, String) // Luckgram 118: index, title, line, url
     case shareProxyList(PresentationTheme, String)
     case useForCalls(PresentationTheme, String, Bool)
     case useForCallsInfo(PresentationTheme, String)
@@ -91,12 +105,14 @@ private enum ProxySettingsControllerEntry: ItemListNodeEntry {
         switch self {
             case .enabled:
                 return ProxySettingsControllerSection.enabled.rawValue
-            case .serversHeader, .directExit, .addServer, .server:
+            case .serversHeader, .directExit, .addServer, .server, .scanQr, .inputLink:
                 return ProxySettingsControllerSection.servers.rawValue
             case .shareProxyList:
                 return ProxySettingsControllerSection.share.rawValue
             case .useForCalls, .useForCallsInfo:
                 return ProxySettingsControllerSection.calls.rawValue
+            case .subsHeader, .sub:
+                return ProxySettingsControllerSection.subs.rawValue
         }
     }
     
@@ -118,6 +134,14 @@ private enum ProxySettingsControllerEntry: ItemListNodeEntry {
                 return .index(5)
             case .directExit:
                 return .index(6)
+            case .scanQr:
+                return .index(7)
+            case .inputLink:
+                return .index(8)
+            case .subsHeader:
+                return .index(9)
+            case let .sub(index, _, _, _, _):
+                return .index(1000 + index)
         }
     }
     
@@ -131,6 +155,30 @@ private enum ProxySettingsControllerEntry: ItemListNodeEntry {
                 }
             case let .serversHeader(lhsTheme, lhsText):
                 if case let .serversHeader(rhsTheme, rhsText) = rhs, lhsTheme === rhsTheme, lhsText == rhsText {
+                    return true
+                } else {
+                    return false
+                }
+            case let .scanQr(lhsTheme, lhsText):
+                if case let .scanQr(rhsTheme, rhsText) = rhs, lhsTheme === rhsTheme, lhsText == rhsText {
+                    return true
+                } else {
+                    return false
+                }
+            case let .inputLink(lhsTheme, lhsText):
+                if case let .inputLink(rhsTheme, rhsText) = rhs, lhsTheme === rhsTheme, lhsText == rhsText {
+                    return true
+                } else {
+                    return false
+                }
+            case let .subsHeader(lhsTheme, lhsText):
+                if case let .subsHeader(rhsTheme, rhsText) = rhs, lhsTheme === rhsTheme, lhsText == rhsText {
+                    return true
+                } else {
+                    return false
+                }
+            case let .sub(lhsIndex, lhsTheme, lhsTitle, lhsLine, lhsUrl):
+                if case let .sub(rhsIndex, rhsTheme, rhsTitle, rhsLine, rhsUrl) = rhs, lhsIndex == rhsIndex, lhsTheme === rhsTheme, lhsTitle == rhsTitle, lhsLine == rhsLine, lhsUrl == rhsUrl {
                     return true
                 } else {
                     return false
@@ -174,62 +222,26 @@ private enum ProxySettingsControllerEntry: ItemListNodeEntry {
         }
     }
     
-    static func <(lhs: ProxySettingsControllerEntry, rhs: ProxySettingsControllerEntry) -> Bool {
-        switch lhs {
-            case .enabled:
-                switch rhs {
-                    case .enabled:
-                        return false
-                    default:
-                        return true
-                }
-            case .serversHeader:
-                switch rhs {
-                    case .enabled, .serversHeader:
-                        return false
-                    default:
-                        return true
-                }
-            case .directExit:
-                switch rhs {
-                    case .enabled, .serversHeader, .directExit:
-                        return false
-                    default:
-                        return true
-                }
-            case .addServer:
-                switch rhs {
-                    case .enabled, .serversHeader, .directExit, .addServer:
-                        return false
-                    default:
-                        return true
-                }
-            case let .server(lhsIndex, _, _, _, _, _, _, _):
-                switch rhs {
-                    case .enabled, .serversHeader, .directExit, .addServer:
-                        return false
-                    case let .server(rhsIndex, _, _, _, _, _, _, _):
-                        return lhsIndex < rhsIndex
-                    default:
-                        return true
-                }
-            case .shareProxyList:
-                switch rhs {
-                    case .enabled, .serversHeader, .directExit, .addServer, .server, .shareProxyList:
-                        return false
-                    default:
-                        return true
-            }
-            case .useForCalls:
-                switch rhs {
-                    case .enabled, .serversHeader, .directExit, .addServer, .server, .shareProxyList, .useForCalls:
-                        return false
-                    default:
-                        return true
-                }
-            case .useForCallsInfo:
-                return false
+    /// Order in the list (Luckgram 118 rows added; one rank per row instead of pairwise cases).
+    private var rank: Int {
+        switch self {
+            case .enabled: return 0
+            case .serversHeader: return 1
+            case .directExit: return 2
+            case .addServer: return 3
+            case .scanQr: return 4
+            case .inputLink: return 5
+            case let .server(index, _, _, _, _, _, _, _): return 100 + index
+            case .subsHeader: return 100_000
+            case let .sub(index, _, _, _, _): return 100_001 + index
+            case .shareProxyList: return 200_000
+            case .useForCalls: return 200_001
+            case .useForCallsInfo: return 200_002
         }
+    }
+
+    static func <(lhs: ProxySettingsControllerEntry, rhs: ProxySettingsControllerEntry) -> Bool {
+        return lhs.rank < rhs.rank
     }
     
     func item(presentationData: ItemListPresentationData, arguments: Any) -> ListViewItem {
@@ -248,6 +260,20 @@ private enum ProxySettingsControllerEntry: ItemListNodeEntry {
             case let .directExit(_, title, text):
                 return ItemListDisclosureItem(presentationData: presentationData, systemStyle: .glass, title: title, label: text, labelStyle: .multilineDetailText, sectionId: self.section, style: .blocks, disclosureStyle: .none, action: {
                     arguments.refreshExits()
+                })
+            case let .scanQr(_, text):
+                return ProxySettingsActionItem(presentationData: presentationData, systemStyle: .glass, title: text, sectionId: self.section, editing: false, action: {
+                    arguments.scanQr()
+                })
+            case let .inputLink(_, text):
+                return ProxySettingsActionItem(presentationData: presentationData, systemStyle: .glass, title: text, sectionId: self.section, editing: false, action: {
+                    arguments.inputLink()
+                })
+            case let .subsHeader(_, text):
+                return ItemListSectionHeaderItem(presentationData: presentationData, text: text, sectionId: self.section)
+            case let .sub(_, _, title, line, url):
+                return ItemListDisclosureItem(presentationData: presentationData, systemStyle: .glass, title: title, label: line, labelStyle: .multilineDetailText, sectionId: self.section, style: .blocks, disclosureStyle: .arrow, action: {
+                    arguments.openSub(url)
                 })
             case let .addServer(_, text, _):
                 return ProxySettingsActionItem(presentationData: presentationData, systemStyle: .glass, title: text, icon: .add, sectionId: self.section, editing: false, action: {
@@ -277,7 +303,7 @@ private enum ProxySettingsControllerEntry: ItemListNodeEntry {
     }
 }
 
-private func proxySettingsControllerEntries(theme: PresentationTheme, strings: PresentationStrings, state: ProxySettingsControllerState, proxySettings: ProxySettings, statuses: [ProxyServerSettings: ProxyServerStatus], connectionStatus: ConnectionStatus, exits: [String: LuckgramProxyExitChecker.State]) -> [ProxySettingsControllerEntry] {
+private func proxySettingsControllerEntries(theme: PresentationTheme, strings: PresentationStrings, state: ProxySettingsControllerState, proxySettings: ProxySettings, statuses: [ProxyServerSettings: ProxyServerStatus], connectionStatus: ConnectionStatus, exits: [String: LuckgramProxyExitChecker.State], canScan: Bool, subs: [LuckgramProxyImport.Sub]) -> [ProxySettingsControllerEntry] {
     var entries: [ProxySettingsControllerEntry] = []
     let exitTexts = LuckgramProxyExitTexts(zh: LuckgramStrings.isChinese)
     func exitText(_ key: String) -> String {
@@ -295,6 +321,18 @@ private func proxySettingsControllerEntries(theme: PresentationTheme, strings: P
     entries.append(.serversHeader(theme, strings.SocksProxySetup_SavedProxies))
     entries.append(.directExit(theme, exitTexts.directTitle, exitText(LuckgramProxyExitChecker.directKey)))
     entries.append(.addServer(theme, strings.SocksProxySetup_AddProxy, state.editing))
+    // Luckgram 118: scan a QR code, type a link or subscription URL, saved subscriptions
+    let importTexts = LuckgramProxyImportTexts(zh: LuckgramStrings.isChinese)
+    if canScan {
+        entries.append(.scanQr(theme, importTexts.scanRow))
+    }
+    entries.append(.inputLink(theme, importTexts.linkRow))
+    if !subs.isEmpty {
+        entries.append(.subsHeader(theme, importTexts.subsHeader))
+        for (i, sub) in subs.enumerated() {
+            entries.append(.sub(i, theme, sub.title, LuckgramProxyImport.subLine(sub, zh: LuckgramStrings.isChinese), sub.url))
+        }
+    }
     var index = 0
     var existingServers = Set<ProxyServerSettings>()
     for server in proxySettings.servers {
@@ -362,7 +400,31 @@ private func proxySettingsControllerEntries(theme: PresentationTheme, strings: P
         entries.append(.useForCallsInfo(theme, strings.SocksProxySetup_UseForCallsHelp))
     }
     
-    return entries
+    // ItemList asserts sorted entries; Luckgram 118 rows are appended out of rank order
+    return entries.sorted(by: <)
+}
+
+/// Luckgram 118: a proxy from a link or subscription as Telegram's server settings.
+private func luckgramServer(_ e: LuckgramProxyImportLogic.Entry) -> ProxyServerSettings? {
+    if e.type == LuckgramProxyImportLogic.typeMtproto {
+        guard let secret = MTProxySecret.parse(e.secret)?.serialize() else {
+            return nil
+        }
+        return ProxyServerSettings(host: e.host, port: Int32(e.port), connection: .mtp(secret: secret))
+    }
+    return ProxyServerSettings(host: e.host, port: Int32(e.port), connection: .socks5(username: e.user.isEmpty ? nil : e.user, password: e.password.isEmpty ? nil : e.password))
+}
+
+/// Luckgram 118: identity of a server (MTProto secret as hex), for subscription refresh.
+private func luckgramEntry(_ server: ProxyServerSettings) -> LuckgramProxyImportLogic.Entry? {
+    switch server.connection {
+    case let .socks5(username, password):
+        return LuckgramProxyImportLogic.Entry(type: LuckgramProxyImportLogic.typeSocks5, host: server.host, port: Int(server.port), user: username, password: password, secret: nil)
+    case let .mtp(secret):
+        return LuckgramProxyImportLogic.Entry(type: LuckgramProxyImportLogic.typeMtproto, host: server.host, port: Int(server.port), user: nil, password: nil, secret: secret.map { String(format: "%02x", $0) }.joined())
+    case .web:
+        return nil
+    }
 }
 
 /// Luckgram 117: the SOCKS5 parameters of a server whose exit can be checked.
@@ -417,6 +479,11 @@ public func proxySettingsController(accountManager: AccountManager<TelegramAccou
     
     var shareProxyListImpl: (() -> Void)?
     var refreshExitsImpl: (() -> Void)?
+    var scanQrImpl: (() -> Void)?
+    var inputLinkImpl: (() -> Void)?
+    var openSubImpl: ((String) -> Void)?
+    var presentImpl: ((ViewController) -> Void)?
+    let subsPromise = ValuePromise<[LuckgramProxyImport.Sub]>(LuckgramProxyImport.subs(), ignoreRepeated: true)
     
     let arguments = ProxySettingsControllerArguments(toggleEnabled: { value in
         let _ = updateProxySettingsInteractively(accountManager: accountManager, { current in
@@ -469,6 +536,12 @@ public func proxySettingsController(accountManager: AccountManager<TelegramAccou
        shareProxyListImpl?()
     }, refreshExits: {
         refreshExitsImpl?()
+    }, scanQr: {
+        scanQrImpl?()
+    }, inputLink: {
+        inputLinkImpl?()
+    }, openSub: { url in
+        openSubImpl?(url)
     })
     
     let proxySettings = Promise<ProxySettings>()
@@ -493,8 +566,8 @@ public func proxySettingsController(accountManager: AccountManager<TelegramAccou
             exitChecker.ensure(proxies: settings.servers.compactMap(luckgramExitSocks), force: true)
         })
     }
-    let signal = combineLatest(updatedPresentationData, statePromise.get(), proxySettings.get(), statusesContext.statuses(), network.connectionStatus, exitChecker.statesSignal())
-    |> map { presentationData, state, proxySettings, statuses, connectionStatus, exits -> (ItemListControllerState, (ItemListNodeState, Any)) in
+    let signal = combineLatest(updatedPresentationData, statePromise.get(), proxySettings.get(), statusesContext.statuses(), network.connectionStatus, exitChecker.statesSignal(), subsPromise.get())
+    |> map { presentationData, state, proxySettings, statuses, connectionStatus, exits, subs -> (ItemListControllerState, (ItemListNodeState, Any)) in
         exitChecker.ensure(proxies: proxySettings.servers.compactMap(luckgramExitSocks), force: false)
         var presentationData = presentationData
         let updatedTheme = presentationData.theme.withModalBlocksBackground()
@@ -529,7 +602,7 @@ public func proxySettingsController(accountManager: AccountManager<TelegramAccou
         }
         
         let controllerState = ItemListControllerState(presentationData: ItemListPresentationData(presentationData), title: .text(presentationData.strings.SocksProxySetup_Title), leftNavigationButton: leftNavigationButton, rightNavigationButton: rightNavigationButton, backNavigationButton: ItemListBackButton(title: presentationData.strings.Common_Back))
-        let listState = ItemListNodeState(presentationData: ItemListPresentationData(presentationData), entries: proxySettingsControllerEntries(theme: presentationData.theme, strings: presentationData.strings, state: state, proxySettings: proxySettings, statuses: statuses, connectionStatus: connectionStatus, exits: exits), style: .blocks, ensureVisibleItemTag: focusOnItemTag)
+        let listState = ItemListNodeState(presentationData: ItemListPresentationData(presentationData), entries: proxySettingsControllerEntries(theme: presentationData.theme, strings: presentationData.strings, state: state, proxySettings: proxySettings, statuses: statuses, connectionStatus: connectionStatus, exits: exits, canScan: context != nil, subs: subs), style: .blocks, ensureVisibleItemTag: focusOnItemTag)
         
         return (controllerState, (listState, arguments))
     }
@@ -541,6 +614,167 @@ public func proxySettingsController(accountManager: AccountManager<TelegramAccou
     }
     dismissImpl = { [weak controller] in
         controller?.dismiss()
+    }
+    presentImpl = { [weak controller] c in
+        controller?.present(c, in: .window(.root))
+    }
+
+    // Luckgram 118: add proxies from a QR code or a link, import / refresh / delete subscriptions
+    let importTexts = LuckgramProxyImportTexts(zh: LuckgramStrings.isChinese)
+    let alert: (String?, String) -> Void = { title, text in
+        presentImpl?(textAlertController(sharedContext: sharedContext, title: title, text: text, actions: [TextAlertAction(type: .defaultAction, title: importTexts.ok, action: {})]))
+    }
+    let applySubscription: (String, LuckgramProxyImportLogic.Result, Bool) -> Void = { url, result, isRefresh in
+        let previous = Set(LuckgramProxyImport.subs().first(where: { $0.url == url })?.keys ?? [])
+        // keys through ProxyServerSettings so MTProto secrets compare in one form
+        let now: [(LuckgramProxyImportLogic.Entry, ProxyServerSettings)] = result.proxies.compactMap { e in
+            guard let server = luckgramServer(e), let k = luckgramEntry(server) else { return nil }
+            return (k, server)
+        }
+        var added = 0
+        var removed = 0
+        var owned: [String] = []
+        let _ = (updateProxySettingsInteractively(accountManager: accountManager, { current in
+            var current = current
+            let existing = Set(current.servers.compactMap { luckgramEntry($0)?.key })
+            let diff = LuckgramProxyImportLogic.diff(previouslyImported: previous, now: now.map { $0.0 }, existing: existing)
+            // the subscription owns what it added now or before; proxies added by hand stay the user's
+            owned = LuckgramProxyImportLogic.owned(previouslyOwned: previous, now: now.map { $0.0 }, diff: diff)
+            let removeKeys = Set(diff.remove)
+            let before = current.servers.count
+            current.servers.removeAll(where: { server in luckgramEntry(server).map { removeKeys.contains($0.key) } ?? false })
+            removed = before - current.servers.count
+            if let active = current.activeServer, !current.servers.contains(active) {
+                current.activeServer = nil
+                current.enabled = false
+            }
+            let addKeys = Set(diff.add.map { $0.key })
+            for (k, server) in now where addKeys.contains(k.key) && !current.servers.contains(server) {
+                current.servers.append(server)
+                added += 1
+            }
+            return current
+        }) |> deliverOnMainQueue).start(completed: {
+            LuckgramProxyImport.record(url: url, keys: owned)
+            subsPromise.set(LuckgramProxyImport.subs())
+            alert(isRefresh ? importTexts.refreshTitle : importTexts.importTitle, importTexts.result(total: now.count, added: added, removed: removed, skipped: result.skipped))
+        })
+    }
+    let importSubscription: (String, Bool) -> Void = { url, isRefresh in
+        let progress = OverlayStatusController(style: presentationData.theme.overallDarkAppearance ? .dark : .light, type: .loading(cancelled: nil))
+        presentImpl?(progress)
+        let _ = (proxySettings.get() |> take(1) |> deliverOnMainQueue).start(next: { settings in
+            var via: LuckgramProxyExitChecker.Socks?
+            if settings.enabled, let active = settings.activeServer, case let .socks5(username, password) = active.connection {
+                via = LuckgramProxyExitChecker.Socks(host: active.host, port: Int(active.port), username: username, password: password)
+            }
+            LuckgramProxyImport.download(url: url, via: via) { body in
+                progress.dismiss()
+                guard let body else {
+                    alert(importTexts.importTitle, importTexts.downloadFailed)
+                    return
+                }
+                applySubscription(url, LuckgramProxyImportLogic.parseSubscription(body), isRefresh)
+            }
+        })
+    }
+    let handleText: (String) -> Void = { raw in
+        let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        switch LuckgramProxyImportLogic.kind(text) {
+        case .proxy:
+            guard let e = LuckgramProxyImportLogic.parseLink(text), let server = luckgramServer(e) else {
+                alert(importTexts.unknownTitle, importTexts.unknown)
+                return
+            }
+            var existed = false
+            let _ = (updateProxySettingsInteractively(accountManager: accountManager, { current in
+                var current = current
+                if current.servers.contains(server) {
+                    existed = true
+                } else {
+                    current.servers.insert(server, at: 0)
+                }
+                return current
+            }) |> deliverOnMainQueue).start(completed: {
+                presentImpl?(OverlayStatusController(style: presentationData.theme.overallDarkAppearance ? .dark : .light, type: .genericSuccess(existed ? importTexts.alreadyAdded : importTexts.added, false)))
+            })
+        case .subscription:
+            importSubscription(text, false)
+        case .unknown:
+            alert(importTexts.unknownTitle, importTexts.unknown)
+        }
+    }
+    inputLinkImpl = {
+        let c = UIAlertController(title: importTexts.inputTitle, message: importTexts.inputMessage, preferredStyle: .alert)
+        c.addTextField { field in
+            field.placeholder = importTexts.inputHint
+            field.keyboardType = .URL
+            field.autocapitalizationType = .none
+            field.autocorrectionType = .no
+            field.clearButtonMode = .whileEditing
+        }
+        c.addAction(UIAlertAction(title: importTexts.cancel, style: .cancel))
+        c.addAction(UIAlertAction(title: importTexts.add, style: .default, handler: { [weak c] _ in
+            handleText(c?.textFields?.first?.text ?? "")
+        }))
+        sharedContext.applicationBindings.presentNativeController(c)
+    }
+    scanQrImpl = {
+        guard let context else {
+            return
+        }
+        DeviceAccess.authorizeAccess(to: .camera(.qrCode), presentationData: presentationData, present: { c, a in
+            c.presentationArguments = a
+            presentImpl?(c)
+        }, openSettings: {
+            sharedContext.applicationBindings.openSettings()
+        }, { granted in
+            guard granted else {
+                return
+            }
+            let scanner = QrCodeScanScreen(context: context, subject: .custom(info: importTexts.scanHint))
+            scanner.completion = { [weak scanner] code in
+                scanner?.dismissAnimated()
+                guard let code else {
+                    return
+                }
+                Queue.mainQueue().after(0.3) {
+                    handleText(code)
+                }
+            }
+            presentImpl?(scanner)
+        })
+    }
+    openSubImpl = { url in
+        guard let sub = LuckgramProxyImport.subs().first(where: { $0.url == url }) else {
+            return
+        }
+        presentImpl?(textAlertController(sharedContext: sharedContext, title: sub.title, text: LuckgramProxyImport.subLine(sub, zh: LuckgramStrings.isChinese), actions: [
+            TextAlertAction(type: .defaultAction, title: importTexts.refresh, action: {
+                importSubscription(url, true)
+            }),
+            TextAlertAction(type: .destructiveAction, title: importTexts.delete, action: {
+                presentImpl?(textAlertController(sharedContext: sharedContext, title: importTexts.deleteTitle, text: importTexts.deleteMessage(sub.keys.count), actions: [
+                    TextAlertAction(type: .genericAction, title: importTexts.cancel, action: {}),
+                    TextAlertAction(type: .destructiveAction, title: importTexts.delete, action: {
+                        let keys = Set(sub.keys)
+                        let _ = (updateProxySettingsInteractively(accountManager: accountManager, { current in
+                            var current = current
+                            current.servers.removeAll(where: { server in luckgramEntry(server).map { keys.contains($0.key) } ?? false })
+                            if let active = current.activeServer, !current.servers.contains(active) {
+                                current.activeServer = nil
+                                current.enabled = false
+                            }
+                            return current
+                        }) |> deliverOnMainQueue).start(completed: {
+                            LuckgramProxyImport.remove(url: url)
+                            subsPromise.set(LuckgramProxyImport.subs())
+                        })
+                    })
+                ]))
+            }),
+            TextAlertAction(type: .genericAction, title: importTexts.cancel, action: {})
+        ], actionLayout: .vertical))
     }
     controller.setReorderEntry({ (fromIndex: Int, toIndex: Int, entries: [ProxySettingsControllerEntry]) -> Signal<Bool, NoError> in
         let fromEntry = entries[fromIndex]
