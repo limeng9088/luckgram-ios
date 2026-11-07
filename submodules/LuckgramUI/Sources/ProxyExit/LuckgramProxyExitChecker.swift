@@ -121,8 +121,14 @@ public final class LuckgramProxyExitChecker {
         }
     }
 
+    /// specs#81: tries the API entries in order; a network-level failure moves on to the next one
+    /// (the main entry can be blocked where a backup still works), any HTTP answer stops.
     private func fetch(socks: Socks?, completion: @escaping (LuckgramProxyExit?) -> Void) {
-        guard let url = URL(string: LuckgramAI.apiBaseURL + LuckgramProxyExit.path) else {
+        self.fetch(socks: socks, bases: LuckgramAI.endpoints.attemptOrder()[...], completion: completion)
+    }
+
+    private func fetch(socks: Socks?, bases: ArraySlice<String>, completion: @escaping (LuckgramProxyExit?) -> Void) {
+        guard let base = bases.first, let url = URL(string: base + LuckgramProxyExit.path) else {
             completion(nil)
             return
         }
@@ -149,9 +155,17 @@ public final class LuckgramProxyExitChecker {
         var request = URLRequest(url: url)
         request.setValue("application/json", forHTTPHeaderField: "Accept")
         let session = URLSession(configuration: config)
-        let task = session.dataTask(with: request) { data, response, _ in
+        let task = session.dataTask(with: request) { [weak self] data, response, _ in
+            guard let http = response as? HTTPURLResponse else {
+                if let self = self, bases.count > 1 {
+                    self.fetch(socks: socks, bases: bases.dropFirst(), completion: completion)
+                } else {
+                    completion(nil)
+                }
+                return
+            }
             var exit: LuckgramProxyExit?
-            if let http = response as? HTTPURLResponse, http.statusCode / 100 == 2, let data = data {
+            if http.statusCode / 100 == 2, let data = data {
                 exit = LuckgramProxyExit.parse(data)
             }
             completion(exit)
