@@ -5,6 +5,8 @@ import Security
 enum LuckgramKeychain {
     static let service = "com.luckgram.messenger.luckgram"
     static let deviceTokenAccount = "device_token"
+    /// Luckgram 119: built-in Xray nodes (links with UUIDs / passwords) and the loopback password.
+    static let xrayNodesAccount = "xray_nodes"
 
     private static func query(account: String) -> [String: Any] {
         return [

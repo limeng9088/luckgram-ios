@@ -128,13 +128,13 @@ public struct LuckgramProxyImportTexts {
     public var subsHeader: String { t("订阅", "SUBSCRIPTIONS") }
     public var scanHint: String { t("扫描代理二维码或订阅地址二维码", "Scan a proxy or subscription QR code") }
     public var inputTitle: String { t("添加代理", "Add Proxy") }
-    public var inputMessage: String { t("粘贴代理链接（tg://socks、t.me/proxy、socks5://）或 mihomo / Clash 订阅地址。", "Paste a proxy link (tg://socks, t.me/proxy, socks5://) or a mihomo / Clash subscription URL.") }
+    public var inputMessage: String { t("粘贴代理链接（tg://socks、t.me/proxy、socks5://、vless://、vmess://、trojan://、ss://）或 mihomo / Clash 订阅地址。", "Paste a proxy link (tg://socks, t.me/proxy, socks5://, vless://, vmess://, trojan://, ss://) or a mihomo / Clash subscription URL.") }
     public var inputHint: String { t("链接或订阅地址", "Link or subscription URL") }
     public var add: String { t("添加", "Add") }
     public var added: String { t("已添加代理", "Proxy added") }
     public var alreadyAdded: String { t("这个代理已在列表里", "This proxy is already in the list") }
     public var unknownTitle: String { t("无法识别", "Not recognized") }
-    public var unknown: String { t("无法识别的代理链接。支持 tg://socks、t.me/proxy、socks5:// 链接和 mihomo / Clash 订阅地址。", "This is not a proxy link. Supported: tg://socks, t.me/proxy, socks5:// links and mihomo / Clash subscription URLs.") }
+    public var unknown: String { t("无法识别的代理链接。支持 tg://socks、t.me/proxy、socks5://、vless://、vmess://、trojan://、ss:// 链接和 mihomo / Clash 订阅地址。", "This is not a proxy link. Supported: tg://socks, t.me/proxy, socks5://, vless://, vmess://, trojan://, ss:// links and mihomo / Clash subscription URLs.") }
     public var importTitle: String { t("导入订阅", "Import Subscription") }
     public var refreshTitle: String { t("刷新订阅", "Refresh Subscription") }
     public var downloadFailed: String { t("下载订阅失败，请检查地址和网络后重试。", "Could not download the subscription. Check the URL and your connection, then try again.") }
@@ -152,13 +152,18 @@ public struct LuckgramProxyImportTexts {
         t("\(n) 个代理 · 更新于 \(when)", "\(n) \(n == 1 ? "proxy" : "proxies") · updated \(when)")
     }
 
-    public func result(total: Int, added: Int, removed: Int, skipped: Int) -> String {
+    /// `coreProblem`: why Xray nodes were skipped (core off / missing), nil when they were not.
+    public func result(total: Int, added: Int, removed: Int, skipped: Int, coreProblem: String? = nil) -> String {
         var s = t("订阅里有 \(total) 个可用代理：新增 \(added) 个", "\(total) usable \(total == 1 ? "proxy" : "proxies"): \(added) added")
         if removed > 0 { s += t("，移除 \(removed) 个", ", \(removed) removed") }
         s += t("。", ".")
         if skipped > 0 {
-            s += "\n\n" + t("跳过 \(skipped) 个不支持的节点（Luckgram 只支持 SOCKS5 和 MTProto 代理，VLESS、Shadowsocks、VMess 等用不了）。",
-                            "Skipped \(skipped) unsupported \(skipped == 1 ? "entry" : "entries") (Luckgram supports SOCKS5 and MTProto proxies only, not VLESS, Shadowsocks, VMess and others).")
+            if let coreProblem {
+                s += "\n\n" + t("跳过 \(skipped) 个节点：\(coreProblem)。", "Skipped \(skipped) \(skipped == 1 ? "entry" : "entries"): \(coreProblem).")
+            } else {
+                s += "\n\n" + t("跳过 \(skipped) 个不支持的节点（支持 SOCKS5、MTProto、VLESS、VMess、Trojan、Shadowsocks；Hysteria、TUIC 等用不了）。",
+                                "Skipped \(skipped) unsupported \(skipped == 1 ? "entry" : "entries") (supported: SOCKS5, MTProto, VLESS, VMess, Trojan, Shadowsocks; not Hysteria, TUIC and others).")
+            }
         }
         return s
     }

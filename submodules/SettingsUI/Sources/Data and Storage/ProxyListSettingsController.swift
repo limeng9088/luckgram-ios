@@ -62,6 +62,8 @@ private enum ProxyServerAvailabilityStatus: Equatable {
 private struct DisplayProxyServerStatus: Equatable {
     /// Luckgram 117: exit line ("出口：🇸🇬 新加坡 · 1.2.3.4"), nil when not checked (MTProto / iOS < 17).
     var exit: String? = nil
+    /// Luckgram 119: "VLESS · name" for an Xray node.
+    var title: String? = nil
     let activity: Bool
     let text: String
     let textActive: Bool
@@ -280,7 +282,7 @@ private enum ProxySettingsControllerEntry: ItemListNodeEntry {
                     arguments.addNewServer()
                 })
             case let .server(_, theme, strings, settings, active, status, editing, enabled):
-                return ProxySettingsServerItem(theme: theme, strings: strings, systemStyle: .glass, server: settings, activity: status.activity, active: active, color: enabled ? .accent : .secondary, label: status.text, labelAccent: status.textActive, exitLabel: status.exit, editing: editing, sectionId: self.section, action: {
+                return ProxySettingsServerItem(theme: theme, strings: strings, systemStyle: .glass, server: settings, activity: status.activity, active: active, color: enabled ? .accent : .secondary, label: status.text, labelAccent: status.textActive, exitLabel: status.exit, titleOverride: status.title, editing: editing, sectionId: self.section, action: {
                     arguments.activateServer(settings)
                 }, infoAction: {
                     arguments.editServer(settings)
@@ -364,7 +366,8 @@ private func proxySettingsControllerEntries(theme: PresentationTheme, strings: P
             var text: String
             switch server.connection {
                 case .socks5:
-                    text = strings.ChatSettings_ConnectionType_UseSocks5
+                    // Luckgram 119: an Xray node names its protocol, not the loopback SOCKS5
+                    text = luckgramXrayNode(server).map { LuckgramXrayLogic.label($0.proto) } ?? strings.ChatSettings_ConnectionType_UseSocks5
                 case .mtp:
                     text = strings.SocksProxySetup_ProxyTelegram
                 case .web:
@@ -388,6 +391,13 @@ private func proxySettingsControllerEntries(theme: PresentationTheme, strings: P
         if let socks = luckgramExitSocks(server), let key = LuckgramProxyExitChecker.key(socks) {
             displayStatus.exit = exitText(key)
         }
+        // Luckgram 119: an Xray node shows its protocol and real server, and the core's state
+        if let xray = luckgramXrayNode(server) {
+            if let problem = LuckgramXrayManager.shared.problem(zh: LuckgramStrings.isChinese) {
+                displayStatus = DisplayProxyServerStatus(exit: displayStatus.exit, activity: false, text: problem, textActive: false)
+            }
+            displayStatus.title = LuckgramXrayLogic.label(xray.proto) + " · " + xray.title
+        }
         entries.append(.server(index, theme, strings, server, server == proxySettings.activeServer, displayStatus, ProxySettingsServerItemEditing(editable: true, editing: state.editing, revealed: state.revealedServer == server), proxySettings.enabled))
         index += 1
     }
@@ -404,8 +414,32 @@ private func proxySettingsControllerEntries(theme: PresentationTheme, strings: P
     return entries.sorted(by: <)
 }
 
+/// Luckgram 119: the Xray node behind a server (a 127.0.0.1 SOCKS5 with our username), or nil.
+private func luckgramXrayNode(_ server: ProxyServerSettings) -> LuckgramXrayManager.Rec? {
+    guard case let .socks5(username, _) = server.connection else { return nil }
+    return LuckgramXrayManager.shared.node(host: server.host, port: Int(server.port), username: username)
+}
+
+/// Luckgram 119: local ports of the Xray nodes still in Telegram's list.
+private func luckgramXrayLivePorts(_ settings: ProxySettings) -> Set<Int> {
+    var out = Set<Int>()
+    for server in settings.servers {
+        if case let .socks5(username, _) = server.connection, server.host == LuckgramXrayManager.localHost, username == LuckgramXrayManager.user {
+            out.insert(Int(server.port))
+        }
+    }
+    return out
+}
+
 /// Luckgram 118: a proxy from a link or subscription as Telegram's server settings.
+/// Luckgram 119: an Xray node becomes the loopback SOCKS5 of the built-in core (nil when the core
+/// is off, missing or cannot build the node).
 private func luckgramServer(_ e: LuckgramProxyImportLogic.Entry) -> ProxyServerSettings? {
+    if e.type == LuckgramProxyImportLogic.typeXray {
+        let manager = LuckgramXrayManager.shared
+        guard manager.isEnabled, let node = LuckgramXrayLogic.parse(e.link), let port = manager.register(node) else { return nil }
+        return ProxyServerSettings(host: LuckgramXrayManager.localHost, port: Int32(port), connection: .socks5(username: LuckgramXrayManager.user, password: manager.password))
+    }
     if e.type == LuckgramProxyImportLogic.typeMtproto {
         guard let secret = MTProxySecret.parse(e.secret)?.serialize() else {
             return nil
@@ -417,6 +451,9 @@ private func luckgramServer(_ e: LuckgramProxyImportLogic.Entry) -> ProxyServerS
 
 /// Luckgram 118: identity of a server (MTProto secret as hex), for subscription refresh.
 private func luckgramEntry(_ server: ProxyServerSettings) -> LuckgramProxyImportLogic.Entry? {
+    if let xray = luckgramXrayNode(server), let node = LuckgramXrayLogic.parse(xray.link) {
+        return LuckgramProxyImportLogic.Entry(xray: node)
+    }
     switch server.connection {
     case let .socks5(username, password):
         return LuckgramProxyImportLogic.Entry(type: LuckgramProxyImportLogic.typeSocks5, host: server.host, port: Int(server.port), user: username, password: password, secret: nil)
@@ -483,6 +520,16 @@ public func proxySettingsController(accountManager: AccountManager<TelegramAccou
     var inputLinkImpl: (() -> Void)?
     var openSubImpl: ((String) -> Void)?
     var presentImpl: ((ViewController) -> Void)?
+    var luckgramAlertImpl: ((String) -> Void)?
+    var luckgramXrayMenuImpl: ((ProxyServerSettings, LuckgramXrayManager.Rec) -> Void)?
+    // Luckgram 119: redraw when the Xray core starts, stops or fails
+    let xrayTick = ValuePromise<Int>(0, ignoreRepeated: false)
+    var xrayTickValue = 0
+    var xrayLastPorts: Set<Int>?
+    LuckgramXrayManager.shared.onStateChanged = {
+        xrayTickValue += 1
+        xrayTick.set(xrayTickValue)
+    }
     let subsPromise = ValuePromise<[LuckgramProxyImport.Sub]>(LuckgramProxyImport.subs(), ignoreRepeated: true)
     
     let arguments = ProxySettingsControllerArguments(toggleEnabled: { value in
@@ -494,6 +541,11 @@ public func proxySettingsController(accountManager: AccountManager<TelegramAccou
     }, addNewServer: {
         pushControllerImpl?(proxyServerSettingsController(sharedContext: sharedContext, presentationData: presentationData, updatedPresentationData: updatedPresentationData, accountManager: accountManager, network: network, currentSettings: nil))
     }, activateServer: { server in
+        if luckgramXrayNode(server) != nil, !LuckgramXrayManager.shared.isEnabled {
+            // Luckgram 119: not selectable while the core is off or missing
+            luckgramAlertImpl?(LuckgramXrayManager.shared.problem(zh: LuckgramStrings.isChinese) ?? "")
+            return
+        }
         let _ = updateProxySettingsInteractively(accountManager: accountManager, { current in
             var current = current
             if current.activeServer != server {
@@ -505,6 +557,11 @@ public func proxySettingsController(accountManager: AccountManager<TelegramAccou
             return current
         }).start()
     }, editServer: { server in
+        if let xray = luckgramXrayNode(server) {
+            // Luckgram 119: an Xray node is not edited as the loopback SOCKS5 it runs as
+            luckgramXrayMenuImpl?(server, xray)
+            return
+        }
         pushControllerImpl?(proxyServerSettingsController(sharedContext: sharedContext, presentationData: presentationData, updatedPresentationData: updatedPresentationData, accountManager: accountManager, network: network, currentSettings: server))
     }, removeServer: { server in
         let _ = updateProxySettingsInteractively(accountManager: accountManager, { current in
@@ -566,8 +623,16 @@ public func proxySettingsController(accountManager: AccountManager<TelegramAccou
             exitChecker.ensure(proxies: settings.servers.compactMap(luckgramExitSocks), force: true)
         })
     }
-    let signal = combineLatest(updatedPresentationData, statePromise.get(), proxySettings.get(), statusesContext.statuses(), network.connectionStatus, exitChecker.statesSignal(), subsPromise.get())
-    |> map { presentationData, state, proxySettings, statuses, connectionStatus, exits, subs -> (ItemListControllerState, (ItemListNodeState, Any)) in
+    let signal = combineLatest(updatedPresentationData, statePromise.get(), proxySettings.get(), statusesContext.statuses(), network.connectionStatus, exitChecker.statesSignal(), subsPromise.get(), xrayTick.get())
+    |> map { presentationData, state, proxySettings, statuses, connectionStatus, exits, subs, _ -> (ItemListControllerState, (ItemListNodeState, Any)) in
+        // Luckgram 119: when the Xray nodes in the list change (added, imported, deleted here or by
+        // swiping), drop the nodes that left and restart the core with the rest
+        let xrayPorts = luckgramXrayLivePorts(proxySettings)
+        if xrayPorts != xrayLastPorts {
+            let force = xrayLastPorts != nil
+            xrayLastPorts = xrayPorts
+            LuckgramXrayManager.shared.reconcile(livePorts: xrayPorts, forceApply: force)
+        }
         exitChecker.ensure(proxies: proxySettings.servers.compactMap(luckgramExitSocks), force: false)
         var presentationData = presentationData
         let updatedTheme = presentationData.theme.withModalBlocksBackground()
@@ -624,6 +689,22 @@ public func proxySettingsController(accountManager: AccountManager<TelegramAccou
     let alert: (String?, String) -> Void = { title, text in
         presentImpl?(textAlertController(sharedContext: sharedContext, title: title, text: text, actions: [TextAlertAction(type: .defaultAction, title: importTexts.ok, action: {})]))
     }
+    luckgramAlertImpl = { text in
+        alert(nil, text)
+    }
+    luckgramXrayMenuImpl = { server, xray in
+        let texts = LuckgramXrayTexts(zh: LuckgramStrings.isChinese)
+        presentImpl?(textAlertController(sharedContext: sharedContext, title: xray.title, text: xray.detail, actions: [
+            TextAlertAction(type: .genericAction, title: texts.copyLink, action: {
+                UIPasteboard.general.string = xray.link
+                presentImpl?(OverlayStatusController(style: presentationData.theme.overallDarkAppearance ? .dark : .light, type: .genericSuccess(texts.linkCopied, false)))
+            }),
+            TextAlertAction(type: .destructiveAction, title: texts.delete, action: {
+                arguments.removeServer(server)
+            }),
+            TextAlertAction(type: .defaultAction, title: importTexts.cancel, action: {})
+        ], actionLayout: .vertical))
+    }
     let applySubscription: (String, LuckgramProxyImportLogic.Result, Bool) -> Void = { url, result, isRefresh in
         let previous = Set(LuckgramProxyImport.subs().first(where: { $0.url == url })?.keys ?? [])
         // keys through ProxyServerSettings so MTProto secrets compare in one form
@@ -631,6 +712,9 @@ public func proxySettingsController(accountManager: AccountManager<TelegramAccou
             guard let server = luckgramServer(e), let k = luckgramEntry(server) else { return nil }
             return (k, server)
         }
+        // Xray nodes the core cannot use (off, missing, unbuildable) count as skipped
+        let skipped = result.skipped + (result.proxies.count - now.count)
+        let coreOff = !LuckgramXrayManager.shared.isEnabled && result.proxies.contains(where: { $0.type == LuckgramProxyImportLogic.typeXray })
         var added = 0
         var removed = 0
         var owned: [String] = []
@@ -657,7 +741,7 @@ public func proxySettingsController(accountManager: AccountManager<TelegramAccou
         }) |> deliverOnMainQueue).start(completed: {
             LuckgramProxyImport.record(url: url, keys: owned)
             subsPromise.set(LuckgramProxyImport.subs())
-            alert(isRefresh ? importTexts.refreshTitle : importTexts.importTitle, importTexts.result(total: now.count, added: added, removed: removed, skipped: result.skipped))
+            alert(isRefresh ? importTexts.refreshTitle : importTexts.importTitle, importTexts.result(total: now.count, added: added, removed: removed, skipped: skipped, coreProblem: coreOff ? LuckgramXrayManager.shared.problem(zh: LuckgramStrings.isChinese) : nil))
         })
     }
     let importSubscription: (String, Bool) -> Void = { url, isRefresh in
@@ -682,8 +766,16 @@ public func proxySettingsController(accountManager: AccountManager<TelegramAccou
         let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         switch LuckgramProxyImportLogic.kind(text) {
         case .proxy:
-            guard let e = LuckgramProxyImportLogic.parseLink(text), let server = luckgramServer(e) else {
+            guard let e = LuckgramProxyImportLogic.parseLink(text) else {
                 alert(importTexts.unknownTitle, importTexts.unknown)
+                return
+            }
+            if e.type == LuckgramProxyImportLogic.typeXray, !LuckgramXrayManager.shared.isEnabled {
+                alert(importTexts.inputTitle, LuckgramXrayManager.shared.problem(zh: LuckgramStrings.isChinese) ?? "")
+                return
+            }
+            guard let server = luckgramServer(e) else {
+                alert(importTexts.inputTitle, e.type == LuckgramProxyImportLogic.typeXray ? LuckgramXrayTexts(zh: LuckgramStrings.isChinese).unavailable : importTexts.unknown)
                 return
             }
             var existed = false

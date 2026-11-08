@@ -402,6 +402,8 @@ swift_library(
     deps = [
         "//submodules/TelegramUI:TelegramUI",
         "//third-party/boringssl:crypto",
+        # Luckgram 119: built-in Xray core, app binary only (found with dlsym by LuckgramUI)
+        "//third-party/LuckgramXray:LuckgramXray",
     ],
 )
 

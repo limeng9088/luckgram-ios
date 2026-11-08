@@ -30,6 +30,8 @@ final class ProxySettingsServerItem: ListViewItem, ItemListItem, ItemListRevealO
     let labelAccent: Bool
     /// Luckgram 117: exit IP / country, shown as a second status line.
     let exitLabel: String?
+    /// Luckgram 119: an Xray node shows "VLESS · name" instead of its 127.0.0.1 address.
+    let titleOverride: String?
     let editing: ProxySettingsServerItemEditing
     let sectionId: ItemListSectionId
     let action: () -> Void
@@ -41,7 +43,7 @@ final class ProxySettingsServerItem: ListViewItem, ItemListItem, ItemListRevealO
         return self.editing.revealed
     }
     
-    init(theme: PresentationTheme, strings: PresentationStrings, systemStyle: ItemListSystemStyle = .legacy, server: ProxyServerSettings, activity: Bool, active: Bool, color: ItemListCheckboxItemColor, label: String, labelAccent: Bool, exitLabel: String? = nil, editing: ProxySettingsServerItemEditing, sectionId: ItemListSectionId, action: @escaping () -> Void, infoAction: @escaping () -> Void, setServerWithRevealedOptions: @escaping (ProxyServerSettings?, ProxyServerSettings?) -> Void, removeServer: @escaping (ProxyServerSettings) -> Void) {
+    init(theme: PresentationTheme, strings: PresentationStrings, systemStyle: ItemListSystemStyle = .legacy, server: ProxyServerSettings, activity: Bool, active: Bool, color: ItemListCheckboxItemColor, label: String, labelAccent: Bool, exitLabel: String? = nil, titleOverride: String? = nil, editing: ProxySettingsServerItemEditing, sectionId: ItemListSectionId, action: @escaping () -> Void, infoAction: @escaping () -> Void, setServerWithRevealedOptions: @escaping (ProxyServerSettings?, ProxyServerSettings?) -> Void, removeServer: @escaping (ProxyServerSettings) -> Void) {
         self.theme = theme
         self.strings = strings
         self.systemStyle = systemStyle
@@ -52,6 +54,7 @@ final class ProxySettingsServerItem: ListViewItem, ItemListItem, ItemListRevealO
         self.label = label
         self.labelAccent = labelAccent
         self.exitLabel = exitLabel
+        self.titleOverride = titleOverride
         self.editing = editing
         self.sectionId = sectionId
         self.action = action
@@ -253,8 +256,12 @@ private final class ProxySettingsServerItemNode: ItemListRevealOptionsItemNode {
             // render as `host/my%5Fapp`. The address is already restricted to ASCII
             // alphanumerics, `-`, `_`, `.` and `/` by canonicalHost/canonicalPath.
             let webProxyAddress = item.server.webProxyAddress
+            if let titleOverride = item.titleOverride {
+                titleAttributedString.append(NSAttributedString(string: titleOverride, font: titleFont, textColor: item.theme.list.itemPrimaryTextColor))
+            } else {
             titleAttributedString.append(NSAttributedString(string: webProxyAddress ?? urlEncodedStringFromString(item.server.host), font: titleFont, textColor: item.theme.list.itemPrimaryTextColor))
-            if webProxyAddress == nil {
+            }
+            if webProxyAddress == nil && item.titleOverride == nil {
                 titleAttributedString.append(NSAttributedString(string: ":\(item.server.port)", font: titleFont, textColor: item.theme.list.itemSecondaryTextColor))
             }
             let statusAttributedString = NSMutableAttributedString(string: item.label, font: statusFont, textColor: item.labelAccent ? item.theme.list.itemAccentColor : item.theme.list.itemSecondaryTextColor)

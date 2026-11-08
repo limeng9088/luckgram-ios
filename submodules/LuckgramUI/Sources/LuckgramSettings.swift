@@ -27,6 +27,7 @@ public final class LuckgramSettings {
             // Fresh install: the Keychain survives app deletion on iOS, so drop anything an
             // earlier installation left behind.
             LuckgramKeychain.delete(account: LuckgramKeychain.deviceTokenAccount)
+            LuckgramKeychain.delete(account: LuckgramKeychain.xrayNodesAccount) // Luckgram 119
             self.defaults.set(true, forKey: LuckgramSettings.installMarkerKey)
         }
         // Luckgram 32: account limit from remote config + Pro status.

@@ -1,8 +1,9 @@
 import Foundation
 
 /// specs#118: what a scanned or typed text means for the proxy list, and the proxies in a
-/// mihomo / Clash subscription. Only SOCKS5 (and MTProto from tg links) can be used by the app;
-/// everything else in a subscription is counted as skipped.
+/// mihomo / Clash subscription. SOCKS5 and MTProto go into Telegram's list as they are; VLESS,
+/// VMess, Trojan and Shadowsocks (specs#119) are `typeXray` entries run by the built-in Xray core.
+/// Everything else in a subscription is counted as skipped.
 ///
 /// Foundation only, unit-tested in `LuckgramProxyImportLogicTests`. Same rules as Android
 /// `ProxyImportLogic`.
@@ -15,6 +16,8 @@ public enum LuckgramProxyImportLogic {
 
     public static let typeSocks5 = "socks5"
     public static let typeMtproto = "mtproto"
+    /// specs#119: a VLESS / VMess / Trojan / SS node; `link` is its canonical share link.
+    public static let typeXray = "xray"
     /// Largest subscription accepted.
     public static let maxBytes = 2 * 1024 * 1024
 
@@ -25,6 +28,10 @@ public enum LuckgramProxyImportLogic {
         public let user: String
         public let password: String
         public let secret: String
+        /// `typeXray` only: canonical share link, protocol and name.
+        public let link: String
+        public let proto: String
+        public let name: String
 
         public init(type: String, host: String, port: Int, user: String?, password: String?, secret: String?) {
             self.type = type
@@ -33,10 +40,26 @@ public enum LuckgramProxyImportLogic {
             self.user = user ?? ""
             self.password = password ?? ""
             self.secret = secret ?? ""
+            self.link = ""
+            self.proto = ""
+            self.name = ""
+        }
+
+        public init(xray node: LuckgramXrayLogic.Node) {
+            self.type = LuckgramProxyImportLogic.typeXray
+            self.host = node.host
+            self.port = node.port
+            self.user = ""
+            self.password = ""
+            self.secret = ""
+            self.link = node.link
+            self.proto = node.proto
+            self.name = node.name
         }
 
         /// Identity used to recognise the same proxy across refreshes.
         public var key: String {
+            if type == LuckgramProxyImportLogic.typeXray { return LuckgramXrayLogic.key(link: link) }
             return "\(type)|\(host.lowercased())|\(port)|\(user)|\(password)|\(secret)"
         }
 
@@ -89,12 +112,16 @@ public enum LuckgramProxyImportLogic {
 
     // MARK: - single links
 
-    /// `tg://socks|proxy?…`, `https://t.me/socks|proxy?…` (also telegram.me / telegram.dog) or
-    /// `socks5://[user:pass@]host:port` (`socks://`, `socks5h://`). Nil when none or incomplete.
+    /// `tg://socks|proxy?…`, `https://t.me/socks|proxy?…` (also telegram.me / telegram.dog),
+    /// `socks5://[user:pass@]host:port` (`socks://`, `socks5h://`), or a `vless:// vmess://
+    /// trojan:// ss://` share link (specs#119). Nil when none or incomplete.
     public static func parseLink(_ raw: String?) -> Entry? {
         guard let raw else { return nil }
         let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         let lower = text.lowercased()
+        if LuckgramXrayLogic.looksLikeLink(text) {
+            return LuckgramXrayLogic.parse(text).map { Entry(xray: $0) }
+        }
         for p in ["socks5h://", "socks5://", "socks://"] where lower.hasPrefix(p) {
             return parseSocksUrl(String(text.dropFirst(p.count)))
         }
@@ -236,6 +263,8 @@ public enum LuckgramProxyImportLogic {
         var cur: Int?
         var itemIndent = -1
         var keyIndent = -1
+        // nested maps of the current item: indent of each open key and its dotted prefix
+        var open: [(indent: Int, prefix: String)] = []
         for line in text.split(separator: "\n", omittingEmptySubsequences: false) {
             let t = line.trimmingCharacters(in: .whitespaces)
             if t.isEmpty || t.hasPrefix("#") { continue }
@@ -253,18 +282,25 @@ public enum LuckgramProxyImportLogic {
                     let rest = after.trimmingCharacters(in: .whitespaces)
                     keyIndent = indent + 1 + leadingSpaces(after)
                     var m: [String: String] = [:]
+                    open.removeAll()
                     if rest.hasPrefix("{") {
-                        parseFlowMap(rest, into: &m)
+                        parseFlowMap(rest, into: &m, prefix: "")
                         items.append(m); cur = nil
                     } else {
-                        if !rest.isEmpty { putPair(rest, into: &m) }
+                        if !rest.isEmpty, let opened = putPair(rest, into: &m, prefix: "") {
+                            open.append((keyIndent, opened))
+                        }
                         items.append(m); cur = items.count - 1
                     }
                     continue
                 }
             }
-            if let c = cur, indent == keyIndent, !t.hasPrefix("-") {
-                putPair(t, into: &items[c])
+            // a key of the current block item; nested maps become dotted keys (ws-opts.path)
+            guard let c = cur, indent >= keyIndent, !t.hasPrefix("-") else { continue }
+            while let last = open.last, last.indent >= indent { open.removeLast() }
+            if indent > keyIndent && open.isEmpty { continue } // under a list or scalar
+            if let opened = putPair(t, into: &items[c], prefix: open.last?.prefix ?? "") {
+                open.append((indent, opened))
             }
         }
         var found: [Entry] = []
@@ -281,19 +317,32 @@ public enum LuckgramProxyImportLogic {
     }
 
     private static func fromClash(_ m: [String: String]) -> Entry? {
-        guard let type = m["type"], type.lowercased() == "socks5" else { return nil }
+        guard let type = m["type"] else { return nil }
+        if type.lowercased() != "socks5" {
+            guard let link = LuckgramXrayLogic.fromClash(m), let node = LuckgramXrayLogic.parse(link) else { return nil }
+            return Entry(xray: node)
+        }
         if let tls = m["tls"], tls.lowercased() == "true" { return nil } // Telegram has no SOCKS5 over TLS
         guard let server = m["server"], !server.isEmpty, let port = parsePort(m["port"]) else { return nil }
         return Entry(type: typeSocks5, host: server, port: port, user: m["username"], password: m["password"], secret: nil)
     }
 
-    private static func putPair(_ t: String, into m: inout [String: String]) {
-        guard let colon = keyColon(t), colon > 0 else { return }
+    /// `key: value` into `m` as `prefix + key`; a flow map value is flattened. Returns the prefix
+    /// for the keys below when the value is empty (a block map opens), else nil.
+    @discardableResult
+    private static func putPair(_ t: String, into m: inout [String: String], prefix: String) -> String? {
+        guard let colon = keyColon(t), colon > 0 else { return nil }
         let chars = Array(t)
-        let key = unquote(String(chars[..<colon]).trimmingCharacters(in: .whitespaces))
+        let key = prefix + unquote(String(chars[..<colon]).trimmingCharacters(in: .whitespaces))
         let value = String(chars[(colon + 1)...]).trimmingCharacters(in: .whitespaces)
-        if value.isEmpty || value.hasPrefix("{") || value.hasPrefix("[") { return } // nested
+        if value.isEmpty || value.hasPrefix("#") { return key + "." }
+        if value.hasPrefix("{") {
+            parseFlowMap(value, into: &m, prefix: key + ".")
+            return nil
+        }
+        if value.hasPrefix("[") { return nil } // lists are not used
         m[key] = unquote(stripComment(value))
+        return nil
     }
 
     /// Index of the ':' ending a key (outside quotes, followed by a space or the end).
@@ -319,8 +368,8 @@ public enum LuckgramProxyImportLogic {
         return v
     }
 
-    /// `{a: 1, b: "x, y", c: {d: e}}` → a, b (nested maps skipped).
-    static func parseFlowMap(_ s: String, into m: inout [String: String]) {
+    /// `{a: 1, b: "x, y", c: {d: e}}` → a, b, c.d (with `prefix` in front).
+    static func parseFlowMap(_ s: String, into m: inout [String: String], prefix: String = "") {
         guard let start = s.firstIndex(of: "{") else { return }
         var depth = 0
         var quote: Character?
@@ -337,18 +386,18 @@ public enum LuckgramProxyImportLogic {
                 depth += 1; part.append(c)
             } else if c == "}" || c == "]" {
                 if depth == 0 {
-                    putPair(part.trimmingCharacters(in: .whitespaces), into: &m)
+                    putPair(part.trimmingCharacters(in: .whitespaces), into: &m, prefix: prefix)
                     return
                 }
                 depth -= 1; part.append(c)
             } else if c == "," && depth == 0 {
-                putPair(part.trimmingCharacters(in: .whitespaces), into: &m)
+                putPair(part.trimmingCharacters(in: .whitespaces), into: &m, prefix: prefix)
                 part = ""
             } else {
                 part.append(c)
             }
         }
-        putPair(part.trimmingCharacters(in: .whitespaces), into: &m)
+        putPair(part.trimmingCharacters(in: .whitespaces), into: &m, prefix: prefix)
     }
 
     static func unquote(_ v: String) -> String {

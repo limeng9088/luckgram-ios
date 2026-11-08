@@ -83,6 +83,18 @@ jobs:
           sudo chown "$USER" /Users/Shared
           mv "$GITHUB_WORKSPACE/src" "$SOURCE_DIR"
 
+      # Luckgram 119: built-in Xray core (libXray MIT + Xray-core MPL-2.0), not in git. Cached on
+      # this runner per version, so only a version bump rebuilds it (~10 min).
+      - name: Set up Go (Xray core)
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.27.3'
+          cache: false
+
+      - name: Build Xray core
+        working-directory: ${{ env.SOURCE_DIR }}
+        run: scripts/luckgram-xray-build.sh third-party/LuckgramXray/LuckgramXray.xcframework /Users/runner/luckgram-xray-cache
+
       # Only master saves the cache (see "Save bazel cache"). Branches read master's newest one:
       # GitHub keeps 10GB per repo and one cache is ~7GB, so branch caches used to evict master's
       # and every build after that started cold (67 min instead of ~25).
@@ -127,6 +139,14 @@ jobs:
           /usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$PLIST"
           /usr/libexec/PlistBuddy -c 'Print :CFBundleDisplayName' "$PLIST"
           test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$PLIST")" = com.luckgram.messenger
+          # Luckgram 119: the Xray core is in the app (only there: extensions must not link it)
+          APP=$(ls -d /tmp/ipa/Payload/*.app)
+          ls -l "$APP/Frameworks/LuckgramXray.framework/LuckgramXray"
+          du -sh "$APP/Frameworks/LuckgramXray.framework" | tee -a "$GITHUB_STEP_SUMMARY"
+          nm -gU "$APP/Frameworks/LuckgramXray.framework/LuckgramXray" | grep -q ' _CGoInvoke$'
+          for x in "$APP"/PlugIns/*.appex/*; do
+            if [ -f "$x" ] && otool -L "$x" 2>/dev/null | grep -q LuckgramXray; then echo "::error::$x links LuckgramXray"; exit 1; fi
+          done
 
       # luckgram-specs#57：iOS 26 以下没有 /usr/lib/swift/libswiftWebKit.dylib，App 链接了它就启动闪退。
       # 任何 Mach-O（主程序、framework、扩展）都不能链接它，弱链接也不行。失败时不发 release。
