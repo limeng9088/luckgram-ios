@@ -83,8 +83,7 @@ jobs:
           sudo chown "$USER" /Users/Shared
           mv "$GITHUB_WORKSPACE/src" "$SOURCE_DIR"
 
-      # Luckgram 119: built-in Xray core (libXray MIT + Xray-core MPL-2.0), not in git. Cached on
-      # this runner per version, so only a version bump rebuilds it (~10 min).
+      # Luckgram 119: built-in Xray core (libXray MIT + Xray-core MPL-2.0), not in git (~2 min).
       - name: Set up Go (Xray core)
         uses: actions/setup-go@v5
         with:
@@ -93,7 +92,12 @@ jobs:
 
       - name: Build Xray core
         working-directory: ${{ env.SOURCE_DIR }}
-        run: scripts/luckgram-xray-build.sh third-party/LuckgramXray/LuckgramXray.xcframework /Users/runner/luckgram-xray-cache
+        # Each job gets a fresh VM, so no cache dir; the Go toolchain is removed afterwards so the
+        # Bazel build keeps the disk (the dbg simulator build is close to the runner's limit).
+        run: |
+          scripts/luckgram-xray-build.sh third-party/LuckgramXray/LuckgramXray.xcframework
+          rm -rf "$(go env GOROOT)" "$RUNNER_TOOL_CACHE/go" "$(go env GOCACHE 2>/dev/null || echo /nonexistent)" 2>/dev/null || true
+          df -h / | tail -1
 
       # Only master saves the cache (see "Save bazel cache"). Branches read master's newest one:
       # GitHub keeps 10GB per repo and one cache is ~7GB, so branch caches used to evict master's
