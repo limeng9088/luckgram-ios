@@ -366,7 +366,8 @@ private func proxySettingsControllerEntries(theme: PresentationTheme, strings: P
             var text: String
             switch server.connection {
                 case .socks5:
-                    text = strings.ChatSettings_ConnectionType_UseSocks5
+                    // Luckgram 119: an Xray node names its protocol, not the loopback SOCKS5
+                    text = luckgramXrayNode(server).map { LuckgramXrayLogic.label($0.proto) } ?? strings.ChatSettings_ConnectionType_UseSocks5
                 case .mtp:
                     text = strings.SocksProxySetup_ProxyTelegram
                 case .web:
