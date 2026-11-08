@@ -69,6 +69,18 @@ jobs:
           rm -rf "$SOURCE_DIR"
           mv "$GITHUB_WORKSPACE/src" "$SOURCE_DIR"
 
+      # Luckgram 119: built-in Xray core (libXray MIT + Xray-core MPL-2.0), not in git. Cached on
+      # this runner per version, so only a version bump rebuilds it (~10 min).
+      - name: Set up Go (Xray core)
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.27.3'
+          cache: false
+
+      - name: Build Xray core
+        working-directory: ${{ env.SOURCE_DIR }}
+        run: scripts/luckgram-xray-build.sh third-party/LuckgramXray/LuckgramXray.xcframework /Users/runner/luckgram-xray-cache
+
       - name: Restore bazel cache (simulator)
         uses: actions/cache/restore@v4
         with:

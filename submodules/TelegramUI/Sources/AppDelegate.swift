@@ -355,6 +355,9 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
         precondition(!testIsLaunched)
         testIsLaunched = true
         CrashReportCollector.shared.start()
+        // Luckgram 119: start the built-in Xray core before the first connection, so a selected
+        // VLESS / VMess / Trojan / SS node works right away
+        LuckgramXrayManager.shared.start()
         
         let _ = voipTokenPromise.get().start(next: { token in
             self.voipDeviceToken.set(.single(token))
@@ -2146,6 +2149,8 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
     }
 
     func handleWillEnterForeground() {
+        // Luckgram 119: iOS may have closed the core's listening sockets while suspended
+        LuckgramXrayManager.shared.start()
         if self.isActiveValue {
             self.isInForegroundValue = true
             self.isInForegroundPromise.set(true)

@@ -132,6 +132,9 @@ public enum LuckgramFeatures {
         add(.toggle(LuckgramScanLogic.featureKey, group: .profileOrganize, default: true,
             title: ("扫一扫和代理配置", "Scan and proxy settings"),
             description: ("聊天列表右上角「⋯」菜单：扫一扫加好友、代理配置", "The \"⋯\" menu at the top right of the chat list: scan to add friends, proxy settings")))
+        add(.toggle(LuckgramXrayManager.featureKey, group: .profileOrganize, default: true,
+            title: ("内置代理内核", "Built-in proxy core"),
+            description: ("在 App 内运行 Xray，可直接使用 VLESS、VMess、Trojan、Shadowsocks 节点；只代理 Luckgram 自己的流量，不用 VPN", "Runs Xray inside the app so VLESS, VMess, Trojan and Shadowsocks nodes work; only Luckgram's own traffic, no VPN")))
 
         // ---- 发现 / Discover
         add(.toggle(NearbyLogic.featureKey, group: .discover, default: true,
