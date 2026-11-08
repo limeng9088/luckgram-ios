@@ -30,7 +30,7 @@ jobs:
       - name: Run tests
         run: |
           set -euo pipefail
-          # module | source file | test file
+          # module | source file(s, comma separated) | test file
           SUITES="
           LuckgramRoundVideo|submodules/TelegramUI/Components/LuckgramRoundVideo/Sources/LuckgramRoundVideoGeometry.swift|submodules/TelegramUI/Components/LuckgramRoundVideo/Tests/LuckgramRoundVideoGeometryTests.swift
           LuckgramUI|submodules/LuckgramUI/Sources/LuckgramRemoteConfigLogic.swift|submodules/LuckgramUI/Tests/LuckgramRemoteConfigLogicTests.swift
@@ -55,17 +55,20 @@ jobs:
           LuckgramUI|submodules/LuckgramUI/Sources/Diag/LuckgramEndpoints.swift|submodules/LuckgramUI/Tests/LuckgramEndpointsTests.swift
           LuckgramUI|submodules/LuckgramUI/Sources/LuckgramVersionLine.swift|submodules/LuckgramUI/Tests/LuckgramVersionLineTests.swift
           LuckgramUI|submodules/LuckgramUI/Sources/ProxyExit/LuckgramProxyExitLogic.swift|submodules/LuckgramUI/Tests/LuckgramProxyExitLogicTests.swift
-          LuckgramUI|submodules/LuckgramUI/Sources/ProxyImport/LuckgramProxyImportLogic.swift|submodules/LuckgramUI/Tests/LuckgramProxyImportLogicTests.swift
+          LuckgramUI|submodules/LuckgramUI/Sources/ProxyImport/LuckgramProxyImportLogic.swift,submodules/LuckgramUI/Sources/Xray/LuckgramXrayLogic.swift|submodules/LuckgramUI/Tests/LuckgramProxyImportLogicTests.swift
+          LuckgramUI|submodules/LuckgramUI/Sources/Xray/LuckgramXrayLogic.swift|submodules/LuckgramUI/Tests/LuckgramXrayLogicTests.swift
           LuckgramUI|submodules/LuckgramUI/Sources/Agents/LuckgramAgentMarketLogic.swift|submodules/LuckgramUI/Tests/LuckgramAgentMarketLogicTests.swift
           LuckgramUI|submodules/LuckgramUI/Sources/ImageTranslate/LuckgramImageTranslateLogic.swift|submodules/LuckgramUI/Tests/LuckgramImageTranslateLogicTests.swift
           "
           ran=0
           for line in $SUITES; do
             IFS='|' read -r MOD SRC TST <<< "$line"
-            if [ ! -f "$SRC" ] || [ ! -f "$TST" ]; then echo "skip $MOD ($SRC)"; continue; fi
-            P="$RUNNER_TEMP/pkg-$(basename "$SRC" .swift)"
+            missing=0
+            for f in ${SRC//,/ } "$TST"; do [ -f "$f" ] || missing=1; done
+            if [ "$missing" = 1 ]; then echo "skip $MOD ($SRC)"; continue; fi
+            P="$RUNNER_TEMP/pkg-$(basename "$TST" .swift)"
             mkdir -p "$P/Sources/$MOD" "$P/Tests/${MOD}Tests"
-            cp "$SRC" "$P/Sources/$MOD/"
+            for f in ${SRC//,/ }; do cp "$f" "$P/Sources/$MOD/"; done
             cp "$TST" "$P/Tests/${MOD}Tests/"
             printf '%s\n' '// swift-tools-version:5.9' 'import PackageDescription' \
               "let package = Package(name: \"pkg\", targets: [.target(name: \"$MOD\"), .testTarget(name: \"${MOD}Tests\", dependencies: [\"$MOD\"])])" > "$P/Package.swift"

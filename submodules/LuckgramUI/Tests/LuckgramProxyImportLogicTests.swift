@@ -49,7 +49,7 @@ final class LuckgramProxyImportLogicTests: XCTestCase {
     static let clash = [
         "mixed-port: 7890",
         "proxies:",
-        "  - {name: 'SG·vless', type: vless, server: agg.example.com, port: 443, uuid: x, ws-opts: {path: /a, headers: {Host: agg.example.com}}}",
+        "  - {name: 'SG·vless', type: vless, server: agg.example.com, port: 443, uuid: x, network: ws, ws-opts: {path: /a, headers: {Host: agg.example.com}}}",
         "  - {name: \"s5, flow\", type: socks5, server: 198.51.100.24, port: 1080, username: u1, password: 'p, 1'}",
         "  - name: s5-block",
         "    type: socks5",
@@ -76,19 +76,25 @@ final class LuckgramProxyImportLogicTests: XCTestCase {
         "  - MATCH,g",
     ].joined(separator: "\n")
 
-    func testClashOnlySocks5() {
+    func testClashSocks5AndXray() {
         let r = L.parseSubscription(Self.clash)
-        XCTAssertEqual(r.proxies.count, 2)
-        XCTAssertEqual(r.proxies[0].host, "198.51.100.24")
-        XCTAssertEqual(r.proxies[0].password, "p, 1")
-        XCTAssertEqual(r.proxies[1].host, "198.51.100.77")
-        XCTAssertEqual(r.proxies[1].port, 1081)
-        XCTAssertEqual(r.proxies[1].user, "u2")
-        XCTAssertEqual(r.proxies[1].password, "p2")
-        XCTAssertEqual(r.skipped, 3)
+        XCTAssertEqual(r.proxies.count, 3)
+        let v = r.proxies[0]
+        XCTAssertEqual(v.type, L.typeXray)
+        XCTAssertEqual(v.proto, "vless")
+        XCTAssertEqual(v.name, "SG·vless")
+        XCTAssertEqual(v.host, "agg.example.com")
+        XCTAssertTrue(v.link.contains("type=ws") && v.link.contains("path=%2Fa") && v.link.contains("host=agg.example.com"), v.link)
+        XCTAssertEqual(r.proxies[1].host, "198.51.100.24")
+        XCTAssertEqual(r.proxies[1].password, "p, 1")
+        XCTAssertEqual(r.proxies[2].host, "198.51.100.77")
+        XCTAssertEqual(r.proxies[2].port, 1081)
+        XCTAssertEqual(r.proxies[2].user, "u2")
+        XCTAssertEqual(r.proxies[2].password, "p2")
+        XCTAssertEqual(r.skipped, 2) // socks5 over TLS, ss without cipher (its nested "type: socks5" ignored)
     }
 
-    func testAllVless() {
+    func testVlessWithoutUuidSkipped() {
         let r = L.parseSubscription("proxies:\n- {name: a, type: vless, server: x, port: 443}\n- {name: b, type: vless, server: y, port: 443}\n")
         XCTAssertEqual(r.proxies.count, 0)
         XCTAssertEqual(r.skipped, 2)
@@ -98,11 +104,11 @@ final class LuckgramProxyImportLogicTests: XCTestCase {
         let list = "tg://socks?server=198.51.100.1&port=1080\nvless://abc@x:443\nsocks5://u:p@198.51.100.2:1080\n\n# c\nsocks5://u:p@198.51.100.2:1080\n"
         let b64 = Data(list.utf8).base64EncodedString()
         let r = L.parseSubscription(b64)
-        XCTAssertEqual(r.proxies.count, 2)
-        XCTAssertEqual(r.skipped, 1)
-        XCTAssertEqual(L.parseSubscription(list).proxies.count, 2)
+        XCTAssertEqual(r.proxies.count, 3) // tg, vless, socks5 (duplicate dropped)
+        XCTAssertEqual(r.skipped, 0)
+        XCTAssertEqual(L.parseSubscription(list).proxies.count, 3)
         let noPad = b64.replacingOccurrences(of: "=", with: "").replacingOccurrences(of: "+", with: "-").replacingOccurrences(of: "/", with: "_")
-        XCTAssertEqual(L.parseSubscription(noPad).proxies.count, 2)
+        XCTAssertEqual(L.parseSubscription(noPad).proxies.count, 3)
     }
 
     func testRefreshDiff() {
