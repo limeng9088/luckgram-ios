@@ -217,7 +217,9 @@ public final class LuckgramXrayManager {
         var ok = false
         if isEnabled && !s.nodes.isEmpty {
             let runs = s.nodes.map { LuckgramXrayLogic.Run(localPort: $0.localPort, outboundJson: $0.outbound) }
-            if let config = LuckgramXrayLogic.buildConfig(runs, user: LuckgramXrayManager.user, password: s.pass) {
+            // debugging only: `defaults write com.luckgram.messenger LuckgramXrayLogLevel info`
+            let level = UserDefaults.standard.string(forKey: "LuckgramXrayLogLevel") ?? "warning"
+            if let config = LuckgramXrayLogic.buildConfig(runs, user: LuckgramXrayManager.user, password: s.pass, logLevel: level) {
                 let r = LuckgramXrayManager.call("runXray", ["xrayJson": config])
                 ok = (r["success"] as? Bool) == true
                 if !ok { error = LuckgramXrayManager.shorten((r["error"] as? String) ?? "unknown error") }

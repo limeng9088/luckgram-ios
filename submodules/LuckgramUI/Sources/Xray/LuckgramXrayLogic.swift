@@ -267,7 +267,7 @@ public enum LuckgramXrayLogic {
 
     /// The whole Xray config: one `127.0.0.1` SOCKS5 inbound per node, with the same username /
     /// password on each, routed to that node's outbound. Anything unmatched is dropped.
-    public static func buildConfig(_ runs: [Run], user: String, password: String) -> String? {
+    public static func buildConfig(_ runs: [Run], user: String, password: String, logLevel: String = "warning") -> String? {
         var inbounds: [[String: Any]] = []
         var outbounds: [[String: Any]] = [["tag": "block", "protocol": "blackhole"]]
         var rules: [[String: Any]] = []
@@ -293,7 +293,7 @@ public enum LuckgramXrayLogic {
             rules.append(["type": "field", "inboundTag": [inTag], "outboundTag": outTag])
         }
         let config: [String: Any] = [
-            "log": ["loglevel": "warning", "access": "none"],
+            "log": ["loglevel": logLevel, "access": "none"],
             "inbounds": inbounds,
             "outbounds": outbounds,
             "routing": ["domainStrategy": "AsIs", "rules": rules] as [String: Any]
