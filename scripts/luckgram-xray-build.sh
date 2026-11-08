@@ -26,7 +26,10 @@ if [ -n "$CACHE" ] && [ -f "$CACHE/$LIBXRAY_VERSION-r$REV/$NAME.xcframework/Info
 fi
 
 WORK=$(mktemp -d)
-trap 'rm -rf "$WORK"' EXIT
+trap 'chmod -R u+w "$WORK" 2>/dev/null; rm -rf "$WORK"' EXIT
+# Go's build and module caches (several GB for three targets) stay in WORK and are deleted with
+# it, so the Bazel build that follows has the runner's whole disk.
+export GOCACHE="$WORK/gocache" GOMODCACHE="$WORK/gomod" GOFLAGS=-modcacherw
 git clone -q --depth 1 --branch "$LIBXRAY_VERSION" https://github.com/XTLS/libXray.git "$WORK/libXray"
 go version
 
@@ -39,7 +42,7 @@ build_slice() {
   mkdir -p "$dir"
   (
     cd "$WORK/libXray"
-    GOOS=ios GOARCH=$goarch CGO_ENABLED=1 GOFLAGS=-tags=ios \
+    GOOS=ios GOARCH=$goarch CGO_ENABLED=1 GOFLAGS="-modcacherw -tags=ios" \
     CC="xcrun --sdk $sdk clang" CXX="xcrun --sdk $sdk clang++" \
     CGO_CFLAGS="$flags" CGO_CXXFLAGS="$flags" CGO_LDFLAGS="$flags" \
       go build -trimpath -buildvcs=false -buildmode=c-archive \
@@ -96,6 +99,7 @@ for f in "$WORK/iphoneos-arm64/$NAME" "$WORK/sim-$NAME"; do
   ls -l "$f"
   nm -gU "$f" | grep -E ' _CGo(Invoke|Free)$'
 done
+du -sh "$WORK/gocache" "$WORK/gomod" 2>/dev/null || true
 
 if [ -n "$CACHE" ]; then
   mkdir -p "$CACHE/$LIBXRAY_VERSION-r$REV"
