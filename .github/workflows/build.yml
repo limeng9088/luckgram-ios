@@ -299,8 +299,10 @@ jobs:
           if [ -n "$DL_BASE" ]; then
             EXTRA=$(printf ',"sha256":"%s","size":%s' "$(shasum -a 256 "$IPA" | cut -d' ' -f1)" "$(stat -f %z "$IPA")")
           fi
+          # ${DL_BASE:-x} expands to DL_BASE itself when set, so pick the URL explicitly
+          if [ -n "${DL_BASE:-}" ]; then URL="$DL_BASE/ios/${TAG}/$(basename "$IPA")"; else URL="https://github.com/${GITHUB_REPOSITORY}/releases/tag/${TAG}"; fi
           BODY=$(printf '{"platform":"%s","version":"%s","build":%s,"url":"%s"%s,"source":"%s"}' \
-            ios "$APP_VERSION" "$BUILD_NUMBER" "${DL_BASE:+$DL_BASE/ios/${TAG}/$(basename "$IPA")}${DL_BASE:-https://github.com/${GITHUB_REPOSITORY}/releases/tag/${TAG}}" "$EXTRA" "${GITHUB_REPOSITORY}@${GITHUB_SHA} run ${GITHUB_RUN_NUMBER}")
+            ios "$APP_VERSION" "$BUILD_NUMBER" "$URL" "$EXTRA" "${GITHUB_REPOSITORY}@${GITHUB_SHA} run ${GITHUB_RUN_NUMBER}")
           # Tokens only via env -> stdin (never argv); a missing secret skips that stage.
           set -euo pipefail
           publish() {
