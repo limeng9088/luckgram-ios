@@ -18,6 +18,7 @@ concurrency:
 
 permissions:
   contents: write
+  id-token: write  # OIDC role for the dl.luckgram.cc upload (no stored AWS keys)
   actions: write   # delete old bazel caches
 
 jobs:
@@ -209,6 +210,43 @@ jobs:
             --title "Luckgram iOS ${APP_VERSION} (${BUILD_NUMBER})" \
             "${KIND[@]}" --notes "$NOTES"
 
+      # Downloads come from dl.luckgram.cc, never from GitHub: copy the release files to the
+      # private S3 bucket behind it (aws-sg, read only through the Cloudflare Worker
+      # luckgram-dl; site repo edge/dl-worker.js). AWS access is the OIDC role
+      # luckgram-ci-downloads (PutObject on android/* and ios/*, master only), signed with
+      # curl --aws-sigv4 so the runner needs no AWS CLI. A failure here does not fail the
+      # build; the site and the API then keep their previous links.
+      - name: Configure AWS for dl.luckgram.cc
+        id: aws
+        if: github.ref == 'refs/heads/master'
+        continue-on-error: true
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::515517431844:role/luckgram-ci-downloads
+          aws-region: ap-southeast-1
+
+      - name: Upload to dl.luckgram.cc
+        id: dl
+        if: steps.aws.outcome == 'success'
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          TAG="ios-${APP_VERSION}-${BUILD_NUMBER}"
+          for f in out/*.ipa; do
+            key="ios/$TAG/$(basename "$f")"
+            # keys via stdin (-K -), never argv
+            printf 'user = "%s:%s"\n' "$AWS_ACCESS_KEY_ID" "$AWS_SECRET_ACCESS_KEY" | curl -sS --fail-with-body --retry 3 --retry-all-errors -K - \
+              --aws-sigv4 "aws:amz:ap-southeast-1:s3" -H "x-amz-security-token: $AWS_SESSION_TOKEN" \
+              -H "x-amz-content-sha256: UNSIGNED-PAYLOAD" -H "Content-Type: application/octet-stream" \
+              -T "$f" -o /dev/null "https://luckgram-downloads-515517431844.s3.ap-southeast-1.amazonaws.com/$key"
+            # check through the CDN, same bytes
+            want=$(shasum -a 256 "$f" | cut -d' ' -f1)
+            got=$(curl -sS --fail --retry 3 --retry-all-errors "https://dl.luckgram.cc/$key" | shasum -a 256 | cut -d' ' -f1)
+            [ "$want" = "$got" ] || { echo "::error::dl.luckgram.cc/$key checksum mismatch"; exit 1; }
+            echo "https://dl.luckgram.cc/$key"
+          done
+          echo "base=https://dl.luckgram.cc" >> "$GITHUB_OUTPUT"
+
       # luckgram-specs#100: point the luckgram.cc download buttons at this release. Clones
       # luckgram-site with a deploy key that can only write to that repo, updates
       # download/latest.json with the site's scripts/update_latest.py and pushes to master
@@ -218,6 +256,7 @@ jobs:
         continue-on-error: true
         env:
           SITE_DEPLOY_KEY: ${{ secrets.SITE_DEPLOY_KEY }}
+          DL_BASE: ${{ steps.dl.outputs.base }}
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
@@ -232,7 +271,7 @@ jobs:
             rm -rf "$SITE"
             git clone -q --depth 1 git@github.com:limeng9088/luckgram-site.git "$SITE"
             python3 -I "$SITE/scripts/update_latest.py" ios --repo "$GITHUB_REPOSITORY" --tag "$TAG" \
-              --version "$VER" --build "$BUILD" --commit "$GITHUB_SHA" --published-at "$PUBLISHED" \
+              --version "$VER" --build "$BUILD" --commit "$GITHUB_SHA" --published-at "$PUBLISHED" ${DL_BASE:+--url-base "$DL_BASE"} \
               --file ipa="$(ls "$GITHUB_WORKSPACE"/out/*.ipa)"
             if git -C "$SITE" diff --quiet; then echo "latest.json already up to date"; exit 0; fi
             git -C "$SITE" -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
@@ -249,10 +288,11 @@ jobs:
         env:
           TOKEN_DEV: ${{ secrets.LUCKGRAM_RELEASE_TOKEN_DEV }}
           TOKEN_PROD: ${{ secrets.LUCKGRAM_RELEASE_TOKEN_PROD }}
+          DL_BASE: ${{ steps.dl.outputs.base }}
         run: |
           TAG="ios-${APP_VERSION}-${BUILD_NUMBER}"
           BODY=$(printf '{"platform":"%s","version":"%s","build":%s,"url":"%s","source":"%s"}' \
-            ios "$APP_VERSION" "$BUILD_NUMBER" "https://github.com/${GITHUB_REPOSITORY}/releases/tag/${TAG}" "${GITHUB_REPOSITORY}@${GITHUB_SHA} run ${GITHUB_RUN_NUMBER}")
+            ios "$APP_VERSION" "$BUILD_NUMBER" "${DL_BASE:+$DL_BASE/ios/${TAG}/$(basename out/*.ipa)}${DL_BASE:-https://github.com/${GITHUB_REPOSITORY}/releases/tag/${TAG}}" "${GITHUB_REPOSITORY}@${GITHUB_SHA} run ${GITHUB_RUN_NUMBER}")
           # Tokens only via env -> stdin (never argv); a missing secret skips that stage.
           set -euo pipefail
           publish() {
