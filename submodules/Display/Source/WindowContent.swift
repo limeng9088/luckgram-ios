@@ -1521,7 +1521,12 @@ public class Window1 {
     }
     
     public func presentNative(_ controller: UIViewController) {
-        if let nativeController = self.hostView.nativeController?() {
+        if var nativeController = self.hostView.nativeController?() {
+            // Luckgram specs#108: present over whatever native controller is already up (e.g. the
+            // image translation page), otherwise UIKit refuses the second presentation.
+            while let presented = nativeController.presentedViewController, !presented.isBeingDismissed {
+                nativeController = presented
+            }
             nativeController.present(controller, animated: true, completion: nil)
         }
     }

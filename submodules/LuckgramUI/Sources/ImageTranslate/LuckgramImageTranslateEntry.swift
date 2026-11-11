@@ -132,7 +132,7 @@ public func luckgramImageTranslateSettingsController(context: AccountContext) ->
             refresh()
         }))
         sheet.addAction(UIAlertAction(title: LuckgramStrings.pick("选择语言", "Choose language"), style: .default, handler: { _ in
-            let _ = LuckgramImageTranslateSettings.pickLanguage(selected: LuckgramImageTranslateSettings.targetLanguage(peerId: nil), completion: { code in
+            let _ = LuckgramImageTranslateSettings.pickLanguage(selected: LuckgramImageTranslateSettings.targetLanguage(accountPeerId: nil, peerId: nil), completion: { code in
                 LuckgramImageTranslateSettings.setLanguage(peerId: nil, lang: code, onlyThisChat: false)
                 refresh()
             })
