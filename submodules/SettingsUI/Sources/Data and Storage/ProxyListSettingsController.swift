@@ -323,12 +323,8 @@ private func proxySettingsControllerEntries(theme: PresentationTheme, strings: P
     entries.append(.serversHeader(theme, strings.SocksProxySetup_SavedProxies))
     entries.append(.directExit(theme, exitTexts.directTitle, exitText(LuckgramProxyExitChecker.directKey)))
     entries.append(.addServer(theme, strings.SocksProxySetup_AddProxy, state.editing))
-    // Luckgram 118: scan a QR code, type a link or subscription URL, saved subscriptions
+    // Luckgram 118: saved subscriptions; scan / link moved into the Add Proxy page
     let importTexts = LuckgramProxyImportTexts(zh: LuckgramStrings.isChinese)
-    if canScan {
-        entries.append(.scanQr(theme, importTexts.scanRow))
-    }
-    entries.append(.inputLink(theme, importTexts.linkRow))
     if !subs.isEmpty {
         entries.append(.subsHeader(theme, importTexts.subsHeader))
         for (i, sub) in subs.enumerated() {
@@ -539,7 +535,11 @@ public func proxySettingsController(accountManager: AccountManager<TelegramAccou
             return current
         }).start()
     }, addNewServer: {
-        pushControllerImpl?(proxyServerSettingsController(sharedContext: sharedContext, presentationData: presentationData, updatedPresentationData: updatedPresentationData, accountManager: accountManager, network: network, currentSettings: nil))
+        pushControllerImpl?(proxyServerSettingsController(sharedContext: sharedContext, presentationData: presentationData, updatedPresentationData: updatedPresentationData, accountManager: accountManager, network: network, currentSettings: nil, luckgramScan: context != nil ? {
+            scanQrImpl?()
+        } : nil, luckgramLink: {
+            inputLinkImpl?()
+        }))
     }, activateServer: { server in
         if luckgramXrayNode(server) != nil, !LuckgramXrayManager.shared.isEnabled {
             // Luckgram 119: not selectable while the core is off or missing
