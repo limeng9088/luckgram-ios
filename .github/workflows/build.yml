@@ -291,8 +291,16 @@ jobs:
           DL_BASE: ${{ steps.dl.outputs.base }}
         run: |
           TAG="ios-${APP_VERSION}-${BUILD_NUMBER}"
-          BODY=$(printf '{"platform":"%s","version":"%s","build":%s,"url":"%s","source":"%s"}' \
-            ios "$APP_VERSION" "$BUILD_NUMBER" "${DL_BASE:+$DL_BASE/ios/${TAG}/$(basename out/*.ipa)}${DL_BASE:-https://github.com/${GITHUB_REPOSITORY}/releases/tag/${TAG}}" "${GITHUB_REPOSITORY}@${GITHUB_SHA} run ${GITHUB_RUN_NUMBER}")
+          IPA=$(ls out/*.ipa)
+          # specs#123: checksum and size for the in-app update (#124). The
+          # GitHub fallback URL is the release page, so send them only with
+          # the dl.luckgram.cc file URL (absent = cleared on the server).
+          EXTRA=""
+          if [ -n "$DL_BASE" ]; then
+            EXTRA=$(printf ',"sha256":"%s","size":%s' "$(shasum -a 256 "$IPA" | cut -d' ' -f1)" "$(stat -f %z "$IPA")")
+          fi
+          BODY=$(printf '{"platform":"%s","version":"%s","build":%s,"url":"%s"%s,"source":"%s"}' \
+            ios "$APP_VERSION" "$BUILD_NUMBER" "${DL_BASE:+$DL_BASE/ios/${TAG}/$(basename "$IPA")}${DL_BASE:-https://github.com/${GITHUB_REPOSITORY}/releases/tag/${TAG}}" "$EXTRA" "${GITHUB_REPOSITORY}@${GITHUB_SHA} run ${GITHUB_RUN_NUMBER}")
           # Tokens only via env -> stdin (never argv); a missing secret skips that stage.
           set -euo pipefail
           publish() {
