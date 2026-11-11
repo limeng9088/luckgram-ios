@@ -39,11 +39,18 @@ public enum LuckgramImageTranslateSettings {
         return LuckgramImageTranslateLogic.chatKeyPrefix + "\(peerId)"
     }
 
-    /// `peerId` nil = not in a chat.
-    public static func targetLanguage(peerId: Int64?) -> String {
+    /// `peerId` nil = not in a chat. The reading-translation fallback is #105's: this chat's
+    /// reading language, else its default.
+    public static func targetLanguage(accountPeerId: EnginePeer.Id?, peerId: Int64?) -> String {
         let perChat = peerId.flatMap { LuckgramSettings.shared.string(chatKey($0), default: nil) }
         let app = LuckgramStrings.appLanguageCode ?? Locale.current.languageCode
-        return LuckgramImageTranslateLogic.targetLanguage(perChat: perChat, imageDefault: imageDefault, readingTarget: LuckgramTranslateInController.targetLanguage, appLanguage: app)
+        let reading: String?
+        if let accountPeerId, let peerId {
+            reading = LuckgramTranslateInController.targetLanguage(accountPeerId: accountPeerId, peerId: EnginePeer.Id(peerId))
+        } else {
+            reading = LuckgramTranslateInController.targetLanguage
+        }
+        return LuckgramImageTranslateLogic.targetLanguage(perChat: perChat, imageDefault: imageDefault, readingTarget: reading, appLanguage: app)
     }
 
     /// The image-only default, or nil when images follow the reading translation language.

@@ -42,7 +42,7 @@ public final class LuckgramImageTranslateController: UIViewController, UIScrollV
         self.imageLanguage = imageLanguage
         self.peerId = peerId
         self.sendTranslated = sendTranslated
-        self.toLang = LuckgramImageTranslateSettings.targetLanguage(peerId: peerId)
+        self.toLang = LuckgramImageTranslateSettings.targetLanguage(accountPeerId: context.account.peerId, peerId: peerId)
         super.init(nibName: nil, bundle: nil)
         self.modalPresentationStyle = .fullScreen
     }
@@ -249,18 +249,11 @@ public final class LuckgramImageTranslateController: UIViewController, UIScrollV
                 self.apply(code, onlyThisChat: false)
                 return
             }
+            // #105's 「仅本聊天 / 设为默认」 prompt (it only asks; the image language is stored here)
             let name = LuckgramImageTranslateSettings.languageName(code) ?? code
-            let sheet = UIAlertController(title: LuckgramImageTranslateStrings.applyTo(name), message: nil, preferredStyle: .actionSheet)
-            sheet.addAction(UIAlertAction(title: LuckgramImageTranslateStrings.onlyThisChat, style: .default, handler: { [weak self] _ in
-                self?.apply(code, onlyThisChat: true)
-            }))
-            sheet.addAction(UIAlertAction(title: LuckgramImageTranslateStrings.asDefault, style: .default, handler: { [weak self] _ in
-                self?.apply(code, onlyThisChat: false)
-            }))
-            sheet.addAction(UIAlertAction(title: LuckgramStrings.cancel, style: .cancel))
-            sheet.popoverPresentationController?.sourceView = self.headerButton
-            sheet.popoverPresentationController?.sourceRect = self.headerButton.bounds
-            self.present(sheet, animated: true)
+            LuckgramTranslateInController.askScope(context: self.context, languageName: name, completion: { [weak self] chatOnly in
+                self?.apply(code, onlyThisChat: chatOnly)
+            })
         })
         if !shown {
             self.toast(LuckgramStrings.pick("暂时无法打开语言列表", "The language list isn't available right now"))
