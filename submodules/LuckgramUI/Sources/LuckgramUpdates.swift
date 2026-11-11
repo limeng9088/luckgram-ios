@@ -50,6 +50,34 @@ public final class LuckgramUpdates {
         return LuckgramStrings.pick("有新版本 \(state.latest) · 更新", "New version \(state.latest) · Update")
     }
 
+    /// specs#124: an unsigned IPA can't be installed from inside the app, so "Update" explains that
+    /// the new version must be re-signed and offers the IPA (dl.luckgram.cc), the install guide and,
+    /// unless updating is forced, "Later".
+    public static func guideController(state: LuckgramUpdateLogic.State, force: Bool, openUrl: @escaping (String) -> Void) -> UIViewController {
+        var message = LuckgramStrings.pick("新版本 \(state.latest) 需要重新签名安装。", "Version \(state.latest) has to be re-signed and installed.")
+        if !state.notes.isEmpty && !force {
+            message += "\n\n" + state.notes
+        }
+        let alert = UIAlertController(title: LuckgramStrings.pick("更新到 \(state.latest)", "Update to \(state.latest)"), message: message, preferredStyle: .alert)
+        for action in LuckgramUpdateLogic.guideActions(force: force) {
+            switch action {
+            case .download:
+                alert.addAction(UIAlertAction(title: LuckgramStrings.pick("下载安装包", "Download package"), style: .default, handler: { _ in
+                    if state.url.lowercased().hasPrefix("https://") {
+                        openUrl(state.url)
+                    }
+                }))
+            case .guide:
+                alert.addAction(UIAlertAction(title: LuckgramStrings.pick("查看安装指南", "Installation guide"), style: .default, handler: { _ in
+                    openUrl(LuckgramUpdateLogic.installGuideUrl(state.installUrl))
+                }))
+            case .later:
+                alert.addAction(UIAlertAction(title: LuckgramStrings.pick("以后再说", "Later"), style: .cancel, handler: nil))
+            }
+        }
+        return alert
+    }
+
     /// Main queue.
     public func checkIfDue() {
         let last = LuckgramSettings.shared.int(LuckgramUpdates.lastCheckKey, default: 0)
@@ -146,8 +174,9 @@ public final class LuckgramForceUpdateController: UIViewController {
     }
 
     @objc private func updatePressed() {
-        if self.state.url.hasPrefix("https://") {
-            self.openUrl(self.state.url)
+        if self.presentedViewController != nil {
+            return
         }
+        self.present(LuckgramUpdates.guideController(state: self.state, force: true, openUrl: self.openUrl), animated: true)
     }
 }
