@@ -3351,7 +3351,8 @@ final class ChatListSearchListPaneNode: ASDisplayNode, ChatListSearchPaneNode {
                         break
                     }
 
-                    if !existingPeerIds.contains(peer.peer.id), filteredPeer(peer.peer, EnginePeer(accountPeer)) {
+                    // Luckgram 12: server "my results" include hidden chats too (specs#125).
+                    if !existingPeerIds.contains(peer.peer.id), filteredPeer(peer.peer, EnginePeer(accountPeer)), !LuckgramHiddenChats.skipInSearch(context: context, peerId: peer.peer.id) {
                         existingPeerIds.insert(peer.peer.id)
                         entries.append(.localPeer(peer.peer, nil, nil, index, presentationData.theme, presentationData.strings, presentationData.nameSortOrder, presentationData.nameDisplayOrder, localExpandType, nil, false, false))
                         index += 1
@@ -3378,7 +3379,7 @@ final class ChatListSearchListPaneNode: ASDisplayNode, ChatListSearchPaneNode {
                             break
                         }
 
-                        if !existingPeerIds.contains(peer.peer.id), filteredPeer(peer.peer, EnginePeer(accountPeer)) {
+                        if !existingPeerIds.contains(peer.peer.id), filteredPeer(peer.peer, EnginePeer(accountPeer)), !LuckgramHiddenChats.skipInSearch(context: context, peerId: peer.peer.id) {
                             existingPeerIds.insert(peer.peer.id)
 
                             entries.append(.globalPeer(peer, nil, index, presentationData.theme, presentationData.strings, presentationData.nameSortOrder, presentationData.nameDisplayOrder, globalExpandType, nil, false, finalQuery))
@@ -4195,6 +4196,10 @@ final class ChatListSearchListPaneNode: ASDisplayNode, ChatListSearchPaneNode {
                         continue loop
                     }
                     if !doesPeerMatchFilter(peer: EnginePeer(peer), filter: peersFilter) {
+                        continue
+                    }
+                    // Luckgram 12: hidden chats stay out of the recent searches as well (specs#125).
+                    if !LuckgramHiddenChatsStore.shared.includeHiddenInSearch, LuckgramHiddenChatsStore.shared.isHidden(accountPeerId: context.account.peerId.toInt64(), peerId: peer.id.toInt64()) {
                         continue
                     }
                     peerIds.insert(peer.id)
