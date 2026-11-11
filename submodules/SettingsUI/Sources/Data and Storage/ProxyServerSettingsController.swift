@@ -11,20 +11,26 @@ import AccountContext
 import UrlEscaping
 import UrlHandling
 import QrCodeUI
+import LuckgramUI
 
 private final class ProxyServerSettingsControllerArguments {
     let updateState: ((ProxyServerSettingsControllerState) -> ProxyServerSettingsControllerState) -> Void
     let share: () -> Void
     let usePasteboardSettings: () -> Void
+    let luckgramScan: () -> Void
+    let luckgramLink: () -> Void
     
-    init(updateState: @escaping ((ProxyServerSettingsControllerState) -> ProxyServerSettingsControllerState) -> Void, share: @escaping () -> Void, usePasteboardSettings: @escaping () -> Void) {
+    init(updateState: @escaping ((ProxyServerSettingsControllerState) -> ProxyServerSettingsControllerState) -> Void, share: @escaping () -> Void, usePasteboardSettings: @escaping () -> Void, luckgramScan: @escaping () -> Void, luckgramLink: @escaping () -> Void) {
         self.updateState = updateState
         self.share = share
         self.usePasteboardSettings = usePasteboardSettings
+        self.luckgramScan = luckgramScan
+        self.luckgramLink = luckgramLink
     }
 }
 
 private enum ProxySettingsSection: Int32 {
+    case luckgramImport
     case pasteboard
     case mode
     case connection
@@ -33,6 +39,10 @@ private enum ProxySettingsSection: Int32 {
 }
 
 private enum ProxySettingsEntry: ItemListNodeEntry {
+    // Luckgram: 「扫码添加代理」 / 「输入链接或订阅地址」 on the Add Proxy page
+    case luckgramScan(PresentationTheme, String)
+    case luckgramLink(PresentationTheme, String)
+    
     case usePasteboardSettings(PresentationTheme, String)
     case usePasteboardInfo(PresentationTheme, String)
     
@@ -53,6 +63,8 @@ private enum ProxySettingsEntry: ItemListNodeEntry {
     
     var section: ItemListSectionId {
         switch self {
+            case .luckgramScan, .luckgramLink:
+                return ProxySettingsSection.luckgramImport.rawValue
             case .usePasteboardSettings, .usePasteboardInfo:
                 return ProxySettingsSection.pasteboard.rawValue
             case .modeSocks5, .modeMtp, .modeWeb:
@@ -68,6 +80,10 @@ private enum ProxySettingsEntry: ItemListNodeEntry {
     
     var stableId: Int32 {
         switch self {
+            case .luckgramScan:
+                return -2
+            case .luckgramLink:
+                return -1
             case .usePasteboardSettings:
                 return 0
             case .usePasteboardInfo:
@@ -104,6 +120,14 @@ private enum ProxySettingsEntry: ItemListNodeEntry {
     func item(presentationData: ItemListPresentationData, arguments: Any) -> ListViewItem {
         let arguments = arguments as! ProxyServerSettingsControllerArguments
         switch self {
+            case let .luckgramScan(_, title):
+                return ItemListActionItem(presentationData: presentationData, systemStyle: .glass, title: title, kind: .generic, alignment: .natural, sectionId: self.section, style: .blocks, action: {
+                    arguments.luckgramScan()
+                })
+            case let .luckgramLink(_, title):
+                return ItemListActionItem(presentationData: presentationData, systemStyle: .glass, title: title, kind: .generic, alignment: .natural, sectionId: self.section, style: .blocks, action: {
+                    arguments.luckgramLink()
+                })
             case let .usePasteboardSettings(_, title):
                 return ItemListActionItem(presentationData: presentationData, systemStyle: .glass, title: title, kind: .generic, alignment: .natural, sectionId: self.section, style: .blocks, action: {
                     arguments.usePasteboardSettings()
@@ -252,8 +276,15 @@ struct ProxyServerSettingsControllerState: Equatable {
     }
 }
 
-private func proxyServerSettingsControllerEntries(presentationData: PresentationData, state: ProxyServerSettingsControllerState, pasteboardSettings: ProxyServerSettings?) -> [ProxySettingsEntry] {
+private func proxyServerSettingsControllerEntries(presentationData: PresentationData, state: ProxyServerSettingsControllerState, pasteboardSettings: ProxyServerSettings?, luckgramImport: (scan: String?, link: String)?) -> [ProxySettingsEntry] {
     var entries: [ProxySettingsEntry] = []
+    
+    if let luckgramImport {
+        if let scan = luckgramImport.scan {
+            entries.append(.luckgramScan(presentationData.theme, scan))
+        }
+        entries.append(.luckgramLink(presentationData.theme, luckgramImport.link))
+    }
     
     if let _ = pasteboardSettings {
         entries.append(.usePasteboardSettings(presentationData.theme, presentationData.strings.SocksProxySetup_PasteFromClipboard))
@@ -317,7 +348,7 @@ public func proxyServerSettingsController(context: AccountContext, currentSettin
     return proxyServerSettingsController(sharedContext: context.sharedContext, context: context, presentationData: presentationData, updatedPresentationData: context.sharedContext.presentationData, accountManager: context.sharedContext.accountManager, network: context.account.network, currentSettings: currentSettings)
 }
 
-func proxyServerSettingsController(sharedContext: SharedAccountContext, context: AccountContext? = nil, presentationData: PresentationData, updatedPresentationData: Signal<PresentationData, NoError>, accountManager: AccountManager<TelegramAccountManagerTypes>, network: Network, currentSettings: ProxyServerSettings?) -> ViewController {
+func proxyServerSettingsController(sharedContext: SharedAccountContext, context: AccountContext? = nil, presentationData: PresentationData, updatedPresentationData: Signal<PresentationData, NoError>, accountManager: AccountManager<TelegramAccountManagerTypes>, network: Network, currentSettings: ProxyServerSettings?, luckgramScan: (() -> Void)? = nil, luckgramLink: (() -> Void)? = nil) -> ViewController {
     var currentMode: ProxyServerSettingsControllerMode = .socks5
     var currentAddress: String?
     var currentUsername: String?
@@ -391,7 +422,18 @@ func proxyServerSettingsController(sharedContext: SharedAccountContext, context:
                 return state
             }
         }
+    }, luckgramScan: {
+        luckgramScan?()
+    }, luckgramLink: {
+        luckgramLink?()
     })
+    
+    // Luckgram: only a new proxy gets the scan / link rows (the proxy list passes the actions)
+    var luckgramImportTitles: (scan: String?, link: String)?
+    if currentSettings == nil, luckgramLink != nil {
+        let importTexts = LuckgramProxyImportTexts(zh: LuckgramStrings.isChinese)
+        luckgramImportTitles = (scan: luckgramScan != nil ? importTexts.scanRow : nil, link: importTexts.linkRow)
+    }
     
     let signal = combineLatest(updatedPresentationData, statePromise.get())
     |> deliverOnMainQueue
@@ -431,7 +473,7 @@ func proxyServerSettingsController(sharedContext: SharedAccountContext, context:
         })
         
         let controllerState = ItemListControllerState(presentationData: ItemListPresentationData(presentationData), title: .text(presentationData.strings.SocksProxySetup_Title), leftNavigationButton: leftNavigationButton, rightNavigationButton: rightNavigationButton, backNavigationButton: ItemListBackButton(title: presentationData.strings.Common_Back), animateChanges: false)
-        let listState = ItemListNodeState(presentationData: ItemListPresentationData(presentationData), entries: proxyServerSettingsControllerEntries(presentationData: presentationData, state: state, pasteboardSettings: pasteboardSettings), style: .blocks, emptyStateItem: nil, animateChanges: false)
+        let listState = ItemListNodeState(presentationData: ItemListPresentationData(presentationData), entries: proxyServerSettingsControllerEntries(presentationData: presentationData, state: state, pasteboardSettings: pasteboardSettings, luckgramImport: luckgramImportTitles), style: .blocks, emptyStateItem: nil, animateChanges: false)
         
         return (controllerState, (listState, arguments))
     }
