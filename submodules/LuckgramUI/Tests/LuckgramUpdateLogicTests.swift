@@ -82,4 +82,29 @@ final class LuckgramUpdateLogicTests: XCTestCase {
         XCTAssertEqual(empty?.latest, "")
         XCTAssertEqual(empty?.build, 0)
     }
+    func testNewFieldsAndGuide() throws {
+        let sha = String(repeating: "Ab", count: 32)
+        let data = ("{\"latest\":\"13.1.2\",\"build\":36300,\"url\":\"https://dl.luckgram.cc/ios/x.ipa\",\"sha256\":\"" + sha + "\",\"size\":123,\"install_url\":\"https://wiki.luckgram.cc/i.html\"}").data(using: .utf8)!
+        let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
+        let parsed = LuckgramUpdateLogic.parse(json)
+        let i = LuckgramUpdateLogic.deserialize(LuckgramUpdateLogic.serialize(parsed))
+        XCTAssertEqual(i, parsed)
+        XCTAssertEqual(i?.sha256, sha.lowercased())
+        XCTAssertEqual(i?.size, 123)
+        let state = LuckgramUpdateLogic.evaluate(i, current: "13.1.1", currentBuild: 36294, chinese: true)
+        XCTAssertTrue(state.updateAvailable)
+        XCTAssertEqual(state.installUrl, "https://wiki.luckgram.cc/i.html")
+
+        // old server: no new fields, the guide link falls back to the default page
+        let old = LuckgramUpdateLogic.parse(["latest": "13.1.2", "url": "https://dl.luckgram.cc/ios/x.ipa", "sha256": NSNull()])
+        XCTAssertEqual(old?.sha256, "")
+        XCTAssertEqual(old?.size, 0)
+        XCTAssertEqual(LuckgramUpdateLogic.evaluate(old, current: "13.1.1", currentBuild: 0, chinese: false).installUrl, LuckgramUpdateLogic.defaultInstallUrl)
+        XCTAssertEqual(LuckgramUpdateLogic.parse(["sha256": "abc"])?.sha256, "")
+        XCTAssertEqual(LuckgramUpdateLogic.installGuideUrl("http://x"), LuckgramUpdateLogic.defaultInstallUrl)
+        XCTAssertEqual(LuckgramUpdateLogic.installGuideUrl(nil), LuckgramUpdateLogic.defaultInstallUrl)
+
+        XCTAssertEqual(LuckgramUpdateLogic.guideActions(force: false), [.download, .guide, .later])
+        XCTAssertEqual(LuckgramUpdateLogic.guideActions(force: true), [.download, .guide])
+    }
 }

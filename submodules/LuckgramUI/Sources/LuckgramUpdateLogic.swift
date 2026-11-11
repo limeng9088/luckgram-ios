@@ -17,14 +17,21 @@ public enum LuckgramUpdateLogic {
         public var url: String
         public var notesZh: String
         public var notesEn: String
+        /// specs#123/#124: install guide (iOS), package SHA-256 and size; empty / 0 until the server sends them.
+        public var installUrl: String
+        public var sha256: String
+        public var size: Int64
 
-        public init(latest: String, build: Int64, min: String, url: String, notesZh: String, notesEn: String) {
+        public init(latest: String, build: Int64, min: String, url: String, notesZh: String, notesEn: String, installUrl: String = "", sha256: String = "", size: Int64 = 0) {
             self.latest = latest
             self.build = build
             self.min = min
             self.url = url
             self.notesZh = notesZh
             self.notesEn = notesEn
+            self.installUrl = installUrl
+            self.sha256 = sha256
+            self.size = size
         }
     }
 
@@ -37,8 +44,31 @@ public enum LuckgramUpdateLogic {
         public var latest: String
         public var url: String
         public var notes: String
+        /// Install guide, always an https link (server value or the default guide).
+        public var installUrl: String = LuckgramUpdateLogic.defaultInstallUrl
 
         public static let hidden = State(updateAvailable: false, forceUpdate: false, latest: "", url: "", notes: "")
+    }
+
+    /// specs#123: used while the server does not send `install_url` yet.
+    public static let defaultInstallUrl = "https://wiki.luckgram.cc/getting-started/install.html"
+
+    public static func installGuideUrl(_ value: String?) -> String {
+        if let value, value.lowercased().hasPrefix("https://"), value.count > 8 {
+            return value
+        }
+        return defaultInstallUrl
+    }
+
+    /// The guide sheet (specs#124): "下载安装包", "查看安装指南", and "以后再说" unless updating is forced.
+    public enum GuideAction: Equatable {
+        case download
+        case guide
+        case later
+    }
+
+    public static func guideActions(force: Bool) -> [GuideAction] {
+        return force ? [.download, .guide] : [.download, .guide, .later]
     }
 
     public static func shouldCheck(now: Date, lastSuccess: Date?, lastFailure: Date?) -> Bool {
@@ -107,13 +137,26 @@ public enum LuckgramUpdateLogic {
         } else {
             build = 0
         }
+        let size: Int64
+        if let n = json["size"] as? NSNumber {
+            size = max(0, n.int64Value)
+        } else {
+            size = 0
+        }
+        var sha256 = (json["sha256"] as? String ?? "").lowercased()
+        if sha256.count != 64 || !sha256.allSatisfy({ $0.isHexDigit }) {
+            sha256 = ""
+        }
         return Info(
             latest: json["latest"] as? String ?? "",
             build: build,
             min: json["min"] as? String ?? "",
             url: json["url"] as? String ?? "",
             notesZh: notes?["zh"] as? String ?? "",
-            notesEn: notes?["en"] as? String ?? ""
+            notesEn: notes?["en"] as? String ?? "",
+            installUrl: json["install_url"] as? String ?? "",
+            sha256: sha256,
+            size: size
         )
     }
 
@@ -123,7 +166,8 @@ public enum LuckgramUpdateLogic {
         }
         let object: [String: Any] = [
             "latest": info.latest, "build": NSNumber(value: info.build), "min": info.min, "url": info.url,
-            "notes": ["zh": info.notesZh, "en": info.notesEn]
+            "notes": ["zh": info.notesZh, "en": info.notesEn],
+            "install_url": info.installUrl, "sha256": info.sha256, "size": NSNumber(value: info.size)
         ]
         guard let data = try? JSONSerialization.data(withJSONObject: object), let s = String(data: data, encoding: .utf8) else {
             return ""
@@ -153,6 +197,6 @@ public enum LuckgramUpdateLogic {
         }
         let notes = chinese ? (info.notesZh.isEmpty ? info.notesEn : info.notesZh) : (info.notesEn.isEmpty ? info.notesZh : info.notesEn)
         // Below min but latest not newer (misconfigured): still force, the link is the way out.
-        return State(updateAvailable: true, forceUpdate: force, latest: isVersion(info.latest) ? info.latest : info.min, url: info.url, notes: notes)
+        return State(updateAvailable: true, forceUpdate: force, latest: isVersion(info.latest) ? info.latest : info.min, url: info.url, notes: notes, installUrl: installGuideUrl(info.installUrl))
     }
 }

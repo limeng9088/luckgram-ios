@@ -47,9 +47,11 @@ func settingsItems(data: PeerInfoScreenData?, context: AccountContext, presentat
     let luckgramUpdate = LuckgramUpdates.shared.state
     if luckgramUpdate.updateAvailable {
         items[.luckgramUpdate]!.append(PeerInfoScreenActionItem(id: 0, text: LuckgramUpdates.rowText(luckgramUpdate), color: .accent, icon: UIImage(bundleImageName: "Chat/Context Menu/Download"), action: {
-            if luckgramUpdate.url.hasPrefix("https://") {
-                context.sharedContext.applicationBindings.openUrl(luckgramUpdate.url)
-            }
+            // specs#124: re-sign guide (download package / install guide / later)
+            let applicationBindings = context.sharedContext.applicationBindings
+            applicationBindings.presentNativeController(LuckgramUpdates.guideController(state: luckgramUpdate, force: false, openUrl: { url in
+                applicationBindings.openUrl(url)
+            }))
         }))
     }
 
