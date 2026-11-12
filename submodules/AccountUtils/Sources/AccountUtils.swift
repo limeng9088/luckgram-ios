@@ -5,7 +5,7 @@ import TelegramUIPreferences
 import AccountContext
 import LuckgramAccountsStore
 
-// Luckgram 09/32 (more accounts): free 5 from remote config / Pro = all slots (135); read on every use.
+// Luckgram 09/32 (more accounts): free 10 from remote config / Pro = all slots (135); read on every use.
 public var maximumNumberOfAccounts: Int { LuckgramAccountsStore.maxAccounts }
 public var maximumPremiumNumberOfAccounts: Int { LuckgramAccountsStore.maxAccounts }
 

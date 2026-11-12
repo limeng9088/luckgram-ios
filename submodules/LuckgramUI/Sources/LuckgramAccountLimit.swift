@@ -1,11 +1,11 @@
 import Foundation
 
 /// Luckgram 32 / 135: how many accounts can be logged in at once. Free users get
-/// `accounts.max_free` (default 5, remote config); Pro has no product limit and is only bound by the
+/// `accounts.max_free` (default 10, remote config); Pro has no product limit and is only bound by the
 /// slot capacity. Same rules as Android `AccountLimit`. Foundation only, unit tested.
 public enum LuckgramAccountLimit {
     public static let slotCapacity = 50
-    public static let defaultMaxFree = 5
+    public static let defaultMaxFree = 10
     public static let maxFreeKey = "accounts.max_free"
 
     /// Free limit: remote value, at least 1, at most the slot capacity.

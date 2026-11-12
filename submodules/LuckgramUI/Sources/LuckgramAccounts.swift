@@ -38,7 +38,7 @@ public enum LuckgramAccountsStrings {
     public static var notificationsInfo: String { LuckgramStrings.pick("关闭后，这个账号收到新消息时不再弹出通知。", "When off, new messages for this account don't show a notification.") }
 }
 
-// MARK: - Limit (32/135: free 5 from remote config / Pro = all slots)
+// MARK: - Limit (32/135: free 10 from remote config / Pro = all slots)
 
 /// Pro status for the account limit and cloud backup (29's unified state).
 public func luckgramIsPro() -> Bool {
