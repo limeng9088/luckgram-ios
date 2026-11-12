@@ -62,6 +62,8 @@ final class LuckgramPlusPanelInputNode: ChatInputNode, UIScrollViewDelegate {
         self.scrollView.delaysContentTouches = false
         self.scrollView.contentInsetAdjustmentBehavior = .never
         self.scrollView.delegate = self
+        // a sideways drag turns the page, it must not start the chat's swipe-back
+        self.scrollView.disablesInteractiveTransitionGestureRecognizer = true
         self.view.addSubview(self.scrollView)
 
         self.pageControl.isUserInteractionEnabled = false
