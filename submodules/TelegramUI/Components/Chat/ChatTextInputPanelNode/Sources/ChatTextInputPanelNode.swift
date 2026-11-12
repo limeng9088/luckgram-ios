@@ -1098,6 +1098,10 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
     deinit {
         self.statusDisposable.dispose()
         self.translateOutDisposable?.dispose()
+        self.luckgramTalkLevelDisposable?.dispose()
+        self.luckgramTalkDataDisposable?.dispose()
+        self.luckgramTalkTextDisposable?.dispose()
+        self.luckgramTalkOverlay?.removeFromSuperview()
         self.tooltipController?.dismiss()
         self.currentEmojiSuggestion?.disposable.dispose()
     }
@@ -1480,6 +1484,10 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
         } else if let customLeftAction = self.customLeftAction, case .empty = customLeftAction {
         } else if self.luckgramPlusOnRight {
             // Luckgram specs#94: the 「+」 sits right of the mic, nothing left of the field
+            if self.luckgramVoiceBarOn {
+                // Luckgram specs#145: except the 「按住 说话」 toggle
+                insets.left += 40.0 + 6.0
+            }
         } else {
             insets.left += 40.0 + 6.0
         }
@@ -2678,7 +2686,8 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
                 textFieldInsets.right = 14.0 + liveMicrophoneButtonSize.width + 6.0 + liveMicrophoneButtonSize.width
             } else {
                 // Luckgram specs#94: mic, then 「+」 on the right
-                textFieldInsets.right = self.luckgramPlusOnRight ? 54.0 + 40.0 + 6.0 : 54.0
+                // Luckgram specs#145: with the 「按住 说话」 toggle there is no mic, only the 「+」
+                textFieldInsets.right = self.luckgramPlusOnRight && !self.luckgramVoiceBarOn ? 54.0 + 40.0 + 6.0 : 54.0
             }
         }
         if mediaRecordingState != nil {
@@ -2802,6 +2811,7 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
                 }
                 self.mediaActionButtons.micButton.audioRecorder = recorder
                 audioRecordingTimeNode.audioRecorder = recorder
+                self.luckgramTalkRecorderStarted(recorder)
             case let .video(status, _):
                 let hadVideoRecorder = self.mediaActionButtons.micButton.videoRecordingStatus != nil
                 if !hadVideoRecorder, isLocked {
@@ -3468,6 +3478,7 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
             mediaActionButtonsFrame.origin.x = width + 8.0
         }
         transition.updateFrame(node: self.mediaActionButtons, frame: mediaActionButtonsFrame)
+        self.luckgramLayoutVoiceBar(interfaceState: interfaceState, leftInset: leftInset, textInputFrame: textInputContainerBackgroundFrame, isRecording: mediaRecordingState != nil, transition: transition)
         if let (rect, containerSize) = self.absoluteRect {
             self.mediaActionButtons.updateAbsoluteRect(CGRect(x: rect.origin.x + mediaActionButtonsFrame.origin.x, y: rect.origin.y + mediaActionButtonsFrame.origin.y, width: mediaActionButtonsFrame.width, height: mediaActionButtonsFrame.height), within: containerSize, transition: transition)
         }
@@ -3603,7 +3614,7 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
                 attachmentButtonX = textInputFrame.maxX + 6.0 + mediaActionButtonsSize.width + 6.0
                 luckgramCapsuleHidden = true
             } else if !micMovedOut {
-                attachmentButtonX = textInputFrame.maxX + 6.0 + mediaActionButtonsSize.width + 6.0
+                attachmentButtonX = textInputFrame.maxX + 6.0 + (self.luckgramVoiceBarOn ? 0.0 : mediaActionButtonsSize.width + 6.0)
             } else {
                 attachmentButtonX = textInputFrame.maxX + 6.0
                 if isAIButtonVisible && inputHasText {
@@ -6269,6 +6280,373 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
             self.sendMessage()
             self.translateOutBypass = false
         }
+    }
+
+    // MARK: - Luckgram: WeChat-style voice bar (specs#145)
+
+    /// The field is swapped for 「按住 说话」.
+    private var luckgramTalkMode = false
+    private var luckgramTalkToggle: GlassBackgroundView?
+    private var luckgramTalkToggleButton: HighlightTrackingButton?
+    private var luckgramTalkToggleIcon: UIImageView?
+    private var luckgramTalkToggleIsTalk: Bool?
+    private var luckgramTalkBar: UIView?
+    private var luckgramTalkBarLabel: UILabel?
+    private var luckgramTalkOverlay: LuckgramTalkOverlayView?
+    private var luckgramTalkHolding = false
+    private var luckgramTalkBeganAt: CFTimeInterval = 0.0
+    private var luckgramTalkConverting = false
+    private weak var luckgramTalkRecorder: ManagedAudioRecorder?
+    private var luckgramTalkLevelDisposable: Disposable?
+    private var luckgramTalkDataDisposable: Disposable?
+    private var luckgramTalkTextDisposable: Disposable?
+
+    /// The toggle left of the field replaces the mic button.
+    var luckgramVoiceBarOn: Bool {
+        guard self.luckgramPlusOnRight, LuckgramVoiceBar.isEnabled, let interfaceState = self.presentationInterfaceState else {
+            return false
+        }
+        if self.customRightAction != nil || self.customSecondaryLeftAction != nil {
+            return false
+        }
+        if case .scheduledMessages = interfaceState.subject {
+            return false
+        }
+        return true
+    }
+
+    private func luckgramLayoutVoiceBar(interfaceState: ChatPresentationInterfaceState, leftInset: CGFloat, textInputFrame: CGRect, isRecording: Bool, transition: ContainedViewLayoutTransition) {
+        let on = self.luckgramVoiceBarOn
+        if !on && self.luckgramTalkToggle == nil {
+            return
+        }
+        self.mediaActionButtons.isHidden = on || self.customRightAction != nil
+        if !on {
+            if self.luckgramTalkMode {
+                self.luckgramTalkMode = false
+                self.luckgramCancelTalk()
+            }
+            self.luckgramTalkToggle?.isHidden = true
+            self.luckgramTalkBar?.isHidden = true
+            return
+        }
+
+        let toggle: GlassBackgroundView
+        let toggleButton: HighlightTrackingButton
+        let toggleIcon: UIImageView
+        if let current = self.luckgramTalkToggle, let currentButton = self.luckgramTalkToggleButton, let currentIcon = self.luckgramTalkToggleIcon {
+            toggle = current
+            toggleButton = currentButton
+            toggleIcon = currentIcon
+        } else {
+            toggle = GlassBackgroundView(frame: CGRect())
+            toggleButton = HighlightTrackingButton()
+            toggleButton.isAccessibilityElement = true
+            toggleButton.accessibilityTraits = [.button]
+            toggleButton.addTarget(self, action: #selector(self.luckgramTalkTogglePressed), for: .touchUpInside)
+            toggle.contentView.addSubview(toggleButton)
+            toggleIcon = UIImageView()
+            toggleIcon.isUserInteractionEnabled = false
+            toggleIcon.contentMode = .center
+            toggle.contentView.addSubview(toggleIcon)
+            self.glassBackgroundContainer.contentView.addSubview(toggle)
+            self.luckgramTalkToggle = toggle
+            self.luckgramTalkToggleButton = toggleButton
+            self.luckgramTalkToggleIcon = toggleIcon
+        }
+        if self.luckgramTalkToggleIsTalk != self.luckgramTalkMode {
+            self.luckgramTalkToggleIsTalk = self.luckgramTalkMode
+            toggleIcon.image = LuckgramVoiceBar.toggleIcon(talkMode: self.luckgramTalkMode)
+            toggleButton.accessibilityLabel = self.luckgramTalkMode ? LuckgramVoiceBar.switchToKeyboard : LuckgramVoiceBar.switchToTalk
+        }
+        toggleIcon.tintColor = interfaceState.theme.chat.inputPanel.panelControlColor
+        toggle.isHidden = false
+        // while recording the field takes the whole row (Telegram's recording layout)
+        let toggleAlpha: CGFloat = isRecording ? 0.0 : 1.0
+        let toggleFrame = CGRect(x: leftInset + 8.0, y: textInputFrame.maxY - 40.0, width: 40.0, height: 40.0)
+        if toggle.bounds.isEmpty {
+            toggle.frame = toggleFrame
+        } else {
+            transition.updateFrame(layer: toggle.layer, frame: toggleFrame)
+        }
+        toggle.update(size: toggleFrame.size, cornerRadius: 20.0, isDark: interfaceState.theme.overallDarkAppearance, tintColor: .init(kind: .panel), isInteractive: true, transition: ComponentTransition(transition))
+        toggleButton.frame = CGRect(origin: CGPoint(), size: toggleFrame.size)
+        toggleIcon.frame = CGRect(origin: CGPoint(), size: toggleFrame.size)
+        transition.updateAlpha(layer: toggle.layer, alpha: toggleAlpha)
+
+        if self.luckgramTalkMode {
+            let bar: UIView
+            let label: UILabel
+            if let current = self.luckgramTalkBar, let currentLabel = self.luckgramTalkBarLabel {
+                bar = current
+                label = currentLabel
+            } else {
+                bar = UIView()
+                bar.clipsToBounds = true
+                bar.isAccessibilityElement = true
+                bar.accessibilityTraits = [.button]
+                label = UILabel()
+                label.font = UIFont.systemFont(ofSize: 16.0, weight: .semibold)
+                label.textAlignment = .center
+                bar.addSubview(label)
+                let recognizer = UILongPressGestureRecognizer(target: self, action: #selector(self.luckgramTalkGesture(_:)))
+                recognizer.minimumPressDuration = 0.0
+                recognizer.allowableMovement = .greatestFiniteMagnitude
+                bar.addGestureRecognizer(recognizer)
+                self.glassBackgroundContainer.contentView.addSubview(bar)
+                self.luckgramTalkBar = bar
+                self.luckgramTalkBarLabel = label
+            }
+            bar.isHidden = false
+            bar.backgroundColor = interfaceState.theme.chat.inputPanel.inputBackgroundColor
+            label.textColor = interfaceState.theme.chat.inputPanel.primaryTextColor
+            let barFrame = CGRect(x: textInputFrame.minX, y: textInputFrame.maxY - 40.0, width: textInputFrame.width, height: 40.0)
+            bar.frame = barFrame
+            bar.layer.cornerRadius = 20.0
+            label.frame = CGRect(origin: CGPoint(), size: barFrame.size)
+            self.luckgramUpdateTalkBarText()
+            self.glassBackgroundContainer.contentView.bringSubviewToFront(bar)
+        } else {
+            self.luckgramTalkBar?.isHidden = true
+        }
+    }
+
+    private func luckgramUpdateTalkBarText() {
+        guard let label = self.luckgramTalkBarLabel else {
+            return
+        }
+        let text: String
+        if self.luckgramTalkConverting {
+            text = LuckgramVoiceBar.converting
+        } else if self.luckgramTalkHolding {
+            text = LuckgramVoiceBar.releaseToSend
+        } else {
+            text = LuckgramVoiceBar.holdToTalk
+        }
+        label.text = text
+        label.alpha = self.luckgramTalkConverting ? 0.5 : (self.luckgramTalkHolding ? 0.6 : 1.0)
+        self.luckgramTalkBar?.accessibilityLabel = text
+    }
+
+    @objc private func luckgramTalkTogglePressed() {
+        if self.luckgramTalkHolding || self.luckgramTalkConverting {
+            return
+        }
+        self.luckgramSetTalkMode(!self.luckgramTalkMode, focus: true)
+    }
+
+    private func luckgramSetTalkMode(_ talk: Bool, focus: Bool) {
+        if self.luckgramTalkMode == talk {
+            return
+        }
+        self.luckgramTalkMode = talk
+        if talk {
+            self.interfaceInteraction?.updateInputModeAndDismissedButtonKeyboardMessageId({ state in
+                return (.none, state.interfaceState.messageActionsState.closedButtonKeyboardMessageId)
+            })
+            self.ensureUnfocused()
+        } else if focus {
+            self.ensureFocused()
+        }
+        self.requestLayout(transition: .animated(duration: 0.2, curve: .easeInOut))
+    }
+
+    @objc private func luckgramTalkGesture(_ recognizer: UILongPressGestureRecognizer) {
+        switch recognizer.state {
+        case .began:
+            self.luckgramBeginTalk()
+        case .changed:
+            if self.luckgramTalkHolding, let overlay = self.luckgramTalkOverlay {
+                let zone = self.luckgramTalkZone(recognizer, overlay: overlay)
+                if zone != overlay.zone {
+                    overlay.zone = zone
+                    UISelectionFeedbackGenerator().selectionChanged()
+                }
+            }
+        case .ended:
+            if self.luckgramTalkHolding {
+                var zone: LuckgramVoiceBarLogic.Zone = .send
+                if let overlay = self.luckgramTalkOverlay {
+                    zone = self.luckgramTalkZone(recognizer, overlay: overlay)
+                }
+                self.luckgramFinishTalk(zone)
+            }
+        case .cancelled, .failed:
+            if self.luckgramTalkHolding {
+                self.luckgramFinishTalk(.cancel)
+            }
+        default:
+            break
+        }
+    }
+
+    private func luckgramTalkZone(_ recognizer: UILongPressGestureRecognizer, overlay: LuckgramTalkOverlayView) -> LuckgramVoiceBarLogic.Zone {
+        let point = recognizer.location(in: overlay)
+        return LuckgramVoiceBarLogic.zone(x: Double(point.x), y: Double(point.y), width: Double(overlay.bounds.width), actionLineY: Double(overlay.actionLineY))
+    }
+
+    private func luckgramBeginTalk() {
+        guard !self.luckgramTalkHolding, !self.luckgramTalkConverting, let interfaceState = self.presentationInterfaceState, let interfaceInteraction = self.interfaceInteraction, let window = self.view.window else {
+            return
+        }
+        if interfaceState.inputTextPanelState.mediaRecordingState != nil {
+            return
+        }
+        if self.mediaActionButtons.micButton.fadeDisabled {
+            if interfaceState.voiceMessagesAvailable == false {
+                interfaceInteraction.displayRestrictedInfo(.premiumVoiceMessages, .tooltip)
+            } else {
+                interfaceInteraction.displayRestrictedInfo(.mediaRecording, .tooltip)
+            }
+            return
+        }
+        self.luckgramTalkHolding = true
+        self.luckgramTalkBeganAt = CACurrentMediaTime()
+        self.luckgramUpdateTalkBarText()
+        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+
+        let overlay = LuckgramTalkOverlayView(frame: window.bounds)
+        overlay.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        window.addSubview(overlay)
+        overlay.animateIn()
+        self.luckgramTalkOverlay = overlay
+
+        interfaceInteraction.beginMediaRecording(false)
+    }
+
+    /// The chat controller's recorder is running (Telegram's own flow); feed the overlay.
+    private func luckgramTalkRecorderStarted(_ recorder: ManagedAudioRecorder) {
+        guard self.luckgramTalkHolding, self.luckgramTalkRecorder !== recorder else {
+            return
+        }
+        self.luckgramTalkRecorder = recorder
+        self.luckgramTalkOverlay?.start()
+        self.luckgramTalkLevelDisposable?.dispose()
+        self.luckgramTalkLevelDisposable = (recorder.micLevel
+        |> deliverOnMainQueue).startStrict(next: { [weak self] level in
+            // micLevel is roughly 0...1, quiet speech well below 0.5
+            self?.luckgramTalkOverlay?.push(level: min(1.0, CGFloat(level) * 2.5))
+        })
+    }
+
+    private func luckgramEndTalkUI() {
+        self.luckgramTalkHolding = false
+        self.luckgramTalkLevelDisposable?.dispose()
+        self.luckgramTalkLevelDisposable = nil
+        self.luckgramTalkOverlay?.animateOut()
+        self.luckgramTalkOverlay = nil
+        self.luckgramTalkRecorder = nil
+        self.luckgramUpdateTalkBarText()
+    }
+
+    private func luckgramFinishTalk(_ zone: LuckgramVoiceBarLogic.Zone) {
+        guard let interfaceInteraction = self.interfaceInteraction else {
+            self.luckgramEndTalkUI()
+            return
+        }
+        let recorder = self.luckgramTalkRecorder
+        let held = CACurrentMediaTime() - self.luckgramTalkBeganAt
+        if zone == .cancel {
+            self.luckgramEndTalkUI()
+            interfaceInteraction.finishMediaRecording(.dismiss)
+            return
+        }
+        if recorder == nil || held < LuckgramVoiceBarLogic.minimumDuration {
+            self.luckgramEndTalkUI()
+            interfaceInteraction.finishMediaRecording(.dismiss)
+            self.luckgramTalkHint(LuckgramVoiceBar.tooShort)
+            return
+        }
+        if zone == .send {
+            self.luckgramEndTalkUI()
+            interfaceInteraction.finishMediaRecording(.send(viewOnce: false))
+            return
+        }
+        // 「转文字」: read the recording back instead of sending it
+        guard let recorder else {
+            return
+        }
+        self.luckgramTalkHolding = false
+        self.luckgramTalkConverting = true
+        self.luckgramTalkOverlay?.isConverting = true
+        self.luckgramTalkLevelDisposable?.dispose()
+        self.luckgramTalkLevelDisposable = nil
+        self.luckgramUpdateTalkBarText()
+        recorder.stop()
+        self.luckgramTalkDataDisposable?.dispose()
+        self.luckgramTalkDataDisposable = (recorder.takenRecordedData()
+        |> take(1)
+        |> deliverOnMainQueue).startStrict(next: { [weak self] data in
+            guard let self else {
+                return
+            }
+            self.luckgramEndTalkUI()
+            self.interfaceInteraction?.finishMediaRecording(.dismiss)
+            guard let data, !data.compressedData.isEmpty else {
+                self.luckgramTalkConverting = false
+                self.luckgramUpdateTalkBarText()
+                self.luckgramTalkHint(LuckgramVoiceBar.convertFailed)
+                return
+            }
+            self.luckgramTranscribeTalk(data.compressedData)
+        })
+    }
+
+    private func luckgramTranscribeTalk(_ audio: Data) {
+        guard let context = self.context else {
+            self.luckgramTalkConverting = false
+            self.luckgramUpdateTalkBarText()
+            return
+        }
+        let present: (ViewController) -> Void = { c in
+            context.sharedContext.mainWindow?.present(c, on: .root)
+        }
+        self.luckgramTalkTextDisposable?.dispose()
+        self.luckgramTalkTextDisposable = (LuckgramAI.shared.transcribe(context: context, present: present, audio: audio, mimeType: "audio/ogg")
+        |> take(1)
+        |> deliverOnMainQueue).startStrict(next: { [weak self] result in
+            guard let self else {
+                return
+            }
+            self.luckgramTalkConverting = false
+            self.luckgramUpdateTalkBarText()
+            let text = result.text.trimmingCharacters(in: .whitespacesAndNewlines)
+            if text.isEmpty {
+                self.luckgramTalkHint(LuckgramVoiceBar.nothingHeard)
+                return
+            }
+            self.luckgramSetTalkMode(false, focus: false)
+            self.insertQuickReply(text)
+            self.ensureFocused()
+        }, error: { [weak self] error in
+            guard let self else {
+                return
+            }
+            self.luckgramTalkConverting = false
+            self.luckgramUpdateTalkBarText()
+            if error.code == LuckgramAIError.consentDenied || error.code == LuckgramAIError.cancelled {
+                return
+            }
+            self.luckgramTalkHint(LuckgramVoiceBar.convertFailed + "：" + error.localizedMessage)
+        })
+    }
+
+    /// Leaves talk mode / the chat: drop whatever is going on.
+    private func luckgramCancelTalk() {
+        if self.luckgramTalkHolding {
+            self.luckgramEndTalkUI()
+            self.interfaceInteraction?.finishMediaRecording(.dismiss)
+        }
+        self.luckgramTalkDataDisposable?.dispose()
+        self.luckgramTalkDataDisposable = nil
+        self.luckgramTalkTextDisposable?.dispose()
+        self.luckgramTalkTextDisposable = nil
+        self.luckgramTalkConverting = false
+        self.luckgramUpdateTalkBarText()
+    }
+
+    private func luckgramTalkHint(_ text: String) {
+        self.interfaceInteraction?.displayUndo(.info(title: nil, text: text, timeout: 3.0, customUndoText: nil))
     }
 
     // MARK: - Luckgram: AI writing (feature 21)
