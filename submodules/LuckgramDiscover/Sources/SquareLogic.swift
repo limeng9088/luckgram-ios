@@ -776,7 +776,7 @@ public enum SquareLogic {
 
         public var title: String { t("广场", "Square") }
         public var latest: String { t("最新", "Latest") }
-        public var hot: String { t("热门", "Trending") }
+        public var hot: String { t("热门", "Hot") } // short: three tabs share the title of the iOS page
         public var recommend: String { t("推荐", "For you") }
         public var notInterested: String { t("不感兴趣", "Not interested") }
         public var notInterestedDone: String { t("将减少推荐类似内容", "You'll see fewer posts like this") }
