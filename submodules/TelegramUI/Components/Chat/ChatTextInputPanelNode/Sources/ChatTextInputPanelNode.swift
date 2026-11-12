@@ -6653,12 +6653,17 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
         self.luckgramUpdateTalkBarText()
         recorder.stop()
         self.luckgramTalkDataDisposable?.dispose()
-        self.luckgramTalkDataDisposable = (recorder.takenRecordedData()
+        self.luckgramTalkDataDisposable = nil
+        // a strict disposable must be disposed before it is let go, also from inside its own callback
+        var dataDelivered = false
+        let dataDisposable = (recorder.takenRecordedData()
         |> take(1)
         |> deliverOnMainQueue).startStrict(next: { [weak self] data in
+            dataDelivered = true
             guard let self else {
                 return
             }
+            self.luckgramTalkDataDisposable?.dispose()
             self.luckgramTalkDataDisposable = nil
             self.luckgramEndTalkUI(keepOverlay: true)
             self.interfaceInteraction?.finishMediaRecording(.dismiss)
@@ -6670,6 +6675,11 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
             }
             self.luckgramTranscribeTalk(data.compressedData)
         })
+        if dataDelivered {
+            dataDisposable.dispose()
+        } else {
+            self.luckgramTalkDataDisposable = dataDisposable
+        }
     }
 
     private func luckgramTranscribeTalk(_ audio: Data) {
