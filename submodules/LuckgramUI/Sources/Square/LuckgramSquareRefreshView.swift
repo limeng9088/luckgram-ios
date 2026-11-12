@@ -12,7 +12,7 @@ final class LuckgramSquareRefreshView: UIView {
     private static let size: CGFloat = 36.0
     /// Resting place of the indicator while refreshing, from the top of this view.
     private static let rest: CGFloat = 12.0
-    private static let pillSeconds: Double = 1.6
+    private static let pillSeconds: Double = 1.3
 
     private let circle = UIView()
     private let arc = CAShapeLayer()
@@ -46,9 +46,9 @@ final class LuckgramSquareRefreshView: UIView {
         self.arc.strokeEnd = 0.0
         self.circle.layer.addSublayer(self.arc)
 
-        self.pill.layer.cornerRadius = 15.0
+        self.pill.layer.cornerRadius = 13.0
         self.pill.alpha = 0.0
-        self.pillLabel.font = UIFont.systemFont(ofSize: 13.0, weight: .semibold)
+        self.pillLabel.font = UIFont.systemFont(ofSize: 12.0, weight: .semibold)
         self.pillLabel.textAlignment = .center
         self.pill.addSubview(self.pillLabel)
         self.addSubview(self.pill)
@@ -76,9 +76,9 @@ final class LuckgramSquareRefreshView: UIView {
 
     private func layoutPill() {
         let text = self.pillLabel.sizeThatFits(CGSize(width: max(0.0, self.bounds.width - 60.0), height: 30.0))
-        let width = min(max(0.0, self.bounds.width - 32.0), ceil(text.width) + 28.0)
-        self.pill.bounds = CGRect(x: 0.0, y: 0.0, width: width, height: 30.0)
-        self.pill.center = CGPoint(x: self.bounds.midX, y: 10.0 + 15.0)
+        let width = min(max(0.0, self.bounds.width - 32.0), ceil(text.width) + 24.0)
+        self.pill.bounds = CGRect(x: 0.0, y: 0.0, width: width, height: 26.0)
+        self.pill.center = CGPoint(x: self.bounds.midX, y: 6.0 + 13.0)
         self.pillLabel.frame = self.pill.bounds
     }
 

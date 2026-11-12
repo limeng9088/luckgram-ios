@@ -297,6 +297,11 @@ final class SquareLogicTests: XCTestCase {
         XCTAssertTrue(f.isStale(now: 1000 + SquareLogic.Feed.staleMs))
         _ = f.beginRefresh()
         XCTAssertEqual(f.footer, .skeleton)
+
+        let left: Int64 = 1000 + 3 * SquareLogic.Feed.staleMs
+        f.markSeen(now: left)
+        XCTAssertFalse(f.isStale(now: left + 60_000))
+        XCTAssertTrue(f.isStale(now: left + SquareLogic.Feed.staleMs))
     }
 
     func testQuietMergeUpdatesCountsInPlace() {

@@ -238,6 +238,9 @@ private final class SquareFeedState {
 private let squareTabOrder = [SquareLogic.tabLatest, SquareLogic.tabHot, SquareLogic.tabRecommend]
 /// How far the list is pulled past its top before a release refreshes it.
 private let squarePullThreshold: CGFloat = 72.0
+/// A page that has not come after this long counts as failed: the list stays and the reader is
+/// told, instead of an indicator that spins for as long as the connection is down.
+private let squareRequestTimeout: Double = Double(SquareLogic.Feed.requestTimeoutMs) / 1000.0
 
 public func luckgramSquareController(context: AccountContext) -> ViewController {
     let tx = LuckgramSquare.texts
@@ -278,7 +281,7 @@ public func luckgramSquareController(context: AccountContext) -> ViewController 
             }
             redraw()
         }
-        refreshRequests.set(LuckgramAI.shared.requestJSON(method: "GET", path: SquareLogic.feedPath(tab: f.tab, cursor: nil)).start(next: { j in
+        refreshRequests.set((LuckgramAI.shared.requestJSON(method: "GET", path: SquareLogic.feedPath(tab: f.tab, cursor: nil)) |> timeout(squareRequestTimeout, queue: Queue.mainQueue(), alternate: .fail(LuckgramAIError(code: LuckgramAIError.networkError)))).start(next: { j in
             // a new load: impressions count again (contract: once per load)
             LuckgramSquareEvents.add(state.tracker(for: f).hideAll(now: SquareEvents.nowMs()))
             state.trackers[f.tab] = nil
@@ -323,7 +326,7 @@ public func luckgramSquareController(context: AccountContext) -> ViewController 
         if f === state.feed {
             redraw()
         }
-        moreRequests.set(LuckgramAI.shared.requestJSON(method: "GET", path: SquareLogic.feedPath(tab: f.tab, cursor: f.nextCursor)).start(next: { j in
+        moreRequests.set((LuckgramAI.shared.requestJSON(method: "GET", path: SquareLogic.feedPath(tab: f.tab, cursor: f.nextCursor)) |> timeout(squareRequestTimeout, queue: Queue.mainQueue(), alternate: .fail(LuckgramAIError(code: LuckgramAIError.networkError)))).start(next: { j in
             if f.applyMore(SquareLogic.parsePosts(j), generation: generation), f === state.feed {
                 redraw()
             }
@@ -443,6 +446,7 @@ public func luckgramSquareController(context: AccountContext) -> ViewController 
         }
         // leave the old tab as it is; come back to the post that was on screen
         LuckgramSquareEvents.add(state.tracker(for: state.feed).hideAll(now: SquareEvents.nowMs()))
+        state.feed.markSeen(now: SquareEvents.nowMs())
         let f = state.feed(for: next)
         state.feed = f
         state.armed = false
@@ -509,6 +513,7 @@ public func luckgramSquareController(context: AccountContext) -> ViewController 
         }
     }
     controller.didDisappear = { _ in
+        state.feed.markSeen(now: SquareEvents.nowMs())
         LuckgramSquareEvents.add(state.tracker(for: state.feed).hideAll(now: SquareEvents.nowMs()))
         LuckgramSquareEvents.flush(force: true)
     }

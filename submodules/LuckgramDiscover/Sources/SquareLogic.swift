@@ -325,6 +325,8 @@ public enum SquareLogic {
         public static let staleMs: Int64 = 5 * 60_000
         /// The next page is requested when this many posts are left below the last visible one.
         public static let prefetch = 4
+        /// A page that has not come after this long counts as failed (the list stays, the reader is told).
+        public static let requestTimeoutMs: Int64 = 15_000
 
         public enum Footer: Equatable {
             case skeleton
@@ -340,6 +342,8 @@ public enum SquareLogic {
         public var nextCursor: String?
         public var loadedOnce = false
         public var loadedAtMs: Int64 = 0
+        /// When the reader last had this tab on screen (`markSeen`).
+        public var seenAtMs: Int64 = 0
         public var refreshing = false
         public var refreshFailed = false
         public var loadingMore = false
@@ -450,8 +454,16 @@ public enum SquareLogic {
             self.moreFailed = true
         }
 
+        /// The reader leaves the tab (another tab, another page, the app in the background).
+        public func markSeen(now: Int64) {
+            self.seenAtMs = now
+        }
+
+        /// Whether to refresh when the tab is shown again: only when it was neither loaded nor
+        /// looked at for `staleMs`. Someone who steps out for a moment comes back to the same
+        /// posts at the same place, however long they had been reading before.
         public func isStale(now: Int64) -> Bool {
-            return !self.loadedOnce || now - self.loadedAtMs >= Feed.staleMs
+            return !self.loadedOnce || now - max(self.loadedAtMs, self.seenAtMs) >= Feed.staleMs
         }
 
         /// Posts changed on another page (a like, a comment): the ones in this list take the new
