@@ -6706,7 +6706,7 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
             self.luckgramTalkConverting = false
             self.luckgramUpdateTalkBarText()
             let text = result.text.trimmingCharacters(in: .whitespacesAndNewlines)
-            if text.isEmpty || LuckgramVoiceBarLogic.isSilenceHallucination(text) {
+            if text.isEmpty || LuckgramVoiceBarLogic.isSilenceHallucination(text, weakSignal: LuckgramVoiceBarLogic.isWeak(peakLevel: Double(self.luckgramTalkPeakLevel))) {
                 self.luckgramTalkHint(LuckgramVoiceBar.nothingHeard)
                 return
             }
