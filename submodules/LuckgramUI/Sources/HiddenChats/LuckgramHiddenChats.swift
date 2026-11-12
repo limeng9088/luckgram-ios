@@ -96,7 +96,7 @@ public enum LuckgramHiddenChats {
             let timer = SwiftSignalKit.Timer(timeout: 0.4, repeat: false, completion: {
                 let count = skippedSearchMatches
                 skippedSearchMatches = 0
-                if count > 0 {
+                if count > 0, LuckgramHiddenChatsStore.shared.takeSearchOffer() {
                     offerSearchInHidden(context: context, count: count)
                 }
             }, queue: Queue.mainQueue())

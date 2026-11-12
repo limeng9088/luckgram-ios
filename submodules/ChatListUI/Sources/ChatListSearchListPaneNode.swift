@@ -407,6 +407,7 @@ public enum ChatListSearchEntryStableId: Hashable {
     case messagePlaceholder(Int32)
     case emptyMessagesFooter
     case addContact
+    case luckgramSearchHidden
 }
 
 public enum ChatListSearchSectionExpandType {
@@ -471,6 +472,8 @@ public enum ChatListSearchEntry: Comparable, Identifiable {
     case messagePlaceholder(Int32, ChatListPresentationData, TelegramSearchPeersScope)
     case emptyMessagesFooter(ChatListPresentationData, TelegramSearchPeersScope, String?)
     case addContact(String, PresentationTheme, PresentationStrings)
+    /// Luckgram 12 (specs#125): bottom row "Search in hidden chats", shown when hidden chats matched the query.
+    case luckgramSearchHidden(Int, PresentationTheme, PresentationStrings)
 
     public var stableId: ChatListSearchEntryStableId {
         switch self {
@@ -492,6 +495,8 @@ public enum ChatListSearchEntry: Comparable, Identifiable {
             return .emptyMessagesFooter
         case .addContact:
             return .addContact
+        case .luckgramSearchHidden:
+            return .luckgramSearchHidden
         }
     }
 
@@ -629,6 +634,12 @@ public enum ChatListSearchEntry: Comparable, Identifiable {
             } else {
                 return false
             }
+        case let .luckgramSearchHidden(lhsCount, lhsTheme, lhsStrings):
+            if case let .luckgramSearchHidden(rhsCount, rhsTheme, rhsStrings) = rhs {
+                return lhsCount == rhsCount && lhsTheme === rhsTheme && lhsStrings === rhsStrings
+            } else {
+                return false
+            }
         }
     }
 
@@ -654,7 +665,7 @@ public enum ChatListSearchEntry: Comparable, Identifiable {
                 return false
             case let .localPeer(_, _, _, rhsIndex, _, _, _, _, _, _, _, _):
                 return lhsIndex <= rhsIndex
-            case .adPeer, .globalPeer, .message, .messagePlaceholder, .emptyMessagesFooter, .addContact:
+            case .adPeer, .globalPeer, .message, .messagePlaceholder, .emptyMessagesFooter, .addContact, .luckgramSearchHidden:
                 return true
             }
         case let .adPeer(_, lhsIndex, _, _, _, _, _, _):
@@ -663,7 +674,7 @@ public enum ChatListSearchEntry: Comparable, Identifiable {
                 return false
             case let .adPeer(_, rhsIndex, _, _, _, _, _, _):
                 return lhsIndex <= rhsIndex
-            case .globalPeer, .message, .messagePlaceholder, .emptyMessagesFooter, .addContact:
+            case .globalPeer, .message, .messagePlaceholder, .emptyMessagesFooter, .addContact, .luckgramSearchHidden:
                 return true
             }
         case let .globalPeer(_, _, lhsIndex, _, _, _, _, _, _, _, _):
@@ -672,7 +683,7 @@ public enum ChatListSearchEntry: Comparable, Identifiable {
                 return false
             case let .globalPeer(_, _, rhsIndex, _, _, _, _, _, _, _, _):
                 return lhsIndex <= rhsIndex
-            case .message, .messagePlaceholder, .emptyMessagesFooter, .addContact:
+            case .message, .messagePlaceholder, .emptyMessagesFooter, .addContact, .luckgramSearchHidden:
                 return true
             }
         case let .message(_, _, _, _, _, _, _, _, lhsKey, _, _, _, _, _, _):
@@ -684,6 +695,8 @@ public enum ChatListSearchEntry: Comparable, Identifiable {
                 return true
             } else if case .addContact = rhs {
                 return true
+            } else if case .luckgramSearchHidden = rhs {
+                return true
             } else {
                 return false
             }
@@ -694,16 +707,26 @@ public enum ChatListSearchEntry: Comparable, Identifiable {
                 return true
             } else if case .addContact = rhs {
                 return true
+            } else if case .luckgramSearchHidden = rhs {
+                return true
             } else {
                 return false
             }
         case .emptyMessagesFooter:
             if case .addContact = rhs {
                 return true
+            } else if case .luckgramSearchHidden = rhs {
+                return true
             } else {
                 return false
             }
         case .addContact:
+            if case .luckgramSearchHidden = rhs {
+                return true
+            } else {
+                return false
+            }
+        case .luckgramSearchHidden:
             return false
         }
     }
@@ -1299,6 +1322,16 @@ public enum ChatListSearchEntry: Comparable, Identifiable {
             case let .addContact(phoneNumber, theme, strings):
                 return ContactsAddItem(context: context, theme: theme, strings: strings, phoneNumber: phoneNumber, header: ChatListSearchItemHeader(type: .phoneNumber, theme: theme, strings: strings, actionTitle: nil, action: nil), action: {
                     interaction.addContact(phoneNumber)
+                })
+            case let .luckgramSearchHidden(count, theme, _):
+                let icon: ContactListActionItemIcon
+                if let image = generateTintedImage(image: UIImage(bundleImageName: "Components/Search Bar/Loupe"), color: theme.list.itemAccentColor) {
+                    icon = .generic(image)
+                } else {
+                    icon = .none
+                }
+                return ContactListActionItem(presentationData: ItemListPresentationData(presentationData), title: LuckgramHiddenChats.Strings.searchHidden, subtitle: LuckgramHiddenChats.Strings.searchMatches(count), icon: icon, header: nil, action: {
+                    LuckgramHiddenChatsStore.shared.setIncludeHiddenInSearch(true)
                 })
         }
     }
@@ -3240,6 +3273,16 @@ final class ChatListSearchListPaneNode: ASDisplayNode, ChatListSearchPaneNode {
 
                 existingPeerIds.removeAll()
 
+                // Luckgram 12 (specs#125): hidden chats that matched this query, for the bottom "Search in hidden chats" row.
+                var luckgramHiddenMatches = Set<EnginePeer.Id>()
+                let luckgramSkip: (EnginePeer.Id) -> Bool = { peerId in
+                    if LuckgramHiddenChats.skipInSearch(context: context, peerId: peerId) {
+                        luckgramHiddenMatches.insert(peerId)
+                        return true
+                    }
+                    return false
+                }
+
                 let localExpandType: ChatListSearchSectionExpandType = .none
                 let globalExpandType: ChatListSearchSectionExpandType
                 if totalNumberOfGlobalPeers > 3 {
@@ -3274,7 +3317,7 @@ final class ChatListSearchListPaneNode: ASDisplayNode, ChatListSearchPaneNode {
                         continue
                     }
 
-                    if let peer = renderedPeer.peers[renderedPeer.peerId], peer.id != context.account.peerId, filteredPeer(peer, EnginePeer(accountPeer)), !LuckgramHiddenChats.skipInSearch(context: context, peerId: peer.id) {
+                    if let peer = renderedPeer.peers[renderedPeer.peerId], peer.id != context.account.peerId, filteredPeer(peer, EnginePeer(accountPeer)), !luckgramSkip(peer.id) {
                         if !existingPeerIds.contains(peer.id) {
                             existingPeerIds.insert(peer.id)
                             var associatedPeer: EnginePeer?
@@ -3312,7 +3355,7 @@ final class ChatListSearchListPaneNode: ASDisplayNode, ChatListSearchPaneNode {
                                 matches = true
                             }
 
-                            if matches, !LuckgramHiddenChats.skipInSearch(context: context, peerId: peer.id) {
+                            if matches, !luckgramSkip(peer.id) {
                                 existingPeerIds.insert(peer.id)
                                 entries.append(.localPeer(peer, associatedPeer, nil, index, presentationData.theme, presentationData.strings, presentationData.nameSortOrder, presentationData.nameDisplayOrder, localExpandType, nil, false, false))
                             }
@@ -3329,7 +3372,7 @@ final class ChatListSearchListPaneNode: ASDisplayNode, ChatListSearchPaneNode {
                         continue
                     }
 
-                    if let peer = renderedPeer.peers[renderedPeer.peerId], peer.id != context.account.peerId, filteredPeer(peer, EnginePeer(accountPeer)), !LuckgramHiddenChats.skipInSearch(context: context, peerId: peer.id) {
+                    if let peer = renderedPeer.peers[renderedPeer.peerId], peer.id != context.account.peerId, filteredPeer(peer, EnginePeer(accountPeer)), !luckgramSkip(peer.id) {
                         if !existingPeerIds.contains(peer.id) {
                             existingPeerIds.insert(peer.id)
                             var associatedPeer: EnginePeer?
@@ -3352,7 +3395,7 @@ final class ChatListSearchListPaneNode: ASDisplayNode, ChatListSearchPaneNode {
                     }
 
                     // Luckgram 12: server "my results" include hidden chats too (specs#125).
-                    if !existingPeerIds.contains(peer.peer.id), filteredPeer(peer.peer, EnginePeer(accountPeer)), !LuckgramHiddenChats.skipInSearch(context: context, peerId: peer.peer.id) {
+                    if !existingPeerIds.contains(peer.peer.id), filteredPeer(peer.peer, EnginePeer(accountPeer)), !luckgramSkip(peer.peer.id) {
                         existingPeerIds.insert(peer.peer.id)
                         entries.append(.localPeer(peer.peer, nil, nil, index, presentationData.theme, presentationData.strings, presentationData.nameSortOrder, presentationData.nameDisplayOrder, localExpandType, nil, false, false))
                         index += 1
@@ -3379,7 +3422,7 @@ final class ChatListSearchListPaneNode: ASDisplayNode, ChatListSearchPaneNode {
                             break
                         }
 
-                        if !existingPeerIds.contains(peer.peer.id), filteredPeer(peer.peer, EnginePeer(accountPeer)), !LuckgramHiddenChats.skipInSearch(context: context, peerId: peer.peer.id) {
+                        if !existingPeerIds.contains(peer.peer.id), filteredPeer(peer.peer, EnginePeer(accountPeer)), !luckgramSkip(peer.peer.id) {
                             existingPeerIds.insert(peer.peer.id)
 
                             entries.append(.globalPeer(peer, nil, index, presentationData.theme, presentationData.strings, presentationData.nameSortOrder, presentationData.nameDisplayOrder, globalExpandType, nil, false, finalQuery))
@@ -3455,7 +3498,7 @@ final class ChatListSearchListPaneNode: ASDisplayNode, ChatListSearchPaneNode {
                                 }
 
                                 //TODO:requiresPremiumForMessaging
-                                if LuckgramHiddenChats.skipInSearch(context: context, peerId: message.id.peerId) {
+                                if luckgramSkip(message.id.peerId) {
                                     continue
                                 }
                                 hasAnyMessages = true
@@ -3482,6 +3525,10 @@ final class ChatListSearchListPaneNode: ASDisplayNode, ChatListSearchPaneNode {
 
                 if case .chats = key, !peersFilter.contains(.excludeRecent), isViablePhoneNumber(finalQuery) {
                     entries.append(.addContact(finalQuery, presentationData.theme, presentationData.strings))
+                }
+
+                if !luckgramHiddenMatches.isEmpty, LuckgramHiddenChats.isEnabled, !LuckgramHiddenChatsStore.shared.includeHiddenInSearch {
+                    entries.append(.luckgramSearchHidden(luckgramHiddenMatches.count, presentationData.theme, presentationData.strings))
                 }
 
                 return (entries, isSearching, query)
