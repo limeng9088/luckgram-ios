@@ -6299,6 +6299,7 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
     private var luckgramTalkToggleIsTalk: Bool?
     private var luckgramTalkBar: UIView?
     private var luckgramTalkBarLabel: UILabel?
+    private var luckgramTalkEmojiButton: HighlightTrackingButton?
     private var luckgramTalkOverlay: LuckgramTalkOverlayView?
     private var luckgramTalkHolding = false
     private var luckgramTalkBeganAt: CFTimeInterval = 0.0
@@ -6359,6 +6360,7 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
             }
             self.luckgramTalkToggle?.isHidden = true
             self.luckgramTalkBar?.isHidden = true
+            self.luckgramTalkEmojiButton?.isHidden = true
             return
         }
 
@@ -6437,8 +6439,28 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
             label.frame = CGRect(origin: CGPoint(), size: barFrame.size)
             self.luckgramUpdateTalkBarText()
             self.glassBackgroundContainer.contentView.bringSubviewToFront(bar)
+
+            // the emoji button stays at the right end of the bar; it leads back to the field with the emoji panel
+            let emojiButton: HighlightTrackingButton
+            if let current = self.luckgramTalkEmojiButton {
+                emojiButton = current
+            } else {
+                emojiButton = HighlightTrackingButton()
+                emojiButton.setImage(UIImage(systemName: "face.smiling", withConfiguration: UIImage.SymbolConfiguration(pointSize: 20.0, weight: .regular))?.withRenderingMode(.alwaysTemplate), for: .normal)
+                emojiButton.isAccessibilityElement = true
+                emojiButton.accessibilityTraits = [.button]
+                emojiButton.accessibilityLabel = interfaceState.strings.VoiceOver_Stickers
+                emojiButton.addTarget(self, action: #selector(self.luckgramTalkEmojiPressed), for: .touchUpInside)
+                self.glassBackgroundContainer.contentView.addSubview(emojiButton)
+                self.luckgramTalkEmojiButton = emojiButton
+            }
+            emojiButton.isHidden = false
+            emojiButton.tintColor = interfaceState.theme.chat.inputPanel.inputControlColor
+            emojiButton.frame = CGRect(x: barFrame.maxX - 40.0 - 2.0, y: barFrame.minY, width: 40.0, height: 40.0)
+            self.glassBackgroundContainer.contentView.bringSubviewToFront(emojiButton)
         } else {
             self.luckgramTalkBar?.isHidden = true
+            self.luckgramTalkEmojiButton?.isHidden = true
         }
     }
 
@@ -6464,6 +6486,14 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
             return
         }
         self.luckgramSetTalkMode(!self.luckgramTalkMode, focus: true)
+    }
+
+    @objc private func luckgramTalkEmojiPressed() {
+        if self.luckgramTalkHolding || self.luckgramTalkConverting {
+            return
+        }
+        self.luckgramSetTalkMode(false, focus: false)
+        self.interfaceInteraction?.openStickers()
     }
 
     private func luckgramSetTalkMode(_ talk: Bool, focus: Bool) {
