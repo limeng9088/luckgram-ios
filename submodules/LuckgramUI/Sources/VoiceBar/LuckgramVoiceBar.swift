@@ -172,7 +172,7 @@ public final class LuckgramTalkOverlayView: UIView {
         let send = zone == .send
 
         // targets for this zone
-        let pillCenterY = h - 160.0 - bottomInset
+        let pillCenterY = h - 168.0 - bottomInset
         let pillHeight: CGFloat = 72.0
         let bubbleBottom = min(h * 0.613, pillCenterY - pillHeight / 2.0 - 96.0)
         let targetLeft: CGFloat
