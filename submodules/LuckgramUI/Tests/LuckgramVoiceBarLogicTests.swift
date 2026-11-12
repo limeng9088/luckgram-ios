@@ -41,4 +41,17 @@ final class LuckgramVoiceBarLogicTests: XCTestCase {
         XCTAssertFalse(LuckgramVoiceBarLogic.isSilenceHallucination("晚上八点见"))
         XCTAssertFalse(LuckgramVoiceBarLogic.isSilenceHallucination(""))
     }
+
+    func testRepeatedAndFillerSentencesAreNotTranscripts() {
+        XCTAssertTrue(LuckgramVoiceBarLogic.isSilenceHallucination("That's it. Thank you. God bless. God bless. God bless."))
+        XCTAssertTrue(LuckgramVoiceBarLogic.isSilenceHallucination("Thank you. Bye.", weakSignal: true))
+        XCTAssertTrue(LuckgramVoiceBarLogic.isSilenceHallucination("谢谢。", weakSignal: true))
+        // said out loud, these are real
+        XCTAssertFalse(LuckgramVoiceBarLogic.isSilenceHallucination("Thank you. Bye."))
+        XCTAssertFalse(LuckgramVoiceBarLogic.isSilenceHallucination("谢谢"))
+        XCTAssertFalse(LuckgramVoiceBarLogic.isSilenceHallucination("Thank you, see you at eight.", weakSignal: true))
+        XCTAssertFalse(LuckgramVoiceBarLogic.isSilenceHallucination("好的。好的。", weakSignal: true))
+        XCTAssertTrue(LuckgramVoiceBarLogic.isWeak(peakLevel: 0.2))
+        XCTAssertFalse(LuckgramVoiceBarLogic.isWeak(peakLevel: 0.35))
+    }
 }

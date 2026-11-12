@@ -41,10 +41,44 @@ public enum LuckgramVoiceBarLogic {
         "ご視聴ありがとうございました", "私のビデオを見てくれてありがとう", "谢谢观看", "謝謝觀看", "字幕由amaraorg社区提供"
     ]
 
-    /// The transcript is one of the stock phrases a model invents for silence, not something that was said.
-    public static func isSilenceHallucination(_ text: String) -> Bool {
-        let normalized = String(String.UnicodeScalarView(text.lowercased().unicodeScalars.filter { CharacterSet.alphanumerics.contains($0) }))
+    /// Loudest mic level below which the recording was at most faint noise: a transcript made only of filler
+    /// sentences is then not believed either.
+    public static let weakLevel: Double = 0.35
+
+    public static func isWeak(peakLevel: Double) -> Bool {
+        return peakLevel < weakLevel
+    }
+
+    /// Filler sentences a model strings together for near-silence (「That's it. Thank you. God bless.」). People do
+    /// say these, so they only count when the recording was faint.
+    private static let fillerSentences: Set<String> = [
+        "thankyou", "thanks", "thankyouverymuch", "thatsit", "godbless", "bye", "byebye", "you", "ok", "okay", "yeah",
+        "谢谢", "謝謝", "谢谢大家", "ありがとう", "ありがとうございました", "おやすみなさい"
+    ]
+
+    private static func normalize(_ text: String) -> String {
+        return String(String.UnicodeScalarView(text.lowercased().unicodeScalars.filter { CharacterSet.alphanumerics.contains($0) }))
+    }
+
+    /// The transcript is something a model invents for silence, not something that was said:
+    /// a short text around a stock phrase, one sentence three times over, or (faint recording only) nothing but fillers.
+    public static func isSilenceHallucination(_ text: String, weakSignal: Bool = false) -> Bool {
+        let normalized = normalize(text)
+        if normalized.isEmpty {
+            return false
+        }
         // short text built around a stock phrase (「メッセージなし。ご視聴ありがとうございました。」) counts too
-        return normalized.count <= 40 && silencePhrases.contains(where: { normalized.contains($0) })
+        if normalized.count <= 40 && silencePhrases.contains(where: { normalized.contains($0) }) {
+            return true
+        }
+        let sentences = text.components(separatedBy: CharacterSet(charactersIn: ".!?。！？\n")).map(normalize).filter { !$0.isEmpty }
+        var counts: [String: Int] = [:]
+        for sentence in sentences {
+            counts[sentence, default: 0] += 1
+        }
+        if counts.values.contains(where: { $0 >= 3 }) {
+            return true
+        }
+        return weakSignal && !sentences.isEmpty && sentences.allSatisfy { fillerSentences.contains($0) }
     }
 }
