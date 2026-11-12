@@ -31,6 +31,8 @@ final class LuckgramPlusPanelInputNode: ChatInputNode, UIScrollViewDelegate {
     private var items: [Item] = []
     private var theme: PresentationTheme?
     private var lastWidth: CGFloat = 0.0
+    private var lastTopInset: CGFloat = 0.0
+    private var wasVisible = false
 
     private static let columns = 4
     private static let rows = 2
@@ -177,9 +179,11 @@ final class LuckgramPlusPanelInputNode: ChatInputNode, UIScrollViewDelegate {
         transition.updateFrame(view: self.backgroundChromeView, frame: backgroundFrame.insetBy(dx: -1.0, dy: 0.0))
 
         // grid
-        let topInset: CGFloat = 20.0
-        let cellHeight: CGFloat = 58.0 + 6.0 + 16.0
-        let rowSpacing: CGFloat = 14.0
+        // specs#147: the two rows sit in the middle of the panel instead of hugging its top
+        let cellHeight: CGFloat = 60.0 + 7.0 + 16.0
+        let rowSpacing: CGFloat = 20.0
+        let rowsHeight = CGFloat(LuckgramPlusPanelInputNode.rows) * cellHeight + CGFloat(LuckgramPlusPanelInputNode.rows - 1) * rowSpacing
+        let topInset = max(18.0, min(48.0, floor((panelHeight - bottomInset - 24.0 - rowsHeight) / 2.0)))
         let gridHeight = topInset + CGFloat(LuckgramPlusPanelInputNode.rows) * cellHeight + CGFloat(LuckgramPlusPanelInputNode.rows - 1) * rowSpacing
         let pageWidth = width
         let perPage = LuckgramPlusPanelInputNode.columns * LuckgramPlusPanelInputNode.rows
@@ -193,8 +197,9 @@ final class LuckgramPlusPanelInputNode: ChatInputNode, UIScrollViewDelegate {
         self.pageControl.currentPageIndicatorTintColor = LuckgramPlusPanelColors.dotCurrent(dark: theme.overallDarkAppearance)
         self.pageControl.frame = CGRect(x: 0.0, y: gridHeight + 4.0, width: width, height: 20.0)
 
-        if self.lastWidth != width {
+        if self.lastWidth != width || self.lastTopInset != topInset {
             self.lastWidth = width
+            self.lastTopInset = topInset
             for cell in self.cells {
                 cell.removeFromSuperview()
             }
@@ -224,7 +229,32 @@ final class LuckgramPlusPanelInputNode: ChatInputNode, UIScrollViewDelegate {
             self.scrollViewDidScroll(self.scrollView)
         }
 
+        if isVisible && !self.wasVisible {
+            self.animateCellsIn()
+        }
+        self.wasVisible = isVisible
+
         return (panelHeight, 0.0)
+    }
+
+    /// The panel just came up: the cells of the page in view appear one after another.
+    private func animateCellsIn() {
+        let perPage = LuckgramPlusPanelInputNode.columns * LuckgramPlusPanelInputNode.rows
+        let page = self.pageControl.currentPage
+        for (index, cell) in self.cells.enumerated() {
+            if index / perPage != page {
+                continue
+            }
+            let indexInPage = index % perPage
+            let step = indexInPage / LuckgramPlusPanelInputNode.columns + indexInPage % LuckgramPlusPanelInputNode.columns
+            let alpha = cell.alpha
+            cell.alpha = 0.0
+            cell.transform = CGAffineTransform(translationX: 0.0, y: 10.0).scaledBy(x: 0.82, y: 0.82)
+            UIView.animate(withDuration: 0.42, delay: 0.04 + Double(step) * 0.028, usingSpringWithDamping: 0.72, initialSpringVelocity: 0.0, options: [.allowUserInteraction], animations: {
+                cell.alpha = alpha
+                cell.transform = .identity
+            }, completion: nil)
+        }
     }
 
     private func makeCell(item: Item, theme: PresentationTheme, frame: CGRect) -> UIControl {
@@ -233,21 +263,31 @@ final class LuckgramPlusPanelInputNode: ChatInputNode, UIScrollViewDelegate {
         cell.accessibilityTraits = [.button]
         cell.isAccessibilityElement = true
 
-        let squareSize: CGFloat = 58.0
+        let squareSize: CGFloat = 60.0
         let square = UIView(frame: CGRect(x: floor((frame.width - squareSize) / 2.0), y: 0.0, width: squareSize, height: squareSize))
         square.isUserInteractionEnabled = false
-        square.layer.cornerRadius = 14.0
+        square.layer.cornerRadius = 18.0
         square.layer.cornerCurve = .continuous
-        square.backgroundColor = LuckgramPlusPanelColors.square(dark: theme.overallDarkAppearance)
+        square.clipsToBounds = true
+        let colors = LuckgramPlusPanelColors.square(item.action)
+        let gradient = CAGradientLayer()
+        gradient.frame = square.bounds
+        gradient.colors = [colors.top.cgColor, colors.bottom.cgColor]
+        gradient.startPoint = CGPoint(x: 0.5, y: 0.0)
+        gradient.endPoint = CGPoint(x: 0.5, y: 1.0)
+        square.layer.addSublayer(gradient)
         cell.addSubview(square)
 
-        let icon = UIImageView(image: UIImage(systemName: item.action.systemImageName, withConfiguration: UIImage.SymbolConfiguration(pointSize: 24.0, weight: .regular)))
+        // white on color reads better filled; not every symbol has a filled form
+        let symbolConfiguration = UIImage.SymbolConfiguration(pointSize: 25.0, weight: .medium)
+        let symbolName = item.action.systemImageName
+        let icon = UIImageView(image: UIImage(systemName: symbolName + ".fill", withConfiguration: symbolConfiguration) ?? UIImage(systemName: symbolName, withConfiguration: symbolConfiguration))
         icon.tintColor = LuckgramPlusPanelColors.icon(dark: theme.overallDarkAppearance)
         icon.contentMode = .center
         icon.frame = square.bounds
         square.addSubview(icon)
 
-        let label = UILabel(frame: CGRect(x: 2.0, y: squareSize + 6.0, width: frame.width - 4.0, height: 16.0))
+        let label = UILabel(frame: CGRect(x: 2.0, y: squareSize + 7.0, width: frame.width - 4.0, height: 16.0))
         label.isUserInteractionEnabled = false
         label.text = item.action.title
         label.font = UIFont.systemFont(ofSize: 12.0)
@@ -264,13 +304,15 @@ final class LuckgramPlusPanelInputNode: ChatInputNode, UIScrollViewDelegate {
     }
 
     @objc private func cellHighlight(_ sender: UIControl) {
-        sender.subviews.first?.alpha = 0.6
+        UIView.animate(withDuration: 0.09, delay: 0.0, options: [.beginFromCurrentState, .allowUserInteraction], animations: {
+            sender.subviews.first?.transform = CGAffineTransform(scaleX: 0.9, y: 0.9)
+        }, completion: nil)
     }
 
     @objc private func cellUnhighlight(_ sender: UIControl) {
-        UIView.animate(withDuration: 0.2) {
-            sender.subviews.first?.alpha = 1.0
-        }
+        UIView.animate(withDuration: 0.35, delay: 0.0, usingSpringWithDamping: 0.5, initialSpringVelocity: 0.0, options: [.beginFromCurrentState, .allowUserInteraction], animations: {
+            sender.subviews.first?.transform = .identity
+        }, completion: nil)
     }
 
     @objc private func cellPressed(_ sender: UIControl) {
