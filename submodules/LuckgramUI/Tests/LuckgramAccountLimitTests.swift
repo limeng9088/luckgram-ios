@@ -3,8 +3,8 @@ import XCTest
 
 final class LuckgramAccountLimitTests: XCTestCase {
     func testDefaults() {
-        XCTAssertEqual(LuckgramAccountLimit.defaultMaxFree, 5)
-        XCTAssertEqual(LuckgramAccountLimit.limit(isPro: false, remoteMaxFree: LuckgramAccountLimit.defaultMaxFree), 5)
+        XCTAssertEqual(LuckgramAccountLimit.defaultMaxFree, 10)
+        XCTAssertEqual(LuckgramAccountLimit.limit(isPro: false, remoteMaxFree: LuckgramAccountLimit.defaultMaxFree), 10)
         XCTAssertEqual(LuckgramAccountLimit.limit(isPro: true, remoteMaxFree: LuckgramAccountLimit.defaultMaxFree), LuckgramAccountLimit.slotCapacity)
     }
 
