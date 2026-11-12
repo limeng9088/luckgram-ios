@@ -1753,7 +1753,7 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
         let hasForward = interfaceState.interfaceState.forwardMessageIds != nil
         
         var isRecording = false
-        if let _ = interfaceState.inputTextPanelState.mediaRecordingState {
+        if let _ = self.luckgramShownRecordingState(interfaceState) {
             isRecording = true
         }
         
@@ -1838,7 +1838,11 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
         }
         
         var displaySendAsAvatarButton = false
-        let mediaRecordingState = interfaceState.inputTextPanelState.mediaRecordingState
+        // Luckgram specs#145: 「按住 说话」 has its own overlay; Telegram's recording strip and lock stay out
+        let mediaRecordingState = self.luckgramShownRecordingState(interfaceState)
+        if self.luckgramTalkOwnsRecording, case let .audio(recorder, _) = interfaceState.inputTextPanelState.mediaRecordingState {
+            self.luckgramTalkRecorderStarted(recorder)
+        }
         if let sendAsPeers = interfaceState.sendAsPeers, !sendAsPeers.isEmpty && interfaceState.editMessageState == nil {
             menuButtonExpanded = false
             displaySendAsAvatarButton = true
@@ -2710,6 +2714,10 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
         if interfaceState.interfaceState.mediaDraftState != nil {
             audioRecordingItemsAlpha = 0.0
         }
+        if self.luckgramTalkMode && self.luckgramVoiceBarOn {
+            // Luckgram specs#145: nothing of the field (placeholder, emoji button) shows through 「按住 说话」
+            audioRecordingItemsAlpha = 0.0
+        }
         
         if let audioRecordingRemoveAnimationState = self.audioRecordingRemoveAnimationState, case .previewToAttachButton = audioRecordingRemoveAnimationState {
             self.audioRecordingRemoveAnimationState = nil
@@ -2811,7 +2819,6 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
                 }
                 self.mediaActionButtons.micButton.audioRecorder = recorder
                 audioRecordingTimeNode.audioRecorder = recorder
-                self.luckgramTalkRecorderStarted(recorder)
             case let .video(status, _):
                 let hadVideoRecorder = self.mediaActionButtons.micButton.videoRecordingStatus != nil
                 if !hadVideoRecorder, isLocked {
@@ -3541,7 +3548,7 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
         let slowModeButtonFrame = CGRect(origin: CGPoint(x: hideOffset.x + width - rightInset - 5.0 - slowModeButtonSize.width + composeButtonsOffset, y: hideOffset.y + panelHeight - minimalHeight), size: slowModeButtonSize)
         transition.updateFrame(node: self.slowModeButton, frame: slowModeButtonFrame)
         
-        if let _ = interfaceState.inputTextPanelState.mediaRecordingState {
+        if let _ = self.luckgramShownRecordingState(interfaceState) {
             let text: String = interfaceState.strings.VoiceOver_MessageContextSend
             let mediaRecordingAccessibilityArea: AccessibilityAreaNode
             var added = false
@@ -3783,7 +3790,7 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
         
         var viewOnceIsVisible = false
         var recordMoreIsVisible = false
-        if let recordingState = interfaceState.inputTextPanelState.mediaRecordingState {
+        if let recordingState = self.luckgramShownRecordingState(interfaceState) {
             if case let .audio(_, isLocked) = recordingState {
                 viewOnceIsVisible = isLocked
             } else if case let .video(_, isLocked) = recordingState {
@@ -6296,6 +6303,9 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
     private var luckgramTalkHolding = false
     private var luckgramTalkBeganAt: CFTimeInterval = 0.0
     private var luckgramTalkConverting = false
+    /// The recording in the interface state was started by 「按住 说话」: Telegram's own recording UI is not laid out for it.
+    private var luckgramTalkOwnsRecording = false
+    private var luckgramTalkPeakLevel: Float = 0.0
     private weak var luckgramTalkRecorder: ManagedAudioRecorder?
     private var luckgramTalkLevelDisposable: Disposable?
     private var luckgramTalkDataDisposable: Disposable?
@@ -6313,6 +6323,19 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
             return false
         }
         return true
+    }
+
+    /// The recording state Telegram's layout should show: none while 「按住 说话」 owns it.
+    private func luckgramShownRecordingState(_ interfaceState: ChatPresentationInterfaceState) -> ChatTextInputPanelMediaRecordingState? {
+        let state = interfaceState.inputTextPanelState.mediaRecordingState
+        if self.luckgramTalkOwnsRecording {
+            if state == nil && !self.luckgramTalkHolding {
+                self.luckgramTalkOwnsRecording = false
+            } else {
+                return nil
+            }
+        }
+        return state
     }
 
     private func luckgramLayoutVoiceBar(interfaceState: ChatPresentationInterfaceState, leftInset: CGFloat, textInputFrame: CGRect, isRecording: Bool, transition: ContainedViewLayoutTransition) {
@@ -6501,6 +6524,8 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
             return
         }
         self.luckgramTalkHolding = true
+        self.luckgramTalkOwnsRecording = true
+        self.luckgramTalkPeakLevel = 0.0
         self.luckgramTalkBeganAt = CACurrentMediaTime()
         self.luckgramUpdateTalkBarText()
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
@@ -6525,7 +6550,11 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
         self.luckgramTalkLevelDisposable = (recorder.micLevel
         |> deliverOnMainQueue).startStrict(next: { [weak self] level in
             // micLevel is roughly 0...1, quiet speech well below 0.5
-            self?.luckgramTalkOverlay?.push(level: min(1.0, CGFloat(level) * 2.5))
+            guard let self else {
+                return
+            }
+            self.luckgramTalkPeakLevel = max(self.luckgramTalkPeakLevel, level)
+            self.luckgramTalkOverlay?.push(level: min(1.0, CGFloat(level) * 2.5))
         })
     }
 
@@ -6564,6 +6593,13 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
         }
         // 「转文字」: read the recording back instead of sending it
         guard let recorder else {
+            return
+        }
+        if LuckgramVoiceBarLogic.isSilent(peakLevel: Double(self.luckgramTalkPeakLevel)) {
+            // nothing to convert; a model would make something up
+            self.luckgramEndTalkUI()
+            interfaceInteraction.finishMediaRecording(.dismiss)
+            self.luckgramTalkHint(LuckgramVoiceBar.nothingHeard)
             return
         }
         self.luckgramTalkHolding = false
@@ -6611,7 +6647,7 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
             self.luckgramTalkConverting = false
             self.luckgramUpdateTalkBarText()
             let text = result.text.trimmingCharacters(in: .whitespacesAndNewlines)
-            if text.isEmpty {
+            if text.isEmpty || LuckgramVoiceBarLogic.isSilenceHallucination(text) {
                 self.luckgramTalkHint(LuckgramVoiceBar.nothingHeard)
                 return
             }
