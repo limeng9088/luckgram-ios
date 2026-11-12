@@ -35,6 +35,52 @@ public enum LuckgramVoiceBarLogic {
         return peakLevel < silenceLevel
     }
 
+    /// A voice stays above `silenceLevel` for a while; a click or a bump is one loud moment.
+    public static let minimumLoudSeconds: Double = 0.3
+
+    /// A gap between two level readings counts for at most this much, however late the second one comes.
+    public static let loudStepLimit: Double = 0.25
+
+    /// Adds the time since the previous level reading to the total if the input is loud now.
+    public static func loudSeconds(_ total: Double, level: Double, sincePrevious: Double) -> Double {
+        if level < silenceLevel {
+            return total
+        }
+        return total + min(loudStepLimit, max(0.0, sincePrevious))
+    }
+
+    public static func isSilent(peakLevel: Double, loudSeconds: Double) -> Bool {
+        return peakLevel < silenceLevel || loudSeconds < minimumLoudSeconds
+    }
+
+    /// Length (in characters, after normalizing) of the longest piece that comes twice without overlapping,
+    /// provided it has at least 4 different characters (「哈哈哈哈」 is laughter, not a loop).
+    static func longestRepeat(_ normalized: String) -> Int {
+        let a = Array(normalized.unicodeScalars.prefix(400))
+        let n = a.count
+        if n < 2 {
+            return 0
+        }
+        var best = 0
+        var previous = [Int](repeating: 0, count: n + 1)
+        for i in 1 ... n {
+            var current = [Int](repeating: 0, count: n + 1)
+            if i < n {
+                for j in (i + 1) ... n {
+                    if a[i - 1] == a[j - 1] && previous[j - 1] < j - i {
+                        let length = previous[j - 1] + 1
+                        current[j] = length
+                        if length > best && Set(a[(i - length) ..< i]).count >= 4 {
+                            best = length
+                        }
+                    }
+                }
+            }
+            previous = current
+        }
+        return best
+    }
+
     /// What speech-to-text models make up for recordings with no speech in them.
     private static let silencePhrases: Set<String> = [
         "thankyousomuchforwatching", "thankyouforwatching", "thanksforwatching", "メッセージなし", "subtitlesbytheamaraorgcommunity",
@@ -61,7 +107,7 @@ public enum LuckgramVoiceBarLogic {
     }
 
     /// The transcript is something a model invents for silence, not something that was said:
-    /// a short text around a stock phrase, one sentence three times over, or (faint recording only) nothing but fillers.
+    /// a short text around a stock phrase, one sentence three times over, a loop of the same words, or (faint recording only) nothing but fillers.
     public static func isSilenceHallucination(_ text: String, weakSignal: Bool = false) -> Bool {
         let normalized = normalize(text)
         if normalized.isEmpty {
@@ -77,6 +123,11 @@ public enum LuckgramVoiceBarLogic {
             counts[sentence, default: 0] += 1
         }
         if counts.values.contains(where: { $0 >= 3 }) {
+            return true
+        }
+        // a loop: 「BREATHING IN DEEPLY BREATHING OUT DEEPLY BREATHING IN DEEPLY …」, half of the text or more said twice
+        let repeated = longestRepeat(normalized)
+        if repeated >= 6 && repeated * 2 * 2 >= normalized.unicodeScalars.count {
             return true
         }
         return weakSignal && !sentences.isEmpty && sentences.allSatisfy { fillerSentences.contains($0) }
