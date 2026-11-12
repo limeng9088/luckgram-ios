@@ -40,13 +40,37 @@ public enum LuckgramSquare {
     static var profile: [String: Any]?
     /// Author id of this device's user in Square (from the profile response), if known.
     public static var myAuthorId: String?
-    /// Bumped whenever a page changed something the feed should reload (post, delete, block).
-    public static let changed = ValuePromise<Int>(0, ignoreRepeated: false)
-    private static var changeCounter = 0
+    /// What other Square pages did while the feed was covered. The feed applies it in place when
+    /// it is shown again: counts are updated, deleted posts and blocked authors taken out, and
+    /// only a new post makes it go back to the top and refresh. Nothing empties the list.
+    struct PendingChanges {
+        var updated: [String: SquareLogic.Post] = [:]
+        var removedPosts = Set<String>()
+        var blockedAuthors = Set<String>()
+        /// A new post, or all own data deleted: the first page is different now.
+        var needsRefresh = false
+    }
+    static var pending = PendingChanges()
 
-    public static func markChanged() {
-        changeCounter += 1
-        changed.set(changeCounter)
+    /// A post's like or comment count changed on this page.
+    static func noteUpdated(_ post: SquareLogic.Post?) {
+        if let post, !post.id.isEmpty {
+            pending.updated[post.id] = post
+        }
+    }
+
+    static func noteRemoved(_ postId: String) {
+        pending.removedPosts.insert(postId)
+        dropSavedPages()
+    }
+
+    static func noteBlocked(_ authorId: String) {
+        pending.blockedAuthors.insert(authorId)
+        dropSavedPages()
+    }
+
+    public static func noteNeedsRefresh() {
+        pending.needsRefresh = true
     }
 
     /// Forget cached state (unlink, logout, "delete my Square data").
@@ -55,6 +79,54 @@ public enum LuckgramSquare {
         profile = nil
         myAuthorId = nil
         imageCache.removeAll()
+        clearFeeds()
+    }
+
+    // MARK: - feed lists
+
+    /// One list per tab. Kept for as long as the app runs, so closing the page and opening it
+    /// again shows the same posts at the same place without a request (unless older than 5
+    /// minutes). The first page of each tab is also saved on the device: after a restart the
+    /// page opens with those posts and refreshes over them. Main thread only.
+    private static var feeds: [String: SquareLogic.Feed] = [:]
+    private static let savedKey = "square_feed_page_"
+    private static let feedTabs = [SquareLogic.tabLatest, SquareLogic.tabHot, SquareLogic.tabRecommend]
+
+    static func feed(for tab: String) -> SquareLogic.Feed {
+        if let f = feeds[tab] {
+            return f
+        }
+        let f = SquareLogic.Feed(tab: tab)
+        feeds[tab] = f
+        if let saved = SquareLogic.decodeSaved(LuckgramSettings.shared.string(savedKey + tab, default: nil), now: SquareEvents.nowMs()) {
+            f.restore(saved.page, savedAtMs: saved.savedAtMs)
+        }
+        return f
+    }
+
+    static var loadedFeeds: [SquareLogic.Feed] {
+        return Array(feeds.values)
+    }
+
+    /// Keeps the first page of a tab for the next start of the app.
+    static func saveFirstPage(_ page: [String: Any], tab: String) {
+        if let encoded = SquareLogic.encodeSaved(page, now: SquareEvents.nowMs()) {
+            LuckgramSettings.shared.setString(savedKey + tab, encoded)
+        }
+    }
+
+    /// The saved first pages no longer match (a post deleted, an author blocked): the next start
+    /// loads fresh ones.
+    static func dropSavedPages() {
+        for tab in feedTabs {
+            LuckgramSettings.shared.remove(savedKey + tab)
+        }
+    }
+
+    /// Forgets every list, in memory and on the device.
+    static func clearFeeds() {
+        feeds.removeAll()
+        dropSavedPages()
     }
 
     /// Learns who "I" am in Square (specs#68): when a page opens and the device is linked, the
@@ -302,7 +374,7 @@ public enum LuckgramSquare {
                 TextAlertAction(type: .destructiveAction, title: tx.block, action: {
                     let _ = LuckgramBlocks.block(userId: author.id, displayName: author.displayName).start(next: { _ in
                         toast(context: context, tx.blocked, present: present)
-                        markChanged()
+                        noteBlocked(author.id)
                         done()
                     }, error: { error in
                         showError(error, context: context, present: present, push: push)
@@ -320,6 +392,7 @@ public enum LuckgramSquare {
                 var p = post
                 p.liked = (j["liked"] as? Bool) ?? like
                 p.likeCount = max(0, (j["like_count"] as? NSNumber)?.intValue ?? (post.likeCount + (like ? 1 : -1)))
+                noteUpdated(p)
                 changed(p)
             }, error: { error in
                 showError(error, context: context, present: present, push: push)
@@ -334,7 +407,7 @@ public enum LuckgramSquare {
             TextAlertAction(type: .destructiveAction, title: tx.delete, action: {
                 let _ = LuckgramAI.shared.requestJSON(method: "DELETE", path: SquareLogic.postPath(post.id)).start(next: { _ in
                     toast(context: context, tx.deleted, present: present)
-                    markChanged()
+                    noteRemoved(post.id)
                     done()
                 }, error: { error in
                     showError(error, context: context, present: present, push: push)

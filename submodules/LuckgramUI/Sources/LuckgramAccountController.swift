@@ -238,7 +238,7 @@ public func luckgramAccountController(context: AccountContext) -> ViewController
                     requests.add(LuckgramAI.shared.requestJSON(method: "DELETE", path: "/v1/square/me").start(next: { _ in
                         state.busy = false
                         LuckgramSquare.clearCache()
-                        LuckgramSquare.markChanged()
+                        LuckgramSquare.noteNeedsRefresh()
                         refresh()
                         luckgramToast(context, sq.deletedMyData, present: presentImpl)
                     }, error: { error in

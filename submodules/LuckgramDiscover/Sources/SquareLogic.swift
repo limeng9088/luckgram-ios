@@ -278,6 +278,254 @@ public enum SquareLogic {
         }
     }
 
+    // MARK: - saved first page
+
+    /// A saved first page older than this is not shown any more.
+    public static let savedMaxAgeMs: Int64 = 7 * 24 * 3600_000
+
+    /// A first page as it was saved, and when.
+    public struct Saved {
+        public let page: Page<Post>
+        public let savedAtMs: Int64
+    }
+
+    /// What is kept on the device for a tab: the server's first page as it came, and the time.
+    public static func encodeSaved(_ firstPage: [String: Any], now: Int64) -> String? {
+        let o: [String: Any] = ["saved_at": NSNumber(value: now), "page": firstPage]
+        guard JSONSerialization.isValidJSONObject(o), let data = try? JSONSerialization.data(withJSONObject: o) else {
+            return nil
+        }
+        return String(data: data, encoding: .utf8)
+    }
+
+    /// Nil when there is nothing usable: unreadable, empty, too old, or from the future.
+    public static func decodeSaved(_ stored: String?, now: Int64) -> Saved? {
+        guard let stored, let data = stored.data(using: .utf8), let o = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else {
+            return nil
+        }
+        guard let savedAt = (o["saved_at"] as? NSNumber)?.int64Value, let page = o["page"] as? [String: Any] else {
+            return nil
+        }
+        if savedAt <= 0 || savedAt > now || now - savedAt > savedMaxAgeMs {
+            return nil
+        }
+        let parsed = parsePosts(page)
+        return parsed.items.isEmpty ? nil : Saved(page: parsed, savedAtMs: savedAt)
+    }
+
+    // MARK: - feed state
+
+    /// One tab of the feed, kept for as long as the page is open. A refresh never empties the list:
+    /// the posts on screen stay until the new first page has arrived and then are swapped in one
+    /// step; a failed refresh leaves them untouched. Tabs keep their own list and position, so
+    /// switching back shows what was there, and reloads only when it is older than `staleMs`.
+    /// The same class lives in SquareLogic.java.
+    public final class Feed {
+        /// A tab shown again after this long refreshes itself.
+        public static let staleMs: Int64 = 5 * 60_000
+        /// The next page is requested when this many posts are left below the last visible one.
+        public static let prefetch = 4
+        /// A page that has not come after this long counts as failed (the list stays, the reader is told).
+        public static let requestTimeoutMs: Int64 = 15_000
+
+        public enum Footer: Equatable {
+            case skeleton
+            case firstError
+            case empty
+            case loadingMore
+            case moreError
+            case end
+        }
+
+        public let tab: String
+        public var posts: [Post] = []
+        public var nextCursor: String?
+        public var loadedOnce = false
+        public var loadedAtMs: Int64 = 0
+        /// When the reader last had this tab on screen (`markSeen`).
+        public var seenAtMs: Int64 = 0
+        public var refreshing = false
+        public var refreshFailed = false
+        public var loadingMore = false
+        public var moreFailed = false
+        /// Bumped by every applied refresh: a page requested for the previous list is dropped.
+        public var generation = 0
+        /// First visible post, saved when the tab is left.
+        public var scrollIndex = 0
+
+        public init(tab: String) {
+            self.tab = tab
+        }
+
+        /// False when a refresh is already running.
+        public func beginRefresh() -> Bool {
+            if self.refreshing {
+                return false
+            }
+            self.refreshing = true
+            self.refreshFailed = false
+            return true
+        }
+
+        /// The first page arrived: it replaces the list in one step. Returns how many of its posts
+        /// were not in the list before (0 on the very first load).
+        @discardableResult
+        public func applyRefresh(_ page: Page<Post>, now: Int64) -> Int {
+            var fresh = 0
+            if self.loadedOnce {
+                let old = Set(self.posts.map { $0.id })
+                fresh = page.items.filter { !old.contains($0.id) }.count
+            }
+            self.posts = []
+            SquareLogic.appendUnique(&self.posts, page.items)
+            self.nextCursor = page.nextCursor
+            self.loadedOnce = true
+            self.loadedAtMs = now
+            self.refreshing = false
+            self.refreshFailed = false
+            self.loadingMore = false
+            self.moreFailed = false
+            self.generation += 1
+            self.scrollIndex = 0
+            return fresh
+        }
+
+        /// The first page saved by an earlier visit (`decodeSaved`): shown at once when the page
+        /// opens, before anything is requested. It counts as loaded at the time it was saved, so
+        /// an old one is refreshed right away — with the posts on screen meanwhile. False when
+        /// the tab already has a list.
+        @discardableResult
+        public func restore(_ page: Page<Post>, savedAtMs: Int64) -> Bool {
+            if self.loadedOnce || page.items.isEmpty {
+                return false
+            }
+            SquareLogic.appendUnique(&self.posts, page.items)
+            self.nextCursor = page.nextCursor
+            self.loadedOnce = true
+            self.loadedAtMs = savedAtMs
+            return true
+        }
+
+        /// The page that was loading is gone (its requests were cancelled): nothing is in flight.
+        public func cancelLoading() {
+            self.refreshing = false
+            self.loadingMore = false
+        }
+
+        /// The refresh failed: whatever was on screen stays.
+        public func failRefresh() {
+            self.refreshing = false
+            self.refreshFailed = true
+        }
+
+        public var canLoadMore: Bool {
+            return self.loadedOnce && !self.refreshing && !self.loadingMore && self.nextCursor != nil
+        }
+
+        /// `lastVisiblePost`: index of the lowest post on screen.
+        public func shouldLoadMore(lastVisiblePost: Int) -> Bool {
+            return self.canLoadMore && !self.moreFailed && lastVisiblePost >= self.posts.count - 1 - Feed.prefetch
+        }
+
+        /// Returns the generation to pass back to `applyMore` / `failMore`.
+        public func beginMore() -> Int {
+            self.loadingMore = true
+            self.moreFailed = false
+            return self.generation
+        }
+
+        /// False when the page belongs to a list that was replaced meanwhile.
+        @discardableResult
+        public func applyMore(_ page: Page<Post>, generation: Int) -> Bool {
+            if generation != self.generation {
+                return false
+            }
+            SquareLogic.appendUnique(&self.posts, page.items)
+            self.nextCursor = page.nextCursor
+            self.loadingMore = false
+            return true
+        }
+
+        public func failMore(generation: Int) {
+            if generation != self.generation {
+                return
+            }
+            self.loadingMore = false
+            self.moreFailed = true
+        }
+
+        /// The reader leaves the tab (another tab, another page, the app in the background).
+        public func markSeen(now: Int64) {
+            self.seenAtMs = now
+        }
+
+        /// Whether to refresh when the tab is shown again: only when it was neither loaded nor
+        /// looked at for `staleMs`. Someone who steps out for a moment comes back to the same
+        /// posts at the same place, however long they had been reading before.
+        public func isStale(now: Int64) -> Bool {
+            return !self.loadedOnce || now - max(self.loadedAtMs, self.seenAtMs) >= Feed.staleMs
+        }
+
+        /// Posts changed on another page (a like, a comment): the ones in this list take the new
+        /// counts in place; nothing is added, removed or moved, so the reader keeps their position.
+        /// Returns how many posts changed.
+        @discardableResult
+        public func mergeSilently(_ fresh: [Post]) -> Int {
+            var changed = 0
+            for f in fresh {
+                guard let i = self.posts.firstIndex(where: { $0.id == f.id }) else {
+                    continue
+                }
+                let p = self.posts[i]
+                if p.likeCount != f.likeCount || p.commentCount != f.commentCount || p.liked != f.liked || p.status != f.status || p.text != f.text {
+                    changed += 1
+                    self.posts[i].likeCount = f.likeCount
+                    self.posts[i].commentCount = f.commentCount
+                    self.posts[i].liked = f.liked
+                    self.posts[i].status = f.status
+                    self.posts[i].hiddenReason = f.hiddenReason
+                    self.posts[i].text = f.text
+                }
+            }
+            return changed
+        }
+
+        @discardableResult
+        public func removePost(_ postId: String) -> Bool {
+            guard let i = self.posts.firstIndex(where: { $0.id == postId }) else {
+                return false
+            }
+            self.posts.remove(at: i)
+            return true
+        }
+
+        @discardableResult
+        public func removeAuthor(_ authorId: String) -> Int {
+            let before = self.posts.count
+            self.posts.removeAll(where: { $0.author.id == authorId })
+            return before - self.posts.count
+        }
+
+        /// What goes under the posts.
+        public var footer: Footer {
+            if self.posts.isEmpty {
+                if !self.loadedOnce {
+                    return self.refreshFailed ? .firstError : .skeleton
+                }
+                if self.refreshing {
+                    return .skeleton
+                }
+                if self.nextCursor == nil {
+                    return .empty
+                }
+            }
+            if self.moreFailed {
+                return .moreError
+            }
+            return self.nextCursor != nil ? .loadingMore : .end
+        }
+    }
+
     /// One level of comments plus one level of replies: each comment followed by its replies, in
     /// server order. Replies to a reply are shown under the top comment; orphans become comments.
     public static func thread(_ comments: [Comment]) -> [Comment] {
@@ -528,7 +776,7 @@ public enum SquareLogic {
 
         public var title: String { t("广场", "Square") }
         public var latest: String { t("最新", "Latest") }
-        public var hot: String { t("热门", "Trending") }
+        public var hot: String { t("热门", "Hot") } // short: three tabs share the title of the iOS page
         public var recommend: String { t("推荐", "For you") }
         public var notInterested: String { t("不感兴趣", "Not interested") }
         public var notInterestedDone: String { t("将减少推荐类似内容", "You'll see fewer posts like this") }
@@ -538,6 +786,17 @@ public enum SquareLogic {
         public var empty: String { t("还没有动态，来发第一条吧", "No posts yet. Be the first to share something.") }
         public var noMore: String { t("已经到底了", "You're all caught up") }
         public var refresh: String { t("刷新", "Refresh") }
+        public var refreshing: String { t("正在刷新", "Refreshing") }
+        /// Shown for a moment after a refresh; `n` posts were not in the list before.
+        public func refreshed(_ n: Int) -> String {
+            if n <= 0 {
+                return t("已是最新内容", "You're up to date")
+            }
+            return zh ? "更新了 \(n) 条新内容" : (n == 1 ? "1 new post" : "\(n) new posts")
+        }
+        public var loadFailed: String { t("加载失败，请检查网络后重试", "Couldn't load. Check your connection and try again.") }
+        public var retry: String { t("重试", "Try again") }
+        public var moreFailed: String { t("加载失败，点击重试", "Couldn't load more. Tap to retry.") }
 
         public var hidden: String { t("已隐藏", "Hidden") }
         /// `reason` is a report reason code (S11: the most reported one) or free text.
