@@ -111,23 +111,23 @@ private enum LuckgramSettingsEntry: ItemListNodeEntry {
     var stableId: Int32 {
         switch self {
         case let .header(group, _):
-            return Int32(group) * 10000
+            return luckgramSettingsGroupOrder(group) * 10000
         case let .feature(group, index, _, _, _, _, _, _):
-            return Int32(group) * 10000 + 10 + Int32(index)
+            return luckgramSettingsGroupOrder(group) * 10000 + 10 + Int32(index)
         case let .placeholder(group, _):
-            return Int32(group) * 10000 + 9000
+            return luckgramSettingsGroupOrder(group) * 10000 + 9000
         case let .account(index, _):
-            return Int32(LuckgramFeature.Group.accountPrivacy.rawValue) * 10000 + 1 + Int32(index)
+            return luckgramSettingsGroupOrder(LuckgramFeature.Group.accountPrivacy.rawValue) * 10000 + 1 + Int32(index)
         case .consent:
-            return Int32(LuckgramFeature.Group.ai.rawValue) * 10000 + 9100
+            return luckgramSettingsGroupOrder(LuckgramFeature.Group.ai.rawValue) * 10000 + 9100
         case .consentFooter:
-            return Int32(LuckgramFeature.Group.ai.rawValue) * 10000 + 9200
+            return luckgramSettingsGroupOrder(LuckgramFeature.Group.ai.rawValue) * 10000 + 9200
         case .debugMock:
-            return LuckgramSettingsEntry.debugSection * 10000 + 9000
+            return luckgramSettingsGroupOrder(LuckgramFeature.Group.debug.rawValue) * 10000 + 9000
         case let .debugAction(index, _):
-            return LuckgramSettingsEntry.debugSection * 10000 + 9100 + Int32(index)
+            return luckgramSettingsGroupOrder(LuckgramFeature.Group.debug.rawValue) * 10000 + 9100 + Int32(index)
         case .debugInfo:
-            return LuckgramSettingsEntry.debugSection * 10000 + 9900
+            return luckgramSettingsGroupOrder(LuckgramFeature.Group.debug.rawValue) * 10000 + 9900
         case .diagExport:
             return LuckgramSettingsEntry.diagSection * 10000
         case .diagInfo:
@@ -227,6 +227,15 @@ private enum LuckgramSettingsEntry: ItemListNodeEntry {
 }
 
 private let pageGroups: [LuckgramFeature.Group] = [.accountPrivacy, .messagesLanguage, .mediaCallsStorage, .profileOrganize, .discover, .ai]
+
+/// Where a group sits on the page. Stable ids must grow in display order (ItemList asserts the
+/// entries are sorted), and the groups are not shown in raw-value order: 「发现」 comes before 「AI」.
+private func luckgramSettingsGroupOrder(_ group: Int) -> Int32 {
+    if let index = pageGroups.firstIndex(where: { $0.rawValue == group }) {
+        return Int32(index)
+    }
+    return Int32(pageGroups.count + group)
+}
 
 private func luckgramSettingsEntries() -> [LuckgramSettingsEntry] {
     var entries: [LuckgramSettingsEntry] = []
