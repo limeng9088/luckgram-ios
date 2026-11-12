@@ -6315,6 +6315,8 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
     /// The recording in the interface state was started by 「按住 说话」: Telegram's own recording UI is not laid out for it.
     private var luckgramTalkOwnsRecording = false
     private var luckgramTalkPeakLevel: Float = 0.0
+    private var luckgramTalkLoudSeconds: Double = 0.0
+    private var luckgramTalkLevelTime: Double = 0.0
     private weak var luckgramTalkRecorder: ManagedAudioRecorder?
     private var luckgramTalkLevelDisposable: Disposable?
     private var luckgramTalkDataDisposable: Disposable?
@@ -6564,6 +6566,8 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
         self.luckgramTalkHolding = true
         self.luckgramTalkOwnsRecording = true
         self.luckgramTalkPeakLevel = 0.0
+        self.luckgramTalkLoudSeconds = 0.0
+        self.luckgramTalkLevelTime = 0.0
         self.luckgramTalkBeganAt = CACurrentMediaTime()
         self.luckgramUpdateTalkBarText()
         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
@@ -6592,6 +6596,11 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
                 return
             }
             self.luckgramTalkPeakLevel = max(self.luckgramTalkPeakLevel, level)
+            let now = CACurrentMediaTime()
+            if self.luckgramTalkLevelTime > 0.0 {
+                self.luckgramTalkLoudSeconds = LuckgramVoiceBarLogic.loudSeconds(self.luckgramTalkLoudSeconds, level: Double(level), sincePrevious: now - self.luckgramTalkLevelTime)
+            }
+            self.luckgramTalkLevelTime = now
             self.luckgramTalkOverlay?.push(level: min(1.0, CGFloat(level) * 2.5))
         })
     }
@@ -6635,7 +6644,7 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
         guard let recorder else {
             return
         }
-        if LuckgramVoiceBarLogic.isSilent(peakLevel: Double(self.luckgramTalkPeakLevel)) {
+        if LuckgramVoiceBarLogic.isSilent(peakLevel: Double(self.luckgramTalkPeakLevel), loudSeconds: self.luckgramTalkLoudSeconds) {
             // nothing to convert; a model would make something up
             self.luckgramEndTalkUI()
             interfaceInteraction.finishMediaRecording(.dismiss)

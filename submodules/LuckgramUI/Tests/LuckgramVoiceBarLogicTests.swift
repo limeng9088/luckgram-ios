@@ -42,6 +42,29 @@ final class LuckgramVoiceBarLogicTests: XCTestCase {
         XCTAssertFalse(LuckgramVoiceBarLogic.isSilenceHallucination(""))
     }
 
+    func testLoopsAreNotTranscripts() {
+        XCTAssertTrue(LuckgramVoiceBarLogic.isSilenceHallucination("BREATHING IN DEEPLY BREATHING OUT DEEPLY BREATHING IN DEEPLY BREATHING OUT DEEPLY"))
+        XCTAssertTrue(LuckgramVoiceBarLogic.isSilenceHallucination("下方影片の説明については、下方のリンク先をクリックすることで、下方のリンク先をクリックすることができます。"))
+        XCTAssertFalse(LuckgramVoiceBarLogic.isSilenceHallucination("哈哈哈哈哈哈哈哈哈哈哈哈"))
+        XCTAssertFalse(LuckgramVoiceBarLogic.isSilenceHallucination("好的好的好的"))
+        XCTAssertFalse(LuckgramVoiceBarLogic.isSilenceHallucination("明天上午十点开会，记得带上周的报告，下午三点再和客户开会"))
+        XCTAssertFalse(LuckgramVoiceBarLogic.isSilenceHallucination("I will be there at eight, and I will bring the documents you asked for"))
+    }
+
+    func testAClickIsNotAVoice() {
+        var loud = 0.0
+        loud = LuckgramVoiceBarLogic.loudSeconds(loud, level: 0.9, sincePrevious: 2.0)
+        XCTAssertEqual(loud, 0.25, accuracy: 0.0001)
+        XCTAssertTrue(LuckgramVoiceBarLogic.isSilent(peakLevel: 0.9, loudSeconds: loud))
+        loud = LuckgramVoiceBarLogic.loudSeconds(loud, level: 0.05, sincePrevious: 0.05)
+        XCTAssertEqual(loud, 0.25, accuracy: 0.0001)
+        for _ in 0 ..< 4 {
+            loud = LuckgramVoiceBarLogic.loudSeconds(loud, level: 0.4, sincePrevious: 0.05)
+        }
+        XCTAssertFalse(LuckgramVoiceBarLogic.isSilent(peakLevel: 0.9, loudSeconds: loud))
+        XCTAssertTrue(LuckgramVoiceBarLogic.isSilent(peakLevel: 0.05, loudSeconds: 5.0))
+    }
+
     func testRepeatedAndFillerSentencesAreNotTranscripts() {
         XCTAssertTrue(LuckgramVoiceBarLogic.isSilenceHallucination("That's it. Thank you. God bless. God bless. God bless."))
         XCTAssertTrue(LuckgramVoiceBarLogic.isSilenceHallucination("Thank you. Bye.", weakSignal: true))
