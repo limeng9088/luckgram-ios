@@ -26,6 +26,7 @@ public final class LuckgramHiddenChatsStore {
     // Search: hidden chats are left out until the user asks for them, for the current query only.
     private var includeHiddenInSearchValue = false
     private var lastSearchQuery: String?
+    private var searchOfferShown = false
     private let searchPipe = ValuePipe<Void>()
 
     private init() {
@@ -171,8 +172,20 @@ public final class LuckgramHiddenChatsStore {
         if self.lastSearchQuery != query {
             self.lastSearchQuery = query
             self.includeHiddenInSearchValue = false
+            self.searchOfferShown = false
         }
         self.lock.unlock()
+    }
+
+    /// True once per query: the "N hidden chats match" toast shows only the first time (same as Android).
+    public func takeSearchOffer() -> Bool {
+        self.lock.lock()
+        defer { self.lock.unlock() }
+        if self.searchOfferShown {
+            return false
+        }
+        self.searchOfferShown = true
+        return true
     }
 
     // MARK: - Notification service extension
