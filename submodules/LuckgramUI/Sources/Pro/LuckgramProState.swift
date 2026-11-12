@@ -15,8 +15,8 @@ public struct LuckgramProState: Equatable {
     public static let perkNoAds = "no_ads"
 
     /// Defaults when the server sends no `limits` (S12 §5).
-    public static let accountsMaxFree = 20
-    public static let accountsMaxPro = 50
+    public static let accountsMaxFree = LuckgramAccountLimit.defaultMaxFree // 135
+    public static let accountsMaxPro = LuckgramAccountLimit.slotCapacity
     public static let summaryMaxFree = 100
     public static let summaryMaxPro = 1000
 

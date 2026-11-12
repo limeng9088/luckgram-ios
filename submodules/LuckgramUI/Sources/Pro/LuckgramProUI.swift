@@ -11,7 +11,7 @@ public enum LuckgramProUI {
         let s = LuckgramPro.shared.state
         let now = Date()
         var n = LuckgramProPerks.Numbers()
-        n.accountsMaxPro = config.remoteInt(LuckgramProPerks.cfgAccountsMaxPro, default: LuckgramProState.accountsMaxPro)
+        n.accountsMaxFree = luckgramFreeMaxAccounts()
         n.chatPro = config.remoteInt(LuckgramProPerks.cfgChatPro, default: 0)
         n.chatFree = config.remoteInt(LuckgramProPerks.cfgChatFree, default: 0)
         n.monthlyCredits = config.remoteInt(LuckgramProPerks.cfgMonthlyCredits, default: s.creditsTotal > 0 ? s.creditsTotal : LuckgramProPerks.defaultMonthlyCredits)
