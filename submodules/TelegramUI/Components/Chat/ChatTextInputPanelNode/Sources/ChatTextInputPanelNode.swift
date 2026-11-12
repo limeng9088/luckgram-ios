@@ -6299,10 +6299,19 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
     private var luckgramTalkToggleIsTalk: Bool?
     private var luckgramTalkBar: UIView?
     private var luckgramTalkBarLabel: UILabel?
+    private var luckgramTalkEmojiButton: HighlightTrackingButton?
     private var luckgramTalkOverlay: LuckgramTalkOverlayView?
     private var luckgramTalkHolding = false
     private var luckgramTalkBeganAt: CFTimeInterval = 0.0
-    private var luckgramTalkConverting = false
+    private var luckgramTalkConverting = false {
+        didSet {
+            // the overlay stays as the text bubble while 「转文字」 runs
+            if oldValue && !self.luckgramTalkConverting && !self.luckgramTalkHolding {
+                self.luckgramTalkOverlay?.animateOut()
+                self.luckgramTalkOverlay = nil
+            }
+        }
+    }
     /// The recording in the interface state was started by 「按住 说话」: Telegram's own recording UI is not laid out for it.
     private var luckgramTalkOwnsRecording = false
     private var luckgramTalkPeakLevel: Float = 0.0
@@ -6351,6 +6360,7 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
             }
             self.luckgramTalkToggle?.isHidden = true
             self.luckgramTalkBar?.isHidden = true
+            self.luckgramTalkEmojiButton?.isHidden = true
             return
         }
 
@@ -6429,8 +6439,28 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
             label.frame = CGRect(origin: CGPoint(), size: barFrame.size)
             self.luckgramUpdateTalkBarText()
             self.glassBackgroundContainer.contentView.bringSubviewToFront(bar)
+
+            // the emoji button stays at the right end of the bar; it leads back to the field with the emoji panel
+            let emojiButton: HighlightTrackingButton
+            if let current = self.luckgramTalkEmojiButton {
+                emojiButton = current
+            } else {
+                emojiButton = HighlightTrackingButton()
+                emojiButton.setImage(UIImage(systemName: "face.smiling", withConfiguration: UIImage.SymbolConfiguration(pointSize: 20.0, weight: .regular))?.withRenderingMode(.alwaysTemplate), for: .normal)
+                emojiButton.isAccessibilityElement = true
+                emojiButton.accessibilityTraits = [.button]
+                emojiButton.accessibilityLabel = interfaceState.strings.VoiceOver_Stickers
+                emojiButton.addTarget(self, action: #selector(self.luckgramTalkEmojiPressed), for: .touchUpInside)
+                self.glassBackgroundContainer.contentView.addSubview(emojiButton)
+                self.luckgramTalkEmojiButton = emojiButton
+            }
+            emojiButton.isHidden = false
+            emojiButton.tintColor = interfaceState.theme.chat.inputPanel.inputControlColor
+            emojiButton.frame = CGRect(x: barFrame.maxX - 40.0 - 2.0, y: barFrame.minY, width: 40.0, height: 40.0)
+            self.glassBackgroundContainer.contentView.bringSubviewToFront(emojiButton)
         } else {
             self.luckgramTalkBar?.isHidden = true
+            self.luckgramTalkEmojiButton?.isHidden = true
         }
     }
 
@@ -6456,6 +6486,14 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
             return
         }
         self.luckgramSetTalkMode(!self.luckgramTalkMode, focus: true)
+    }
+
+    @objc private func luckgramTalkEmojiPressed() {
+        if self.luckgramTalkHolding || self.luckgramTalkConverting {
+            return
+        }
+        self.luckgramSetTalkMode(false, focus: false)
+        self.interfaceInteraction?.openStickers()
     }
 
     private func luckgramSetTalkMode(_ talk: Bool, focus: Bool) {
@@ -6558,12 +6596,14 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
         })
     }
 
-    private func luckgramEndTalkUI() {
+    private func luckgramEndTalkUI(keepOverlay: Bool = false) {
         self.luckgramTalkHolding = false
         self.luckgramTalkLevelDisposable?.dispose()
         self.luckgramTalkLevelDisposable = nil
-        self.luckgramTalkOverlay?.animateOut()
-        self.luckgramTalkOverlay = nil
+        if !keepOverlay {
+            self.luckgramTalkOverlay?.animateOut()
+            self.luckgramTalkOverlay = nil
+        }
         self.luckgramTalkRecorder = nil
         self.luckgramUpdateTalkBarText()
     }
@@ -6605,6 +6645,9 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
         self.luckgramTalkHolding = false
         self.luckgramTalkConverting = true
         self.luckgramTalkOverlay?.isConverting = true
+        self.luckgramTalkOverlay?.tapped = { [weak self] in
+            self?.luckgramCancelTalk()
+        }
         self.luckgramTalkLevelDisposable?.dispose()
         self.luckgramTalkLevelDisposable = nil
         self.luckgramUpdateTalkBarText()
@@ -6616,7 +6659,8 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
             guard let self else {
                 return
             }
-            self.luckgramEndTalkUI()
+            self.luckgramTalkDataDisposable = nil
+            self.luckgramEndTalkUI(keepOverlay: true)
             self.interfaceInteraction?.finishMediaRecording(.dismiss)
             guard let data, !data.compressedData.isEmpty else {
                 self.luckgramTalkConverting = false
@@ -6634,7 +6678,12 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
             self.luckgramUpdateTalkBarText()
             return
         }
-        let present: (ViewController) -> Void = { c in
+        let present: (ViewController) -> Void = { [weak self] c in
+            // the AI consent alert must not end up under the overlay; the bar keeps showing 「正在转文字…」
+            if let self, let overlay = self.luckgramTalkOverlay {
+                overlay.animateOut()
+                self.luckgramTalkOverlay = nil
+            }
             context.sharedContext.mainWindow?.present(c, on: .root)
         }
         self.luckgramTalkTextDisposable?.dispose()
@@ -6673,8 +6722,13 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
             self.luckgramEndTalkUI()
             self.interfaceInteraction?.finishMediaRecording(.dismiss)
         }
-        self.luckgramTalkDataDisposable?.dispose()
-        self.luckgramTalkDataDisposable = nil
+        if let dataDisposable = self.luckgramTalkDataDisposable {
+            // 「转文字」 cancelled before the recording was read back: it is still in the interface state
+            dataDisposable.dispose()
+            self.luckgramTalkDataDisposable = nil
+            self.luckgramEndTalkUI()
+            self.interfaceInteraction?.finishMediaRecording(.dismiss)
+        }
         self.luckgramTalkTextDisposable?.dispose()
         self.luckgramTalkTextDisposable = nil
         self.luckgramTalkConverting = false

@@ -10257,6 +10257,10 @@ public final class ChatControllerImpl: TelegramBaseController, ChatController, G
     }
     
     func displayMediaRecordingTooltip() {
+        if LuckgramVoiceBar.isEnabled {
+            // Luckgram specs#145: there is no mic button to hold, the toggle and 「按住 说话」 replace it
+            return
+        }
         guard let peer = self.presentationInterfaceState.renderedPeer?.peer else {
             return
         }
