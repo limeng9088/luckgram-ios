@@ -24,4 +24,20 @@ final class LuckgramVoiceBarLogicTests: XCTestCase {
         XCTAssertEqual(LuckgramVoiceBarLogic.formatDuration(65), "1:05")
         XCTAssertEqual(LuckgramVoiceBarLogic.formatDuration(-5), "0:00")
     }
+
+    func testOnlyNearZeroInputIsSilence() {
+        XCTAssertTrue(LuckgramVoiceBarLogic.isSilent(peakLevel: 0))
+        XCTAssertTrue(LuckgramVoiceBarLogic.isSilent(peakLevel: 0.049))
+        XCTAssertFalse(LuckgramVoiceBarLogic.isSilent(peakLevel: 0.05))
+        XCTAssertFalse(LuckgramVoiceBarLogic.isSilent(peakLevel: 0.6))
+    }
+
+    func testStockSilencePhrasesAreNotTranscripts() {
+        XCTAssertTrue(LuckgramVoiceBarLogic.isSilenceHallucination("Thank you so much for watching."))
+        XCTAssertTrue(LuckgramVoiceBarLogic.isSilenceHallucination(" ご視聴ありがとうございました "))
+        XCTAssertTrue(LuckgramVoiceBarLogic.isSilenceHallucination("私のビデオを見てくれてありがとう。"))
+        XCTAssertFalse(LuckgramVoiceBarLogic.isSilenceHallucination("Thank you so much for watching, see you at 8"))
+        XCTAssertFalse(LuckgramVoiceBarLogic.isSilenceHallucination("晚上八点见"))
+        XCTAssertFalse(LuckgramVoiceBarLogic.isSilenceHallucination(""))
+    }
 }

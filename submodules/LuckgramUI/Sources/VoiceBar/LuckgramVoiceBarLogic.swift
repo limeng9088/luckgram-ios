@@ -27,4 +27,23 @@ public enum LuckgramVoiceBarLogic {
 
     /// Holds shorter than this are dropped with 「说话时间太短」.
     public static let minimumDuration: Double = 0.7
+
+    /// Loudest mic level (`ManagedAudioRecorder.micLevel`, peak sample / 4000) below which nothing was said at all.
+    public static let silenceLevel: Double = 0.05
+
+    public static func isSilent(peakLevel: Double) -> Bool {
+        return peakLevel < silenceLevel
+    }
+
+    /// What speech-to-text models make up for recordings with no speech in them. Whole-text matches only.
+    private static let silencePhrases: Set<String> = [
+        "thankyousomuchforwatching", "thankyouforwatching", "thanksforwatching", "subtitlesbytheamaraorgcommunity",
+        "ご視聴ありがとうございました", "私のビデオを見てくれてありがとう", "谢谢观看", "謝謝觀看", "字幕由amaraorg社区提供"
+    ]
+
+    /// The transcript is one of the stock phrases a model invents for silence, not something that was said.
+    public static func isSilenceHallucination(_ text: String) -> Bool {
+        let normalized = String(String.UnicodeScalarView(text.lowercased().unicodeScalars.filter { CharacterSet.alphanumerics.contains($0) }))
+        return silencePhrases.contains(normalized)
+    }
 }
