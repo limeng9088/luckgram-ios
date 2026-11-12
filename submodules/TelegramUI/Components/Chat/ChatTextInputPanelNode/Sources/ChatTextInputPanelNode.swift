@@ -6302,7 +6302,15 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
     private var luckgramTalkOverlay: LuckgramTalkOverlayView?
     private var luckgramTalkHolding = false
     private var luckgramTalkBeganAt: CFTimeInterval = 0.0
-    private var luckgramTalkConverting = false
+    private var luckgramTalkConverting = false {
+        didSet {
+            // the overlay stays as the text bubble while 「转文字」 runs
+            if oldValue && !self.luckgramTalkConverting && !self.luckgramTalkHolding {
+                self.luckgramTalkOverlay?.animateOut()
+                self.luckgramTalkOverlay = nil
+            }
+        }
+    }
     /// The recording in the interface state was started by 「按住 说话」: Telegram's own recording UI is not laid out for it.
     private var luckgramTalkOwnsRecording = false
     private var luckgramTalkPeakLevel: Float = 0.0
@@ -6558,12 +6566,14 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
         })
     }
 
-    private func luckgramEndTalkUI() {
+    private func luckgramEndTalkUI(keepOverlay: Bool = false) {
         self.luckgramTalkHolding = false
         self.luckgramTalkLevelDisposable?.dispose()
         self.luckgramTalkLevelDisposable = nil
-        self.luckgramTalkOverlay?.animateOut()
-        self.luckgramTalkOverlay = nil
+        if !keepOverlay {
+            self.luckgramTalkOverlay?.animateOut()
+            self.luckgramTalkOverlay = nil
+        }
         self.luckgramTalkRecorder = nil
         self.luckgramUpdateTalkBarText()
     }
@@ -6605,6 +6615,9 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
         self.luckgramTalkHolding = false
         self.luckgramTalkConverting = true
         self.luckgramTalkOverlay?.isConverting = true
+        self.luckgramTalkOverlay?.tapped = { [weak self] in
+            self?.luckgramCancelTalk()
+        }
         self.luckgramTalkLevelDisposable?.dispose()
         self.luckgramTalkLevelDisposable = nil
         self.luckgramUpdateTalkBarText()
@@ -6616,7 +6629,8 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
             guard let self else {
                 return
             }
-            self.luckgramEndTalkUI()
+            self.luckgramTalkDataDisposable = nil
+            self.luckgramEndTalkUI(keepOverlay: true)
             self.interfaceInteraction?.finishMediaRecording(.dismiss)
             guard let data, !data.compressedData.isEmpty else {
                 self.luckgramTalkConverting = false
@@ -6634,7 +6648,12 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
             self.luckgramUpdateTalkBarText()
             return
         }
-        let present: (ViewController) -> Void = { c in
+        let present: (ViewController) -> Void = { [weak self] c in
+            // the AI consent alert must not end up under the overlay; the bar keeps showing 「正在转文字…」
+            if let self, let overlay = self.luckgramTalkOverlay {
+                overlay.animateOut()
+                self.luckgramTalkOverlay = nil
+            }
             context.sharedContext.mainWindow?.present(c, on: .root)
         }
         self.luckgramTalkTextDisposable?.dispose()
@@ -6673,8 +6692,13 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
             self.luckgramEndTalkUI()
             self.interfaceInteraction?.finishMediaRecording(.dismiss)
         }
-        self.luckgramTalkDataDisposable?.dispose()
-        self.luckgramTalkDataDisposable = nil
+        if let dataDisposable = self.luckgramTalkDataDisposable {
+            // 「转文字」 cancelled before the recording was read back: it is still in the interface state
+            dataDisposable.dispose()
+            self.luckgramTalkDataDisposable = nil
+            self.luckgramEndTalkUI()
+            self.interfaceInteraction?.finishMediaRecording(.dismiss)
+        }
         self.luckgramTalkTextDisposable?.dispose()
         self.luckgramTalkTextDisposable = nil
         self.luckgramTalkConverting = false
