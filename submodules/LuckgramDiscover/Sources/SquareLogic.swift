@@ -278,6 +278,41 @@ public enum SquareLogic {
         }
     }
 
+    // MARK: - saved first page
+
+    /// A saved first page older than this is not shown any more.
+    public static let savedMaxAgeMs: Int64 = 7 * 24 * 3600_000
+
+    /// A first page as it was saved, and when.
+    public struct Saved {
+        public let page: Page<Post>
+        public let savedAtMs: Int64
+    }
+
+    /// What is kept on the device for a tab: the server's first page as it came, and the time.
+    public static func encodeSaved(_ firstPage: [String: Any], now: Int64) -> String? {
+        let o: [String: Any] = ["saved_at": NSNumber(value: now), "page": firstPage]
+        guard JSONSerialization.isValidJSONObject(o), let data = try? JSONSerialization.data(withJSONObject: o) else {
+            return nil
+        }
+        return String(data: data, encoding: .utf8)
+    }
+
+    /// Nil when there is nothing usable: unreadable, empty, too old, or from the future.
+    public static func decodeSaved(_ stored: String?, now: Int64) -> Saved? {
+        guard let stored, let data = stored.data(using: .utf8), let o = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else {
+            return nil
+        }
+        guard let savedAt = (o["saved_at"] as? NSNumber)?.int64Value, let page = o["page"] as? [String: Any] else {
+            return nil
+        }
+        if savedAt <= 0 || savedAt > now || now - savedAt > savedMaxAgeMs {
+            return nil
+        }
+        let parsed = parsePosts(page)
+        return parsed.items.isEmpty ? nil : Saved(page: parsed, savedAtMs: savedAt)
+    }
+
     // MARK: - feed state
 
     /// One tab of the feed, kept for as long as the page is open. A refresh never empties the list:
@@ -349,6 +384,28 @@ public enum SquareLogic {
             self.generation += 1
             self.scrollIndex = 0
             return fresh
+        }
+
+        /// The first page saved by an earlier visit (`decodeSaved`): shown at once when the page
+        /// opens, before anything is requested. It counts as loaded at the time it was saved, so
+        /// an old one is refreshed right away — with the posts on screen meanwhile. False when
+        /// the tab already has a list.
+        @discardableResult
+        public func restore(_ page: Page<Post>, savedAtMs: Int64) -> Bool {
+            if self.loadedOnce || page.items.isEmpty {
+                return false
+            }
+            SquareLogic.appendUnique(&self.posts, page.items)
+            self.nextCursor = page.nextCursor
+            self.loadedOnce = true
+            self.loadedAtMs = savedAtMs
+            return true
+        }
+
+        /// The page that was loading is gone (its requests were cancelled): nothing is in flight.
+        public func cancelLoading() {
+            self.refreshing = false
+            self.loadingMore = false
         }
 
         /// The refresh failed: whatever was on screen stays.

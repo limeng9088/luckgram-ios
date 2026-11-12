@@ -324,4 +324,38 @@ final class SquareLogicTests: XCTestCase {
         XCTAssertEqual(SquareLogic.Texts(zh: false).refreshed(1), "1 new post")
         XCTAssertEqual(SquareLogic.Texts(zh: false).refreshed(12), "12 new posts")
     }
+
+    func testSavedFirstPageIsShownAtOnceAndRefreshedWhenOld() {
+        let first: [String: Any] = ["items": [["id": "p1"], ["id": "p2"]], "next_cursor": "c"]
+        let stored = SquareLogic.encodeSaved(first, now: 1000)
+        XCTAssertNotNil(stored)
+        guard let saved = SquareLogic.decodeSaved(stored, now: 2000) else {
+            XCTFail("nothing decoded")
+            return
+        }
+        XCTAssertEqual(saved.savedAtMs, 1000)
+
+        let f = SquareLogic.Feed(tab: SquareLogic.tabLatest)
+        XCTAssertTrue(f.restore(saved.page, savedAtMs: saved.savedAtMs))
+        XCTAssertEqual(ids(f), "p1 p2")
+        XCTAssertEqual(f.nextCursor, "c")
+        XCTAssertEqual(f.footer, .loadingMore)
+        XCTAssertFalse(f.isStale(now: 1000 + SquareLogic.Feed.staleMs - 1))
+        XCTAssertTrue(f.isStale(now: 1000 + SquareLogic.Feed.staleMs))
+        XCTAssertFalse(f.restore(saved.page, savedAtMs: saved.savedAtMs))
+
+        XCTAssertTrue(f.beginRefresh())
+        XCTAssertEqual(ids(f), "p1 p2")
+        XCTAssertEqual(f.applyRefresh(page(nil, "p3", "p2"), now: 5000), 1)
+
+        _ = f.beginRefresh()
+        f.cancelLoading()
+        XCTAssertTrue(f.beginRefresh())
+
+        XCTAssertNil(SquareLogic.decodeSaved(nil, now: 0))
+        XCTAssertNil(SquareLogic.decodeSaved("not json", now: 2000))
+        XCTAssertNil(SquareLogic.decodeSaved(SquareLogic.encodeSaved(["items": [Any]()], now: 1000), now: 2000))
+        XCTAssertNil(SquareLogic.decodeSaved(stored, now: 1000 + SquareLogic.savedMaxAgeMs + 1))
+        XCTAssertNil(SquareLogic.decodeSaved(stored, now: 999))
+    }
 }

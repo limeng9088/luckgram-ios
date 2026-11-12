@@ -61,10 +61,12 @@ public enum LuckgramSquare {
 
     static func noteRemoved(_ postId: String) {
         pending.removedPosts.insert(postId)
+        dropSavedPages()
     }
 
     static func noteBlocked(_ authorId: String) {
         pending.blockedAuthors.insert(authorId)
+        dropSavedPages()
     }
 
     public static func noteNeedsRefresh() {
@@ -77,6 +79,54 @@ public enum LuckgramSquare {
         profile = nil
         myAuthorId = nil
         imageCache.removeAll()
+        clearFeeds()
+    }
+
+    // MARK: - feed lists
+
+    /// One list per tab. Kept for as long as the app runs, so closing the page and opening it
+    /// again shows the same posts at the same place without a request (unless older than 5
+    /// minutes). The first page of each tab is also saved on the device: after a restart the
+    /// page opens with those posts and refreshes over them. Main thread only.
+    private static var feeds: [String: SquareLogic.Feed] = [:]
+    private static let savedKey = "square_feed_page_"
+    private static let feedTabs = [SquareLogic.tabLatest, SquareLogic.tabHot, SquareLogic.tabRecommend]
+
+    static func feed(for tab: String) -> SquareLogic.Feed {
+        if let f = feeds[tab] {
+            return f
+        }
+        let f = SquareLogic.Feed(tab: tab)
+        feeds[tab] = f
+        if let saved = SquareLogic.decodeSaved(LuckgramSettings.shared.string(savedKey + tab, default: nil), now: SquareEvents.nowMs()) {
+            f.restore(saved.page, savedAtMs: saved.savedAtMs)
+        }
+        return f
+    }
+
+    static var loadedFeeds: [SquareLogic.Feed] {
+        return Array(feeds.values)
+    }
+
+    /// Keeps the first page of a tab for the next start of the app.
+    static func saveFirstPage(_ page: [String: Any], tab: String) {
+        if let encoded = SquareLogic.encodeSaved(page, now: SquareEvents.nowMs()) {
+            LuckgramSettings.shared.setString(savedKey + tab, encoded)
+        }
+    }
+
+    /// The saved first pages no longer match (a post deleted, an author blocked): the next start
+    /// loads fresh ones.
+    static func dropSavedPages() {
+        for tab in feedTabs {
+            LuckgramSettings.shared.remove(savedKey + tab)
+        }
+    }
+
+    /// Forgets every list, in memory and on the device.
+    static func clearFeeds() {
+        feeds.removeAll()
+        dropSavedPages()
     }
 
     /// Learns who "I" am in Square (specs#68): when a page opens and the device is linked, the

@@ -194,8 +194,7 @@ final class LuckgramSquareAvatars {
 }
 
 private final class SquareFeedState {
-    /// One list per tab, kept while the page is open.
-    var feeds: [String: SquareLogic.Feed] = [:]
+    /// The open tab's list. The lists live in `LuckgramSquare` (kept between visits).
     var feed: SquareLogic.Feed
     /// specs#115: impressions / views per tab; a refresh starts a new one (once per load).
     var trackers: [String: SquareEvents.Tracker] = [:]
@@ -206,18 +205,23 @@ private final class SquareFeedState {
     let avatars = LuckgramSquareAvatars()
 
     init() {
-        let f = SquareLogic.Feed(tab: SquareLogic.tabLatest)
-        self.feed = f
-        self.feeds[f.tab] = f
+        // whatever an earlier page was loading went away with it
+        for f in LuckgramSquare.loadedFeeds {
+            f.cancelLoading()
+        }
+        self.feed = LuckgramSquare.feed(for: SquareLogic.tabLatest)
+        // back where the reader was
+        if self.feed.scrollIndex > 0 {
+            self.pendingScrollToPost = self.feed.scrollIndex
+        }
     }
 
     func feed(for tab: String) -> SquareLogic.Feed {
-        if let f = self.feeds[tab] {
-            return f
-        }
-        let f = SquareLogic.Feed(tab: tab)
-        self.feeds[tab] = f
-        return f
+        return LuckgramSquare.feed(for: tab)
+    }
+
+    var feeds: [SquareLogic.Feed] {
+        return LuckgramSquare.loadedFeeds
     }
 
     func tracker(for feed: SquareLogic.Feed) -> SquareEvents.Tracker {
@@ -279,6 +283,7 @@ public func luckgramSquareController(context: AccountContext) -> ViewController 
             LuckgramSquareEvents.add(state.tracker(for: f).hideAll(now: SquareEvents.nowMs()))
             state.trackers[f.tab] = nil
             let fresh = f.applyRefresh(SquareLogic.parsePosts(j), now: SquareEvents.nowMs())
+            LuckgramSquare.saveFirstPage(j, tab: f.tab)
             guard f === state.feed else {
                 return
             }
@@ -354,19 +359,19 @@ public func luckgramSquareController(context: AccountContext) -> ViewController 
         let post = state.feed.posts[index]
         let tab = state.feed.tab
         LuckgramSquare.showPostMenu(context: context, post: post, present: present, push: push, onLiked: { p in
-            for f in state.feeds.values {
+            for f in state.feeds {
                 f.mergeSilently([p])
             }
             redraw()
         }, onComment: {
             push(luckgramSquarePostController(context: context, post: post))
         }, onDeleted: {
-            for f in state.feeds.values {
+            for f in state.feeds {
                 f.removePost(post.id)
             }
             redraw()
         }, onBlocked: {
-            for f in state.feeds.values {
+            for f in state.feeds {
                 f.removeAuthor(post.author.id)
             }
             redraw()
@@ -374,6 +379,7 @@ public func luckgramSquareController(context: AccountContext) -> ViewController 
             // specs#115: removed at once, server stops recommending it
             LuckgramSquareEvents.add(type: SquareEvents.notInterested, postId: post.id, tab: tab, rank: index)
             state.feed(for: tab).removePost(post.id)
+            LuckgramSquare.dropSavedPages()
             redraw()
         } : nil)
     }, loadMore: {
@@ -514,7 +520,7 @@ public func luckgramSquareController(context: AccountContext) -> ViewController 
         LuckgramSquare.pending = LuckgramSquare.PendingChanges()
         var changed = false
         let updatedPosts = Array(pending.updated.values)
-        for f in state.feeds.values {
+        for f in state.feeds {
             if !updatedPosts.isEmpty && f.mergeSilently(updatedPosts) > 0 {
                 changed = true
             }
@@ -529,7 +535,7 @@ public func luckgramSquareController(context: AccountContext) -> ViewController 
             redraw()
         }
         if pending.needsRefresh {
-            for f in state.feeds.values {
+            for f in state.feeds {
                 f.loadedAtMs = 0
             }
             refreshByUser()
@@ -589,6 +595,9 @@ public func luckgramSquareController(context: AccountContext) -> ViewController 
         moreRequests.dispose()
     })
     LuckgramSquare.prefetchMe()
-    refreshFeed(state.feed)
+    // posts from the last visit (or the saved first page) are already there; ask only when they are old
+    if state.feed.isStale(now: SquareEvents.nowMs()) {
+        refreshFeed(state.feed)
+    }
     return controller
 }
