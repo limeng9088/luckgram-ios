@@ -584,6 +584,21 @@ final class ChatSendMessageContextScreenComponent: Component {
                         }
                     )))
                 }
+                if let aiWritingAction = sendMessage.luckgramAIWritingAction {
+                    items.append(.action(ContextMenuActionItem(
+                        id: AnyHashable("luckgramAIWriting"),
+                        text: aiWritingAction.title,
+                        icon: { theme in
+                            return generateTintedImage(image: UIImage(systemName: "sparkles"), color: theme.contextMenu.primaryColor)
+                        }, action: { [weak self] _, _ in
+                            guard let self else {
+                                return
+                            }
+                            self.environment?.controller()?.dismiss()
+                            aiWritingAction.action()
+                        }
+                    )))
+                }
                 if !reminders {
                     items.append(.action(ContextMenuActionItem(
                         id: AnyHashable("silent"),

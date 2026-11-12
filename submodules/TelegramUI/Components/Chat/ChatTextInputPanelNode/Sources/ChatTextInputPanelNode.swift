@@ -6150,6 +6150,23 @@ public class ChatTextInputPanelNode: ChatInputPanelNode, ASEditableTextNodeDeleg
         })
     }
 
+    /// specs#128: with text the 「+」 gives way to the send button (specs#94), so its long-press menu offers
+    /// 「AI 写作」 too.
+    public func luckgramAIWritingSendMenuAction() -> (title: String, action: () -> Void)? {
+        guard self.luckgramIsPlusMode, LuckgramAIWriting.isEnabled, let interfaceState = self.presentationInterfaceState else {
+            return nil
+        }
+        if interfaceState.interfaceState.composeInputState.content.isEmptyWhitespaceTrimmed {
+            return nil
+        }
+        return (LuckgramPlusAction.aiWriting.title, { [weak self] in
+            // after the send menu has gone, so the AI menu is presented on top
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                self?.luckgramAIWritingHost()?.showMenu()
+            }
+        })
+    }
+
     /// specs#104 §4: the send button's long-press menu has one item, 「翻译后发送…」 (pick a language once,
     /// then preview), when there is text to translate.
     public func luckgramTranslateOutMenuActions() -> [(title: String, action: () -> Void)] {

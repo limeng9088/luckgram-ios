@@ -252,7 +252,8 @@ func chatMessageDisplaySendMessageOptions(selfController: ChatControllerImpl, no
                     hasTimers: false,
                     sendPaidMessageStars: selfController.presentationInterfaceState.sendPaidMessageStars,
                     isMonoforum: selfController.presentationInterfaceState.renderedPeer?.peer?.isMonoForum ?? false,
-                    luckgramTranslateActions: selfController.chatDisplayNode.textInputPanelNode?.luckgramTranslateOutMenuActions() ?? []
+                    luckgramTranslateActions: selfController.chatDisplayNode.textInputPanelNode?.luckgramTranslateOutMenuActions() ?? [],
+                    luckgramAIWritingAction: selfController.chatDisplayNode.textInputPanelNode?.luckgramAIWritingSendMenuAction()
                 )),
                 hasEntityKeyboard: hasEntityKeyboard,
                 gesture: gesture,
