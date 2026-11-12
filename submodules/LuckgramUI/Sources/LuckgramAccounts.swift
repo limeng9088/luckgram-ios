@@ -17,12 +17,11 @@ import LuckgramAccountsStore
 public enum LuckgramAccountsStrings {
     public static var limitReached: String {
         let max = LuckgramAccountsStore.maxAccounts
-        var text = LuckgramStrings.pick("最多可登录 \(max) 个账号", "You can log in to at most \(max) accounts")
         if luckgramOfferAccountUpgrade() {
-            let pro = luckgramProMaxAccounts()
-            text += LuckgramStrings.pick("。升级 Pro 可登录 \(pro) 个账号", ". Upgrade to Pro to log in to \(pro) accounts")
+            return LuckgramStrings.pick("免费版最多可登录 \(max) 个账号。升级 Pro 可登录的账号数量不限", "Free accounts can log in to at most \(max) accounts. Upgrade to Pro for unlimited accounts")
         }
-        return text
+        // 135: Pro (or a free limit as high as the slots): only the device's slots are left
+        return LuckgramStrings.pick("这台设备最多可登录 \(max) 个账号", "This device can log in to at most \(max) accounts")
     }
     public static var viewPro: String { LuckgramStrings.pick("查看 Pro", "View Pro") }
     public static func showAll(_ count: Int) -> String { LuckgramStrings.pick("显示全部 \(count) 个账号", "Show all \(count) accounts") }
@@ -39,7 +38,7 @@ public enum LuckgramAccountsStrings {
     public static var notificationsInfo: String { LuckgramStrings.pick("关闭后，这个账号收到新消息时不再弹出通知。", "When off, new messages for this account don't show a notification.") }
 }
 
-// MARK: - Limit (32: free 20 / Pro 50 from remote config)
+// MARK: - Limit (32/135: free 5 from remote config / Pro = all slots)
 
 /// Pro status for the account limit and cloud backup (29's unified state).
 public func luckgramIsPro() -> Bool {
@@ -50,21 +49,18 @@ private func luckgramRemoteMaxFree() -> Int {
     return LuckgramSettings.shared.remoteInt(LuckgramAccountLimit.maxFreeKey, default: LuckgramAccountLimit.defaultMaxFree)
 }
 
-private func luckgramRemoteMaxPro() -> Int {
-    return LuckgramSettings.shared.remoteInt(LuckgramAccountLimit.maxProKey, default: LuckgramAccountLimit.defaultMaxPro)
-}
-
 /// How many accounts this user may have logged in at once (installed into LuckgramAccountsStore).
 func luckgramMaxAccounts() -> Int {
-    return LuckgramAccountLimit.limit(isPro: luckgramIsPro(), remoteMaxFree: luckgramRemoteMaxFree(), remoteMaxPro: luckgramRemoteMaxPro())
+    return LuckgramAccountLimit.limit(isPro: luckgramIsPro(), remoteMaxFree: luckgramRemoteMaxFree())
 }
 
-func luckgramProMaxAccounts() -> Int {
-    return LuckgramAccountLimit.maxPro(remoteMaxFree: luckgramRemoteMaxFree(), remoteMaxPro: luckgramRemoteMaxPro())
+/// Free limit as shown in the Pro perk text (135).
+func luckgramFreeMaxAccounts() -> Int {
+    return LuckgramAccountLimit.maxFree(luckgramRemoteMaxFree())
 }
 
 func luckgramOfferAccountUpgrade() -> Bool {
-    return LuckgramAccountLimit.offerUpgrade(isPro: luckgramIsPro(), remoteMaxFree: luckgramRemoteMaxFree(), remoteMaxPro: luckgramRemoteMaxPro())
+    return LuckgramAccountLimit.offerUpgrade(isPro: luckgramIsPro(), remoteMaxFree: luckgramRemoteMaxFree())
 }
 
 /// The Pro page (29).

@@ -3,32 +3,36 @@ import XCTest
 
 final class LuckgramAccountLimitTests: XCTestCase {
     func testDefaults() {
-        XCTAssertEqual(LuckgramAccountLimit.limit(isPro: false, remoteMaxFree: 20, remoteMaxPro: 50), 20)
-        XCTAssertEqual(LuckgramAccountLimit.limit(isPro: true, remoteMaxFree: 20, remoteMaxPro: 50), 50)
+        XCTAssertEqual(LuckgramAccountLimit.defaultMaxFree, 5)
+        XCTAssertEqual(LuckgramAccountLimit.limit(isPro: false, remoteMaxFree: LuckgramAccountLimit.defaultMaxFree), 5)
+        XCTAssertEqual(LuckgramAccountLimit.limit(isPro: true, remoteMaxFree: LuckgramAccountLimit.defaultMaxFree), LuckgramAccountLimit.slotCapacity)
     }
 
-    func testFreeNeverBelowTwentyNorAboveCapacity() {
-        XCTAssertEqual(LuckgramAccountLimit.maxFree(5), 20)
-        XCTAssertEqual(LuckgramAccountLimit.maxFree(30), 30)
+    func testFreeFollowsRemoteWithinSlots() {
+        XCTAssertEqual(LuckgramAccountLimit.maxFree(0), 1)
+        XCTAssertEqual(LuckgramAccountLimit.maxFree(3), 3)
+        XCTAssertEqual(LuckgramAccountLimit.maxFree(20), 20)
         XCTAssertEqual(LuckgramAccountLimit.maxFree(500), 50)
     }
 
-    func testProNeverBelowFree() {
-        XCTAssertEqual(LuckgramAccountLimit.maxPro(remoteMaxFree: 20, remoteMaxPro: 22), 22)
-        XCTAssertEqual(LuckgramAccountLimit.maxPro(remoteMaxFree: 30, remoteMaxPro: 22), 30)
-        XCTAssertEqual(LuckgramAccountLimit.maxPro(remoteMaxFree: 20, remoteMaxPro: 999), 50)
+    func testProOnlyBoundBySlots() {
+        XCTAssertEqual(LuckgramAccountLimit.maxPro, LuckgramAccountLimit.slotCapacity)
+        XCTAssertEqual(LuckgramAccountLimit.limit(isPro: true, remoteMaxFree: 3), LuckgramAccountLimit.slotCapacity)
     }
 
-    func testExpiredProKeepsAccountsButCannotAdd() {
-        let free = LuckgramAccountLimit.limit(isPro: false, remoteMaxFree: 20, remoteMaxPro: 50)
-        XCTAssertFalse(LuckgramAccountLimit.canAdd(activated: 35, limit: free))
-        XCTAssertFalse(LuckgramAccountLimit.canAdd(activated: 20, limit: free))
-        XCTAssertTrue(LuckgramAccountLimit.canAdd(activated: 19, limit: free))
+    func testFreeAboveLimitKeepsAccountsButCannotAdd() {
+        let free = LuckgramAccountLimit.limit(isPro: false, remoteMaxFree: 5)
+        XCTAssertFalse(LuckgramAccountLimit.canAdd(activated: 12, limit: free))
+        XCTAssertFalse(LuckgramAccountLimit.canAdd(activated: 5, limit: free))
+        XCTAssertTrue(LuckgramAccountLimit.canAdd(activated: 4, limit: free))
+        let pro = LuckgramAccountLimit.limit(isPro: true, remoteMaxFree: 5)
+        XCTAssertTrue(LuckgramAccountLimit.canAdd(activated: 12, limit: pro))
+        XCTAssertFalse(LuckgramAccountLimit.canAdd(activated: LuckgramAccountLimit.slotCapacity, limit: pro))
     }
 
     func testUpgradeOfferedOnlyWhenProRaisesTheLimit() {
-        XCTAssertTrue(LuckgramAccountLimit.offerUpgrade(isPro: false, remoteMaxFree: 20, remoteMaxPro: 50))
-        XCTAssertFalse(LuckgramAccountLimit.offerUpgrade(isPro: true, remoteMaxFree: 20, remoteMaxPro: 50))
-        XCTAssertFalse(LuckgramAccountLimit.offerUpgrade(isPro: false, remoteMaxFree: 50, remoteMaxPro: 50))
+        XCTAssertTrue(LuckgramAccountLimit.offerUpgrade(isPro: false, remoteMaxFree: 5))
+        XCTAssertFalse(LuckgramAccountLimit.offerUpgrade(isPro: true, remoteMaxFree: 5))
+        XCTAssertFalse(LuckgramAccountLimit.offerUpgrade(isPro: false, remoteMaxFree: 50))
     }
 }

@@ -20,7 +20,7 @@ final class LuckgramProPerksTests: XCTestCase {
 
     func testSubtitlesUseRemoteNumbers() {
         var n = LuckgramProPerks.Numbers()
-        n.accountsMaxPro = 50
+        n.accountsMaxFree = 5
         n.chatPro = 500
         n.chatFree = 50
         n.monthlyCredits = 50
@@ -28,7 +28,8 @@ final class LuckgramProPerksTests: XCTestCase {
         n.translatePro = 2000
         n.translateFree = 200
         let zh = LuckgramProPerks.Texts(zh: true)
-        XCTAssertEqual(zh.perkSubtitle("accounts", n), "可同时登录 50 个账号；账号备份加密存到云端。")
+        XCTAssertEqual(zh.perkSubtitle("accounts", n), "同时登录的账号数量不限（免费 5 个）；账号备份加密存到云端。")
+        XCTAssertEqual(zh.perkSubtitle("accounts", LuckgramProPerks.Numbers()), "同时登录的账号数量不限；账号备份加密存到云端。")
         XCTAssertEqual(zh.perkSubtitle("ai", n), "AI 对话每天 500 次（免费 50 次），每月另送 50 个 AI 点数，用于高级模型。")
         XCTAssertEqual(zh.perkSubtitle("summary", n), "总结最多 1000 条消息并可追问（免费 100 条）。")
         XCTAssertEqual(zh.perkSubtitle("translate", n), "每天翻译 2000 次（免费 200 次）。")
