@@ -180,7 +180,7 @@ public func luckgramSquarePostController(context: AccountContext, postId: String
             state.loadingPost = false
             if error.httpStatus == 404 || error.code == "not_found" {
                 LuckgramSquare.toast(context: context, tx.postGone, present: present)
-                LuckgramSquare.markChanged()
+                LuckgramSquare.noteRemoved(postId)
                 dismissImpl?()
                 return
             }
@@ -236,7 +236,7 @@ public func luckgramSquarePostController(context: AccountContext, postId: String
                     rethread()
                 }
                 state.replyTo = nil
-                LuckgramSquare.markChanged()
+                LuckgramSquare.noteUpdated(state.post)
                 refresh()
                 LuckgramSquare.toast(context: context, tx.commentSent, present: present)
             }, error: { error in
@@ -255,7 +255,7 @@ public func luckgramSquarePostController(context: AccountContext, postId: String
                 state.replyTo = nil
             }
             rethread()
-            LuckgramSquare.markChanged()
+            LuckgramSquare.noteUpdated(state.post)
             refresh()
             LuckgramSquare.toast(context: context, tx.deleted, present: present)
         }, error: { error in
@@ -286,7 +286,6 @@ public func luckgramSquarePostController(context: AccountContext, postId: String
         }
         LuckgramSquare.showPostMenu(context: context, post: p, present: present, push: push, onLiked: { updatedPost in
             state.post = updatedPost
-            LuckgramSquare.markChanged()
             refresh()
         }, onComment: {
             writeComment()

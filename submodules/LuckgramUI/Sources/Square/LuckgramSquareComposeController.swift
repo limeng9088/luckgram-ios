@@ -375,7 +375,7 @@ public func luckgramSquareComposeController(context: AccountContext) -> ViewCont
             }
             state.video?.delete()
             state.video = nil
-            LuckgramSquare.markChanged()
+            LuckgramSquare.noteNeedsRefresh()
             dismissImpl?()
             LuckgramSquare.toast(context: context, tx.published, present: present)
         }, error: { error in

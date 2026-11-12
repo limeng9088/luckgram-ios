@@ -40,13 +40,35 @@ public enum LuckgramSquare {
     static var profile: [String: Any]?
     /// Author id of this device's user in Square (from the profile response), if known.
     public static var myAuthorId: String?
-    /// Bumped whenever a page changed something the feed should reload (post, delete, block).
-    public static let changed = ValuePromise<Int>(0, ignoreRepeated: false)
-    private static var changeCounter = 0
+    /// What other Square pages did while the feed was covered. The feed applies it in place when
+    /// it is shown again: counts are updated, deleted posts and blocked authors taken out, and
+    /// only a new post makes it go back to the top and refresh. Nothing empties the list.
+    struct PendingChanges {
+        var updated: [String: SquareLogic.Post] = [:]
+        var removedPosts = Set<String>()
+        var blockedAuthors = Set<String>()
+        /// A new post, or all own data deleted: the first page is different now.
+        var needsRefresh = false
+    }
+    static var pending = PendingChanges()
 
-    public static func markChanged() {
-        changeCounter += 1
-        changed.set(changeCounter)
+    /// A post's like or comment count changed on this page.
+    static func noteUpdated(_ post: SquareLogic.Post?) {
+        if let post, !post.id.isEmpty {
+            pending.updated[post.id] = post
+        }
+    }
+
+    static func noteRemoved(_ postId: String) {
+        pending.removedPosts.insert(postId)
+    }
+
+    static func noteBlocked(_ authorId: String) {
+        pending.blockedAuthors.insert(authorId)
+    }
+
+    public static func noteNeedsRefresh() {
+        pending.needsRefresh = true
     }
 
     /// Forget cached state (unlink, logout, "delete my Square data").
@@ -302,7 +324,7 @@ public enum LuckgramSquare {
                 TextAlertAction(type: .destructiveAction, title: tx.block, action: {
                     let _ = LuckgramBlocks.block(userId: author.id, displayName: author.displayName).start(next: { _ in
                         toast(context: context, tx.blocked, present: present)
-                        markChanged()
+                        noteBlocked(author.id)
                         done()
                     }, error: { error in
                         showError(error, context: context, present: present, push: push)
@@ -320,6 +342,7 @@ public enum LuckgramSquare {
                 var p = post
                 p.liked = (j["liked"] as? Bool) ?? like
                 p.likeCount = max(0, (j["like_count"] as? NSNumber)?.intValue ?? (post.likeCount + (like ? 1 : -1)))
+                noteUpdated(p)
                 changed(p)
             }, error: { error in
                 showError(error, context: context, present: present, push: push)
@@ -334,7 +357,7 @@ public enum LuckgramSquare {
             TextAlertAction(type: .destructiveAction, title: tx.delete, action: {
                 let _ = LuckgramAI.shared.requestJSON(method: "DELETE", path: SquareLogic.postPath(post.id)).start(next: { _ in
                     toast(context: context, tx.deleted, present: present)
-                    markChanged()
+                    noteRemoved(post.id)
                     done()
                 }, error: { error in
                     showError(error, context: context, present: present, push: push)
