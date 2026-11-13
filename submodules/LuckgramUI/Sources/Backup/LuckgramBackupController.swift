@@ -18,6 +18,10 @@ public enum LuckgramBackupStrings {
     public static var selectHeader: String { LuckgramStrings.pick("选择要导出的账号", "Accounts to export") }
     public static var export: String { LuckgramStrings.pick("导出为文件", "Export to file") }
     public static var restore: String { LuckgramStrings.pick("从备份恢复", "Restore from backup") }
+    /// specs#150: where the exported file is and what it is called.
+    public static var exportHint: String { let ext = LuckgramBackupFormat.fileExtension; return LuckgramStrings.pick("导出的文件以 .\(ext) 结尾，例如 luckgram-20261113-0930.\(ext)。请存到你之后能找到的地方（如「下载」或「文件」）。", "The exported file ends in .\(ext), e.g. luckgram-20261113-0930.\(ext). Keep it somewhere you can find it later (e.g. Downloads or Files).") }
+    /// specs#150: which file to pick when restoring.
+    public static var restoreHint: String { let ext = LuckgramBackupFormat.fileExtension; return LuckgramStrings.pick("恢复时选择以 .\(ext) 结尾的备份文件（一般在「下载」或「文件」里）。", "To restore, pick the backup file ending in .\(ext) (usually in Downloads or Files).") }
     public static var exportFailed: String { LuckgramStrings.pick("导出失败", "Export failed") }
     public static var info: String { LuckgramStrings.pick("备份文件里只有登录信息和备注名，不包含消息、联系人或媒体。文件用你设置的密码加密，iPhone 和 Android 通用。", "The file holds only the logins and the local names, no messages, contacts or media. It is encrypted with your password and works on both iPhone and Android.") }
     public static var warning: String { LuckgramStrings.pick("这个文件等于你账号的钥匙。任何人拿到文件和密码就能登录你的账号。不要发给别人，不要存到不信任的地方。", "This file is the key to your accounts. Anyone with the file and the password can log in to them. Don't send it to anyone and don't keep it anywhere you don't trust.") }
@@ -405,7 +409,7 @@ private enum LuckgramBackupEntry: ItemListNodeEntry {
                 arguments.export()
             })
         case let .warning(text):
-            return ItemListTextItem(presentationData: presentationData, text: .markdown("**\(text)**"), sectionId: self.section)
+            return ItemListTextItem(presentationData: presentationData, text: .markdown(text), sectionId: self.section)
         case let .restore(text):
             return ItemListActionItem(presentationData: presentationData, systemStyle: .glass, title: text, kind: .generic, alignment: .natural, sectionId: self.section, style: .blocks, action: {
                 arguments.restore()
@@ -504,9 +508,9 @@ public func luckgramBackupController(context: AccountContext) -> ViewController 
             entries.append(.account(index: index, accountId: account.0, title: account.1, checked: !deselected.contains(account.0)))
         }
         entries.append(.export(LuckgramBackupStrings.export))
-        entries.append(.warning(LuckgramBackupStrings.warning))
+        entries.append(.warning(LuckgramBackupStrings.exportHint + "\n\n**" + LuckgramBackupStrings.warning + "**"))
         entries.append(.restore(LuckgramBackupStrings.restore))
-        entries.append(.info(LuckgramBackupStrings.info))
+        entries.append(.info(LuckgramBackupStrings.restoreHint + "\n\n" + LuckgramBackupStrings.info))
         let controllerState = ItemListControllerState(presentationData: ItemListPresentationData(presentationData), title: .text(LuckgramBackupStrings.title), leftNavigationButton: nil, rightNavigationButton: nil, backNavigationButton: ItemListBackButton(title: presentationData.strings.Common_Back))
         let listState = ItemListNodeState(presentationData: ItemListPresentationData(presentationData), entries: entries, style: .blocks, animateChanges: true)
         return (controllerState, (listState, arguments))

@@ -102,7 +102,10 @@ public final class AuthorizationSequencePhoneEntryController: ViewController, MF
         // Luckgram account backup: "Restore from backup" from a file (narrow screens use this slot for "Next").
         if LuckgramSettings.shared.isEnabled(LuckgramBackup.featureKey) {
             LuckgramStrings.appLanguageCode = presentationData.strings.primaryComponent.languageCode
-            self.luckgramSetRightItem(UIBarButtonItem(title: LuckgramBackupStrings.restore, style: .plain, target: self, action: #selector(self.luckgramRestorePressed))) // Luckgram 91: keeps the proxy icon
+            // specs#150: an icon next to the proxy icon (same row), not a text button.
+            let restoreItem = UIBarButtonItem(image: generateTintedImage(image: UIImage(bundleImageName: "Chat/Context Menu/Unarchive"), color: presentationData.theme.list.itemPrimaryTextColor), style: .plain, target: self, action: #selector(self.luckgramRestorePressed))
+            restoreItem.accessibilityLabel = LuckgramBackupStrings.restore
+            self.luckgramSetRightItem(restoreItem) // Luckgram 91: keeps the proxy icon
         }
     }
     
