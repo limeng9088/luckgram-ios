@@ -183,7 +183,8 @@ public enum LuckgramAccountLogic {
 
         public var proTitle: String { "Luckgram Pro" }
         public var free: String { t("免费版", "Free") }
-        public func proUntil(_ date: String) -> String { t("Pro，到期 \(date)", "Pro until \(date)") }
+        /// "Pro" alone without an end date (server pro.free_for_all).
+        public func proUntil(_ date: String) -> String { date.isEmpty ? "Pro" : t("Pro，到期 \(date)", "Pro until \(date)") }
         public func plan(_ p: Plan) -> String { t("\(p.days) 天", "\(p.days) days") }
         public func stars(_ n: Int) -> String { "\(n) ⭐" }
         public var proInfo: String {

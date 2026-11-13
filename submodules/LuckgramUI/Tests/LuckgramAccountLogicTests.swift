@@ -54,6 +54,7 @@ final class LuckgramAccountLogicTests: XCTestCase {
             XCTAssertFalse(en.error(code).isEmpty)
         }
         XCTAssertEqual(zh.proUntil("2026-12-01"), "Pro，到期 2026-12-01")
+        XCTAssertEqual(zh.proUntil(""), "Pro")
     }
 }
 
