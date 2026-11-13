@@ -1,6 +1,6 @@
 import Foundation
 
-/// specs#160: luckgram.cc, wiki and dl are blocked by name on some networks while cat158.com is
+/// specs#160: luckgram.cc, wiki, dl and web (the web version) are blocked by name on some networks while cat158.com is
 /// not, so each has a backup host with the same content (Info.plist `LuckgramSiteMirrors`, next to
 /// the API entries of specs#81). While the API is on a backup entry (that network blocks
 /// luckgram.cc), website / help center links and the package download open on the backup host.

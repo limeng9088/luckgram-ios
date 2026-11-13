@@ -1778,6 +1778,8 @@ plist_fragment(
         <string>lg-wiki.cat158.com</string>
         <key>dl.luckgram.cc</key>
         <string>lg-dl.cat158.com</string>
+        <key>web.luckgram.cc</key>
+        <string>lgweb.cat158.com</string>
     </dict>
     <key>NSAppTransportSecurity</key>
     <dict>
