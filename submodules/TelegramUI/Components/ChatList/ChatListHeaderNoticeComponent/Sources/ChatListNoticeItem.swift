@@ -452,7 +452,7 @@ final class ChatListNoticeItemNode: ItemListRevealOptionsItemNode {
                     
                     let hasCloseButton: Bool
                     switch item.notice {
-                    case .xmasPremiumGift, .setupBirthday, .birthdayPremiumGift, .premiumGrace, .starsSubscriptionLowBalance, .setupPhoto, .link, .luckgramAI:
+                    case .xmasPremiumGift, .setupBirthday, .birthdayPremiumGift, .premiumGrace, .starsSubscriptionLowBalance, .setupPhoto, .link:
                         hasCloseButton = true
                     default:
                         hasCloseButton = false
@@ -509,7 +509,12 @@ final class ChatListNoticeItemNode: ItemListRevealOptionsItemNode {
                         okButtonText.frame = CGRect(origin: CGPoint(x: floor((okButtonFrame.width - okButtonLayout.0.size.width) * 0.5), y: floor((okButtonFrame.height - okButtonLayout.0.size.height) * 0.5)), size: okButtonLayout.0.size)
                         cancelButtonText.frame = CGRect(origin: CGPoint(x: floor((cancelButtonFrame.width - cancelButtonLayout.0.size.width) * 0.5), y: floor((cancelButtonFrame.height - cancelButtonLayout.0.size.height) * 0.5)), size: cancelButtonLayout.0.size)
                     } else {
-                        strongSelf.arrowNode.isHidden = hasCloseButton
+                        // Luckgram: the AI assistant row has neither a close button nor an arrow; it is switched off in Luckgram Features
+                        var hidesArrow = hasCloseButton
+                        if case .luckgramAI = item.notice {
+                            hidesArrow = true
+                        }
+                        strongSelf.arrowNode.isHidden = hidesArrow
                         
                         if let okButton = strongSelf.okButton {
                             strongSelf.okButton = nil
