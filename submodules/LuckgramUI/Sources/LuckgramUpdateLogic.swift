@@ -85,11 +85,12 @@ public enum LuckgramUpdateLogic {
     /// was installed, or an older build) checks right away: the cached answer was judged against
     /// another build.
     public static func shouldCheck(now: Date, lastSuccess: Date?, lastFailure: Date?, checkedBy: String = "", running: String = "") -> Bool {
-        if lastSuccess != nil, !running.isEmpty, running != checkedBy {
-            return true
-        }
+        // a recent failure waits first, also after an update: otherwise every foreground would retry
         if let lastFailure, now >= lastFailure, now.timeIntervalSince(lastFailure) < retryAfterFailure {
             return false
+        }
+        if lastSuccess != nil, !running.isEmpty, running != checkedBy {
+            return true
         }
         guard let lastSuccess else {
             return true

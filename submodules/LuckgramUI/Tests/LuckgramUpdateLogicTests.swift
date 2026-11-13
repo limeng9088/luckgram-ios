@@ -119,6 +119,9 @@ final class LuckgramUpdateLogicTests: XCTestCase {
         // first run after updating from a version that did not store it
         XCTAssertTrue(LuckgramUpdateLogic.shouldCheck(now: now, lastSuccess: recent, lastFailure: nil, checkedBy: "", running: b36373))
         XCTAssertFalse(LuckgramUpdateLogic.shouldCheck(now: now, lastSuccess: nil, lastFailure: recent, checkedBy: "", running: b36373))
+        // review P3: a changed build still waits out a recent failure (no retry on every foreground)
+        XCTAssertFalse(LuckgramUpdateLogic.shouldCheck(now: now, lastSuccess: recent, lastFailure: recent, checkedBy: LuckgramUpdateLogic.appId(version: "13.1.1", build: 36294), running: b36373))
+        XCTAssertTrue(LuckgramUpdateLogic.shouldCheck(now: now, lastSuccess: recent, lastFailure: now.addingTimeInterval(-hour), checkedBy: LuckgramUpdateLogic.appId(version: "13.1.1", build: 36294), running: b36373))
     }
 
     func testTextsCarryBuild() {
