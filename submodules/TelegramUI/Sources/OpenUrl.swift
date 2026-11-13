@@ -1,4 +1,5 @@
 import Foundation
+import LuckgramUI
 import Display
 import TelegramCore
 import SwiftSignalKit
@@ -357,6 +358,8 @@ private func makeTelegramUrl(_ path: String, queryItems: [URLQueryItem] = []) ->
 }
 
 func openExternalUrlImpl(context: AccountContext, urlContext: OpenURLContext, url: String, forceExternal: Bool, presentationData: PresentationData, navigationController: NavigationController?, dismissInput: @escaping () -> Void) {
+    // Luckgram specs#160: luckgram.cc / wiki / dl on the backup host while the API uses its backup entry
+    let url = LuckgramAI.siteURL(url)
     // A login part hides the host a link opens (see `externalUrlWithLoginPart`). Every external link leaves through
     // here, whoever opens it, so here it is confirmed, unless a prompt that showed the real host was just accepted.
     if let loginPartUrl = externalUrlWithLoginPart(url), !consumeLoginPartConfirmation(loginPartUrl) {

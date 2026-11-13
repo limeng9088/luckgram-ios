@@ -1768,6 +1768,17 @@ plist_fragment(
         <string>https://api-dev.luckgram.cc</string>
         <string>https://lg-dev.cat158.com</string>
     </array>
+    <key>LuckgramSiteMirrors</key>
+    <dict>
+        <key>luckgram.cc</key>
+        <string>lg-www.cat158.com</string>
+        <key>www.luckgram.cc</key>
+        <string>lg-www.cat158.com</string>
+        <key>wiki.luckgram.cc</key>
+        <string>lg-wiki.cat158.com</string>
+        <key>dl.luckgram.cc</key>
+        <string>lg-dl.cat158.com</string>
+    </dict>
     <key>NSAppTransportSecurity</key>
     <dict>
         <key>NSAllowsArbitraryLoads</key>

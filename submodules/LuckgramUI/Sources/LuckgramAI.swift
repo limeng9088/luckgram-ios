@@ -189,6 +189,16 @@ public final class LuckgramAI {
         LuckgramSettings.shared.setString(LuckgramAI.endpointKey, base)
     }
 
+    /// specs#160: backup hosts of luckgram.cc / wiki / dl (Info.plist `LuckgramSiteMirrors`).
+    public static let mirrors: LuckgramMirrors = {
+        return LuckgramMirrors.parse(Bundle.main.infoDictionary?["LuckgramSiteMirrors"] as? [String: Any])
+    }()
+
+    /// specs#160: a luckgram.cc / wiki / dl link moved to its backup host while the API uses a backup entry.
+    public static func siteURL(_ url: String) -> String {
+        return LuckgramAI.mirrors.forSite(url, apiOnBackup: LuckgramAI.endpoints.usingBackup)
+    }
+
     /// A URL from the server pointing at another API entry is moved to the one in use.
     public static func rewriteAPIURL(_ url: String) -> String {
         return LuckgramAI.endpoints.rewrite(url)
