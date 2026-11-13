@@ -39,6 +39,20 @@ public enum LuckgramBackupStrings {
     public static var restoreButton: String { LuckgramStrings.pick("恢复", "Restore") }
     public static var selectAtLeastOne: String { LuckgramStrings.pick("请至少选择一个账号", "Select at least one account") }
     public static var noRoom: String { LuckgramStrings.pick("已达到账号上限，无法恢复更多账号", "The account limit is reached; no more accounts can be restored") }
+    /// Plus the accounts left out because the account limit was reached, with the limit and, for
+    /// free users, that Pro has no limit (same text as Android `LuckgramBackup.resultText`).
+    public static func result(restored: Int, skipped: Int, failed: Int, noRoom: Int) -> String {
+        var text = result(restored: restored, skipped: skipped, failed: failed)
+        if noRoom > 0 {
+            let max = LuckgramAccountsStore.maxAccounts
+            if luckgramOfferAccountUpgrade() {
+                text += LuckgramStrings.pick("，\(noRoom) 个因达到免费版上限（\(max) 个）未恢复，升级 Pro 可登录的账号数量不限", ", \(noRoom) not restored: free accounts can log in to at most \(max) accounts. Upgrade to Pro for unlimited accounts")
+            } else {
+                text += LuckgramStrings.pick("，\(noRoom) 个因达到账号上限（\(max) 个）未恢复", ", \(noRoom) not restored: the limit of \(max) accounts is reached")
+            }
+        }
+        return text
+    }
     public static func result(restored: Int, skipped: Int, failed: Int) -> String {
         var text = LuckgramStrings.pick("已恢复 \(restored) 个账号", "\(restored) account(s) restored")
         if skipped > 0 {
@@ -285,7 +299,8 @@ private func luckgramBackupRestoreController(sharedContext: SharedAccountContext
             for i in accounts.indices {
                 accounts[i].wipe()
             }
-            let text = result.noRoom > 0 && result.restored == 0 ? LuckgramBackupStrings.noRoom : LuckgramBackupStrings.result(restored: result.restored, skipped: result.skipped + alreadyLoggedIn, failed: result.noRoom)
+            // Accounts left out by the account limit are told apart from real failures.
+            let text = LuckgramBackupStrings.result(restored: result.restored, skipped: result.skipped + alreadyLoggedIn, failed: 0, noRoom: result.noRoom)
             presentMessage(sharedContext: sharedContext, text)
             dismissImpl?()
         })
