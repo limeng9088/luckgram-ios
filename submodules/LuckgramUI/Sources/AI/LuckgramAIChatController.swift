@@ -520,7 +520,11 @@ public final class LuckgramAIChatController: UIViewController, LuckgramAIChatHos
         self.welcomeCard.addSubview(scroll)
         scroll.addSubview(stack)
         let fitsContent = self.welcomeCard.heightAnchor.constraint(equalTo: scroll.contentLayoutGuide.heightAnchor)
-        fitsContent.priority = .defaultHigh
+        // weaker than the content's own size, so a short card scrolls instead of squeezing what is in it
+        fitsContent.priority = UILayoutPriority(500.0)
+        for view in [badge, title, subtitle] + examples.arrangedSubviews {
+            view.setContentCompressionResistancePriority(.required, for: .vertical)
+        }
         NSLayoutConstraint.activate([
             scroll.topAnchor.constraint(equalTo: self.welcomeCard.topAnchor),
             scroll.bottomAnchor.constraint(equalTo: self.welcomeCard.bottomAnchor),
