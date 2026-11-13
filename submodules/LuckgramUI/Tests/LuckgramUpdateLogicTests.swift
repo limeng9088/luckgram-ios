@@ -22,11 +22,11 @@ final class LuckgramUpdateLogicTests: XCTestCase {
         XCTAssertFalse(LuckgramUpdateLogic.isNewer(latest: "12.1", latestBuild: 999, current: "12.2", currentBuild: 1))
     }
 
-    func testCheckAtMostOncePerDay() {
+    func testCheckAtMostOncePerHour() {
         let now = Date(timeIntervalSince1970: 1_000_000_000)
         XCTAssertTrue(LuckgramUpdateLogic.shouldCheck(now: now, lastSuccess: nil, lastFailure: nil))
-        XCTAssertFalse(LuckgramUpdateLogic.shouldCheck(now: now, lastSuccess: now.addingTimeInterval(-23 * hour), lastFailure: nil))
-        XCTAssertTrue(LuckgramUpdateLogic.shouldCheck(now: now, lastSuccess: now.addingTimeInterval(-24 * hour), lastFailure: nil))
+        XCTAssertFalse(LuckgramUpdateLogic.shouldCheck(now: now, lastSuccess: now.addingTimeInterval(-59 * 60), lastFailure: nil))
+        XCTAssertTrue(LuckgramUpdateLogic.shouldCheck(now: now, lastSuccess: now.addingTimeInterval(-hour), lastFailure: nil))
         XCTAssertTrue(LuckgramUpdateLogic.shouldCheck(now: now, lastSuccess: now.addingTimeInterval(hour), lastFailure: nil))
         XCTAssertFalse(LuckgramUpdateLogic.shouldCheck(now: now, lastSuccess: nil, lastFailure: now.addingTimeInterval(-hour / 2)))
         XCTAssertTrue(LuckgramUpdateLogic.shouldCheck(now: now, lastSuccess: nil, lastFailure: now.addingTimeInterval(-hour)))
@@ -106,5 +106,37 @@ final class LuckgramUpdateLogicTests: XCTestCase {
 
         XCTAssertEqual(LuckgramUpdateLogic.guideActions(force: false), [.download, .guide, .later])
         XCTAssertEqual(LuckgramUpdateLogic.guideActions(force: true), [.download, .guide])
+    }
+
+    func testCheckAgainAfterTheInstalledBuildChanged() {
+        let now = Date(timeIntervalSince1970: 1_000_000_000)
+        let recent = now.addingTimeInterval(-60)
+        let b36373 = LuckgramUpdateLogic.appId(version: "13.1.1", build: 36373)
+        XCTAssertEqual(b36373, "13.1.1+36373")
+        // checked at an older build, then a newer one was installed: ask again now
+        XCTAssertTrue(LuckgramUpdateLogic.shouldCheck(now: now, lastSuccess: recent, lastFailure: nil, checkedBy: LuckgramUpdateLogic.appId(version: "13.1.1", build: 36294), running: b36373))
+        XCTAssertFalse(LuckgramUpdateLogic.shouldCheck(now: now, lastSuccess: recent, lastFailure: nil, checkedBy: b36373, running: b36373))
+        // first run after updating from a version that did not store it
+        XCTAssertTrue(LuckgramUpdateLogic.shouldCheck(now: now, lastSuccess: recent, lastFailure: nil, checkedBy: "", running: b36373))
+        XCTAssertFalse(LuckgramUpdateLogic.shouldCheck(now: now, lastSuccess: nil, lastFailure: recent, checkedBy: "", running: b36373))
+    }
+
+    func testTextsCarryBuild() {
+        let url = "https://dl.luckgram.cc/ios/ios-13.1.1-36373/Luckgram-13.1.1-36373.ipa"
+        let s = LuckgramUpdateLogic.evaluate(info("13.1.1", 36373, "0", url), current: "13.1.1", currentBuild: 36294, chinese: true)
+        XCTAssertTrue(s.updateAvailable)
+        XCTAssertEqual(s.build, 36373)
+        XCTAssertEqual(LuckgramUpdateLogic.label("13.1.1", build: 36373, chinese: true), "13.1.1（36373）")
+        XCTAssertEqual(LuckgramUpdateLogic.label("13.1.1", build: 36373, chinese: false), "13.1.1 (36373)")
+        XCTAssertEqual(LuckgramUpdateLogic.label("13.1.1", build: 0, chinese: true), "13.1.1")
+        XCTAssertEqual(LuckgramUpdateLogic.rowText(s, chinese: true), "有新版本 13.1.1（36373） · 更新")
+        XCTAssertEqual(LuckgramUpdateLogic.rowText(s, chinese: false), "New version 13.1.1 (36373) · Update")
+        XCTAssertEqual(LuckgramUpdateLogic.guideTitle(s, chinese: true), "更新到 13.1.1（36373）")
+        XCTAssertEqual(LuckgramUpdateLogic.guideMessage(s, chinese: true), "新版本 13.1.1（36373） 需要重新签名安装。")
+        XCTAssertEqual(LuckgramUpdateLogic.forceText(s, current: "13.1.1", currentBuild: 36294, chinese: true), "当前版本 13.1.1（36294） 已停止支持，请更新到 13.1.1（36373） 后继续使用。")
+        XCTAssertEqual(LuckgramUpdateLogic.forceText(s, current: "13.1.1", currentBuild: 36294, chinese: false), "Version 13.1.1 (36294) is no longer supported. Update to 13.1.1 (36373) to continue.")
+        // server without build: version only
+        let noBuild = LuckgramUpdateLogic.evaluate(info("13.2", 0, "0", url), current: "13.1.1", currentBuild: 36294, chinese: true)
+        XCTAssertEqual(LuckgramUpdateLogic.rowText(noBuild, chinese: true), "有新版本 13.2 · 更新")
     }
 }

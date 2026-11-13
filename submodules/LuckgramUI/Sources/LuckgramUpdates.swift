@@ -3,8 +3,9 @@ import UIKit
 import SwiftSignalKit
 
 /// Update check (task S5, luckgram-specs#30, specs/server/S5-version.md item 3):
-/// - `GET /v1/version` when the app comes to the foreground, at most once a day (the last
-///   successful check is kept on the device, so restarts do not count);
+/// - `GET /v1/version` when the app comes to the foreground, at most once an hour (the last
+///   successful check is kept on the device, so restarts do not count) and right away after the
+///   installed version or build changed;
 /// - a newer version shows "有新版本 x.y.z · 更新" on top of Settings (PeerInfoSettingsItems),
 ///   which opens the download link;
 /// - below the minimum version a full-screen page with only the Update button covers the app
@@ -15,6 +16,8 @@ public final class LuckgramUpdates {
 
     private static let infoKey = "update_info"
     private static let lastCheckKey = "update_last_check"
+    /// LuckgramUpdateLogic.appId of the app that made the last successful check.
+    private static let lastCheckAppKey = "update_last_check_app"
 
     private var lastFailure: Date?
     private var inFlight = false
@@ -45,20 +48,20 @@ public final class LuckgramUpdates {
         return self.statePromise.get()
     }
 
-    /// "有新版本 x.y.z · 更新".
+    /// "有新版本 x.y.z（build） · 更新".
     public static func rowText(_ state: LuckgramUpdateLogic.State) -> String {
-        return LuckgramStrings.pick("有新版本 \(state.latest) · 更新", "New version \(state.latest) · Update")
+        return LuckgramUpdateLogic.rowText(state, chinese: LuckgramStrings.isChinese)
     }
 
     /// specs#124: an unsigned IPA can't be installed from inside the app, so "Update" explains that
     /// the new version must be re-signed and offers the IPA (dl.luckgram.cc), the install guide and,
     /// unless updating is forced, "Later".
     public static func guideController(state: LuckgramUpdateLogic.State, force: Bool, openUrl: @escaping (String) -> Void) -> UIViewController {
-        var message = LuckgramStrings.pick("新版本 \(state.latest) 需要重新签名安装。", "Version \(state.latest) has to be re-signed and installed.")
+        var message = LuckgramUpdateLogic.guideMessage(state, chinese: LuckgramStrings.isChinese)
         if !state.notes.isEmpty && !force {
             message += "\n\n" + state.notes
         }
-        let alert = UIAlertController(title: LuckgramStrings.pick("更新到 \(state.latest)", "Update to \(state.latest)"), message: message, preferredStyle: .alert)
+        let alert = UIAlertController(title: LuckgramUpdateLogic.guideTitle(state, chinese: LuckgramStrings.isChinese), message: message, preferredStyle: .alert)
         for action in LuckgramUpdateLogic.guideActions(force: force) {
             switch action {
             case .download:
@@ -82,7 +85,9 @@ public final class LuckgramUpdates {
     public func checkIfDue() {
         let last = LuckgramSettings.shared.int(LuckgramUpdates.lastCheckKey, default: 0)
         let lastSuccess: Date? = last > 0 ? Date(timeIntervalSince1970: TimeInterval(last)) : nil
-        if self.inFlight || !LuckgramUpdateLogic.shouldCheck(now: Date(), lastSuccess: lastSuccess, lastFailure: self.lastFailure) {
+        let checkedBy = LuckgramSettings.shared.string(LuckgramUpdates.lastCheckAppKey, default: nil) ?? ""
+        let running = LuckgramUpdateLogic.appId(version: LuckgramUpdates.appVersion, build: LuckgramUpdates.appBuild)
+        if self.inFlight || !LuckgramUpdateLogic.shouldCheck(now: Date(), lastSuccess: lastSuccess, lastFailure: self.lastFailure, checkedBy: checkedBy, running: running) {
             self.statePromise.set(self.state)
             return
         }
@@ -96,6 +101,7 @@ public final class LuckgramUpdates {
             self.lastFailure = nil
             LuckgramSettings.shared.setString(LuckgramUpdates.infoKey, LuckgramUpdateLogic.serialize(LuckgramUpdateLogic.parse(response)))
             LuckgramSettings.shared.setInt(LuckgramUpdates.lastCheckKey, Int(Date().timeIntervalSince1970))
+            LuckgramSettings.shared.setString(LuckgramUpdates.lastCheckAppKey, running)
             self.statePromise.set(self.state)
         }, error: { [weak self] _ in
             self?.inFlight = false
@@ -136,8 +142,7 @@ public final class LuckgramForceUpdateController: UIViewController {
         text.textColor = .secondaryLabel
         text.textAlignment = .center
         text.numberOfLines = 0
-        let current = LuckgramUpdates.appVersion
-        var body = LuckgramStrings.pick("当前版本 \(current) 已停止支持，请更新到 \(self.state.latest) 后继续使用。", "Version \(current) is no longer supported. Update to \(self.state.latest) to continue.")
+        var body = LuckgramUpdateLogic.forceText(self.state, current: LuckgramUpdates.appVersion, currentBuild: LuckgramUpdates.appBuild, chinese: LuckgramStrings.isChinese)
         if !self.state.notes.isEmpty {
             body += "\n\n" + self.state.notes
         }
