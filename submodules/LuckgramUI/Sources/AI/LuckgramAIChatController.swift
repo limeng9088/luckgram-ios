@@ -188,6 +188,12 @@ public final class LuckgramAIChatController: UIViewController, LuckgramAIChatHos
 
         // specs#101: Telegram message panel — panel color, hairline on top, rounded field with stroke
         self.inputPanel.backgroundColor = theme.chat.inputPanel.panelBackgroundColor
+        // The panel ends at the keyboard guide (the safe area while the keyboard is down); without this the
+        // wallpaper shows in the strip under it, next to the home indicator.
+        let panelBottomFill = UIView()
+        panelBottomFill.backgroundColor = theme.chat.inputPanel.panelBackgroundColor
+        panelBottomFill.isUserInteractionEnabled = false
+        panelBottomFill.translatesAutoresizingMaskIntoConstraints = false
         let panelSeparator = UIView()
         panelSeparator.backgroundColor = theme.chat.inputPanel.panelSeparatorColor
         panelSeparator.translatesAutoresizingMaskIntoConstraints = false
@@ -213,6 +219,7 @@ public final class LuckgramAIChatController: UIViewController, LuckgramAIChatHos
         self.view.addSubview(self.tableView)
         self.view.addSubview(self.welcomeCard)
         self.view.addSubview(self.inputPanel)
+        self.view.insertSubview(panelBottomFill, belowSubview: self.inputPanel)
         self.view.addSubview(self.pinnedStack)
         self.inputPanel.addSubview(self.quickScroll)
         self.inputPanel.addSubview(self.inputView_)
@@ -251,6 +258,11 @@ public final class LuckgramAIChatController: UIViewController, LuckgramAIChatHos
             self.quickStack.trailingAnchor.constraint(equalTo: self.quickScroll.contentLayoutGuide.trailingAnchor, constant: -10.0),
             self.quickStack.centerYAnchor.constraint(equalTo: self.quickScroll.frameLayoutGuide.centerYAnchor),
             self.quickStack.heightAnchor.constraint(equalToConstant: 30.0),
+
+            panelBottomFill.topAnchor.constraint(equalTo: self.inputPanel.bottomAnchor),
+            panelBottomFill.leadingAnchor.constraint(equalTo: self.view.leadingAnchor),
+            panelBottomFill.trailingAnchor.constraint(equalTo: self.view.trailingAnchor),
+            panelBottomFill.bottomAnchor.constraint(equalTo: self.view.bottomAnchor),
 
             self.inputPanel.leadingAnchor.constraint(equalTo: self.view.leadingAnchor),
             self.inputPanel.trailingAnchor.constraint(equalTo: self.view.trailingAnchor),
