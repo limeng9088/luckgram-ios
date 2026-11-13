@@ -507,13 +507,36 @@ public final class LuckgramAIChatController: UIViewController, LuckgramAIChatHos
         stack.setCustomSpacing(16.0, after: subtitle)
         stack.translatesAutoresizingMaskIntoConstraints = false
         examples.translatesAutoresizingMaskIntoConstraints = false
-        self.welcomeCard.addSubview(stack)
+        // The card is as tall as its content while there is room. With the keyboard up or in landscape there
+        // is not: the card then stops at the available height and its content scrolls, instead of the
+        // example buttons being squeezed on top of each other.
+        let scroll = UIScrollView()
+        scroll.translatesAutoresizingMaskIntoConstraints = false
+        scroll.alwaysBounceVertical = false
+        scroll.showsHorizontalScrollIndicator = false
+        scroll.delaysContentTouches = false
+        scroll.contentInsetAdjustmentBehavior = .never
+        scroll.layer.cornerRadius = 18.0
+        self.welcomeCard.addSubview(scroll)
+        scroll.addSubview(stack)
+        let fitsContent = self.welcomeCard.heightAnchor.constraint(equalTo: scroll.contentLayoutGuide.heightAnchor)
+        // weaker than the content's own size, so a short card scrolls instead of squeezing what is in it
+        fitsContent.priority = UILayoutPriority(500.0)
+        for view in ([badge, title, subtitle] as [UIView]) + examples.arrangedSubviews {
+            view.setContentCompressionResistancePriority(.required, for: .vertical)
+        }
         NSLayoutConstraint.activate([
-            stack.topAnchor.constraint(equalTo: self.welcomeCard.topAnchor, constant: 20.0),
-            stack.bottomAnchor.constraint(equalTo: self.welcomeCard.bottomAnchor, constant: -16.0),
-            stack.leadingAnchor.constraint(equalTo: self.welcomeCard.leadingAnchor, constant: 16.0),
-            stack.trailingAnchor.constraint(equalTo: self.welcomeCard.trailingAnchor, constant: -16.0),
-            examples.widthAnchor.constraint(equalTo: stack.widthAnchor)
+            scroll.topAnchor.constraint(equalTo: self.welcomeCard.topAnchor),
+            scroll.bottomAnchor.constraint(equalTo: self.welcomeCard.bottomAnchor),
+            scroll.leadingAnchor.constraint(equalTo: self.welcomeCard.leadingAnchor),
+            scroll.trailingAnchor.constraint(equalTo: self.welcomeCard.trailingAnchor),
+            scroll.contentLayoutGuide.widthAnchor.constraint(equalTo: scroll.frameLayoutGuide.widthAnchor),
+            stack.topAnchor.constraint(equalTo: scroll.contentLayoutGuide.topAnchor, constant: 20.0),
+            stack.bottomAnchor.constraint(equalTo: scroll.contentLayoutGuide.bottomAnchor, constant: -16.0),
+            stack.leadingAnchor.constraint(equalTo: scroll.contentLayoutGuide.leadingAnchor, constant: 16.0),
+            stack.trailingAnchor.constraint(equalTo: scroll.contentLayoutGuide.trailingAnchor, constant: -16.0),
+            examples.widthAnchor.constraint(equalTo: stack.widthAnchor),
+            fitsContent
         ])
     }
 
