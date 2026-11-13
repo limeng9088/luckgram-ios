@@ -257,6 +257,10 @@ func inputTextPanelStateForChatPresentationInterfaceState(_ chatPresentationInte
                 // Luckgram: AI writing ✦ button (feature 21): with text, or when an item works on an empty field (20).
                 // Luckgram specs#94: with the compact bar these four live in the 「+」 panel instead.
                 let luckgramCompactBar = LuckgramCompactInput.isEnabled
+                var luckgramIsCustomContents = false
+                if case .customChatContents = chatPresentationInterfaceState.subject {
+                    luckgramIsCustomContents = true
+                }
                 if canSendTextMessages, !hasForward, LuckgramAIWriting.isEnabled, !luckgramCompactBar {
                     if case .customChatContents = chatPresentationInterfaceState.subject {
                     } else if !isTextEmpty || LuckgramAIWriting.hasItemsForEmptyText(peer: chatPresentationInterfaceState.renderedPeer?.peer.flatMap(EnginePeer.init)) {
@@ -289,6 +293,8 @@ func inputTextPanelStateForChatPresentationInterfaceState(_ chatPresentationInte
                     if stickersEnabled && !stickersAreEmoji && !hasForward {
                         accessoryItems.append(.input(isEnabled: true, inputMode: .stickers))
                     }
+                } else if luckgramCompactBar, chatPresentationInterfaceState.interfaceState.editMessage == nil, !luckgramIsCustomContents {
+                    // Luckgram: with the 「+」 panel the emoji entry is a tile in it, not a button in the field
                 } else {
                     stickersAreEmoji = stickersAreEmoji || hasForward
                     if stickersEnabled {
