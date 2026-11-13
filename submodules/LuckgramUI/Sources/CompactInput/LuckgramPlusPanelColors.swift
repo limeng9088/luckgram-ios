@@ -35,6 +35,7 @@ public enum LuckgramPlusPanelColors {
     public static func square(_ action: LuckgramPlusAction) -> (top: UIColor, bottom: UIColor) {
         let pair: (UInt32, UInt32)
         switch action {
+        case .emoji: pair = (0xFFFF8FB8, 0xFFE8478A)
         case .gallery: pair = (0xFF5EB5F7, 0xFF2A82E4)
         case .camera: pair = (0xFFFF7A85, 0xFFE8415A)
         case .file: pair = (0xFF8C9EFF, 0xFF5667E8)

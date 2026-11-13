@@ -117,6 +117,7 @@ final class LuckgramPlusPanelInputNode: ChatInputNode, UIScrollViewDelegate {
         let isSecret = state.renderedPeer?.peer is TelegramSecretChat
 
         var result: [Item] = [
+            Item(action: .emoji, dimmed: false),
             Item(action: .gallery, dimmed: mediaBanned),
             Item(action: .camera, dimmed: mediaBanned),
             Item(action: .file, dimmed: filesBanned),

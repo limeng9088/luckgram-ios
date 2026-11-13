@@ -32,6 +32,8 @@ public enum LuckgramCompactInput {
 
 /// One cell of the 「+」 panel. The order here is the order on screen (specs#94 需求 2).
 public enum LuckgramPlusAction: CaseIterable {
+    /// Emoji and stickers: the bar itself has no emoji button while the 「+」 panel is on.
+    case emoji
     case gallery
     case camera
     case file
@@ -45,6 +47,7 @@ public enum LuckgramPlusAction: CaseIterable {
 
     public var title: String {
         switch self {
+        case .emoji: return LuckgramStrings.pick("表情", "Emoji")
         case .gallery: return LuckgramStrings.pick("相册", "Gallery")
         case .camera: return LuckgramStrings.pick("拍摄", "Camera")
         case .file: return LuckgramStrings.pick("文件", "File")
@@ -60,6 +63,7 @@ public enum LuckgramPlusAction: CaseIterable {
 
     public var systemImageName: String {
         switch self {
+        case .emoji: return "face.smiling"
         case .gallery: return "photo.on.rectangle"
         case .camera: return "camera"
         case .file: return "doc"

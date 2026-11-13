@@ -27,7 +27,7 @@ extension ChatControllerImpl {
             self.luckgramOpenAttachmentTab(.contact)
         case .poll:
             self.luckgramOpenAttachmentTab(.poll)
-        case .quickReplies, .dictation, .aiWriting, .translate:
+        case .emoji, .quickReplies, .dictation, .aiWriting, .translate:
             self.chatDisplayNode.textInputPanelNode?.luckgramPerformPlusAction(action)
         }
     }
