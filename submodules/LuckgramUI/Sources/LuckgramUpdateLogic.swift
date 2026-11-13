@@ -4,8 +4,10 @@ import Foundation
 /// comparing versions with the server's rule, deciding when to check and what to show.
 /// Foundation only (SwiftPM unit tests); same rules as UpdateLogic.java on Android.
 public enum LuckgramUpdateLogic {
-    /// Check at most once a day (spec: "启动时（每天最多一次）").
-    public static let checkInterval: TimeInterval = 24 * 60 * 60
+    /// Check at most once an hour. Was once a day (spec: "启动时（每天最多一次）"), but releases now
+    /// ship several times a day with the same version name and only a new build, so a day-old answer
+    /// hid newer builds. Same TTL as the remote config; the request is a few hundred bytes.
+    public static let checkInterval: TimeInterval = 60 * 60
     /// After a failed check try again on a later launch, but not more often than this.
     public static let retryAfterFailure: TimeInterval = 60 * 60
 
@@ -46,6 +48,8 @@ public enum LuckgramUpdateLogic {
         public var notes: String
         /// Install guide, always an https link (server value or the default guide).
         public var installUrl: String = LuckgramUpdateLogic.defaultInstallUrl
+        /// Build of `latest` (0 = unknown), shown next to the version: releases often keep the version.
+        public var build: Int64 = 0
 
         public static let hidden = State(updateAvailable: false, forceUpdate: false, latest: "", url: "", notes: "")
     }
@@ -71,7 +75,19 @@ public enum LuckgramUpdateLogic {
         return force ? [.download, .guide] : [.download, .guide, .later]
     }
 
-    public static func shouldCheck(now: Date, lastSuccess: Date?, lastFailure: Date?) -> Bool {
+    /// "13.1.1+36373": identifies the installed app for `shouldCheck`.
+    public static func appId(version: String, build: Int64) -> String {
+        return "\(version)+\(max(0, build))"
+    }
+
+    /// `checkedBy` is the `appId` of the app that made the last successful check ("" = unknown),
+    /// `running` the one of the running app. Another app than the one that checked last (an update
+    /// was installed, or an older build) checks right away: the cached answer was judged against
+    /// another build.
+    public static func shouldCheck(now: Date, lastSuccess: Date?, lastFailure: Date?, checkedBy: String = "", running: String = "") -> Bool {
+        if lastSuccess != nil, !running.isEmpty, running != checkedBy {
+            return true
+        }
         if let lastFailure, now >= lastFailure, now.timeIntervalSince(lastFailure) < retryAfterFailure {
             return false
         }
@@ -197,6 +213,42 @@ public enum LuckgramUpdateLogic {
         }
         let notes = chinese ? (info.notesZh.isEmpty ? info.notesEn : info.notesZh) : (info.notesEn.isEmpty ? info.notesZh : info.notesEn)
         // Below min but latest not newer (misconfigured): still force, the link is the way out.
-        return State(updateAvailable: true, forceUpdate: force, latest: isVersion(info.latest) ? info.latest : info.min, url: info.url, notes: notes, installUrl: installGuideUrl(info.installUrl))
+        let latestIsTarget = isVersion(info.latest) && (available || compareVersions(info.latest, info.min) >= 0)
+        return State(updateAvailable: true, forceUpdate: force, latest: isVersion(info.latest) ? info.latest : info.min, url: info.url, notes: notes, installUrl: installGuideUrl(info.installUrl), build: latestIsTarget ? info.build : 0)
+    }
+
+    // MARK: - texts (same as UpdateDownloadLogic.Texts on Android)
+
+    /// "13.1.1（36373）" / "13.1.1 (36373)"; only the version while the build is unknown (0).
+    public static func label(_ version: String, build: Int64, chinese: Bool) -> String {
+        guard build > 0 else {
+            return version
+        }
+        return chinese ? "\(version)（\(build)）" : "\(version) (\(build))"
+    }
+
+    /// Settings row: "有新版本 13.1.1（36373） · 更新".
+    public static func rowText(_ state: State, chinese: Bool) -> String {
+        let l = label(state.latest, build: state.build, chinese: chinese)
+        return chinese ? "有新版本 \(l) · 更新" : "New version \(l) · Update"
+    }
+
+    /// Guide sheet title: "更新到 13.1.1（36373）".
+    public static func guideTitle(_ state: State, chinese: Bool) -> String {
+        let l = label(state.latest, build: state.build, chinese: chinese)
+        return chinese ? "更新到 \(l)" : "Update to \(l)"
+    }
+
+    /// Guide sheet text: "新版本 13.1.1（36373） 需要重新签名安装。".
+    public static func guideMessage(_ state: State, chinese: Bool) -> String {
+        let l = label(state.latest, build: state.build, chinese: chinese)
+        return chinese ? "新版本 \(l) 需要重新签名安装。" : "Version \(l) has to be re-signed and installed."
+    }
+
+    /// Force page: installed version and the one to update to, both with their builds.
+    public static func forceText(_ state: State, current: String, currentBuild: Int64, chinese: Bool) -> String {
+        let c = label(current, build: currentBuild, chinese: chinese)
+        let l = label(state.latest, build: state.build, chinese: chinese)
+        return chinese ? "当前版本 \(c) 已停止支持，请更新到 \(l) 后继续使用。" : "Version \(c) is no longer supported. Update to \(l) to continue."
     }
 }
