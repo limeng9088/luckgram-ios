@@ -12,6 +12,7 @@ import TelegramUIPreferences
 import AccountContext
 import CallKit
 import PhoneNumberFormat
+import LuckgramAccountsStore
 
 private func callKitIntegrationIfEnabled(_ integration: CallKitIntegration?, settings: VoiceCallSettings?) -> CallKitIntegration?  {
     let enabled = settings?.enableSystemIntegration ?? true
@@ -188,6 +189,14 @@ public final class PresentationCallManagerImpl: PresentationCallManager {
             |> map { ringingStatesByAccount -> [(AccountContext, CallSessionRingingState, NetworkType)] in
                 var result: [(AccountContext, CallSessionRingingState, NetworkType)] = []
                 for (context, states, networkType) in ringingStatesByAccount {
+                    // Luckgram 11: in the second space, calls and conference invites to a hidden account
+                    // never ring; decline them as busy (same as desktop).
+                    if LuckgramDoubleBottomState.shared.isHidden(context.account.id.int64) {
+                        for state in states {
+                            context.account.callSessionManager.drop(internalId: state.id, reason: .busy, debugLog: .single(nil))
+                        }
+                        continue
+                    }
                     for state in states {
                         result.append((context, state, networkType))
                     }

@@ -108,6 +108,7 @@ swift_library(
         "//submodules/Components/HierarchyTrackingLayer:HierarchyTrackingLayer",
         "//submodules/PeerInfoUI/CreateExternalMediaStreamScreen:CreateExternalMediaStreamScreen",
         "//submodules/PhoneNumberFormat:PhoneNumberFormat",
+        "//submodules/LuckgramAccountsStore:LuckgramAccountsStore",
         "//submodules/TelegramUI/Components/Calls/CallScreen",
         "//submodules/Components/ComponentDisplayAdapters",
         "//submodules/TinyThumbnail",

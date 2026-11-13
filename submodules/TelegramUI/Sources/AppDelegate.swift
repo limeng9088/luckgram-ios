@@ -64,6 +64,7 @@ import AlertComponent
 import AppCenter
 import AppCenterCrashes
 #endif
+import LuckgramAccountsStore
 
 private let handleVoipNotifications = false
 
@@ -288,6 +289,7 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
     
     private var replyFromNotificationsDisposables = DisposableSet()
     private var watchedCallsDisposables = DisposableSet()
+    private var luckgramRootPath: String?
     
     private var _notificationTokenPromise: Promise<Data>?
     private let voipTokenPromise = Promise<Data>()
@@ -749,6 +751,7 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
         if !isUITest {
             performAppGroupUpgrades(appGroupPath: appGroupUrl.path, rootPath: rootPath)
         }
+        self.luckgramRootPath = rootPath
         
         let deviceSpecificEncryptionParameters = BuildConfig.deviceSpecificEncryptionParameters(rootPath, baseAppBundleId: baseAppBundleId)
         let encryptionParameters = ValueBoxEncryptionParameters(forceEncryptionIfNoSet: false, key: ValueBoxEncryptionParameters.Key(data: deviceSpecificEncryptionParameters.key)!, salt: ValueBoxEncryptionParameters.Salt(data: deviceSpecificEncryptionParameters.salt)!)
@@ -2419,6 +2422,9 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
                 displayTitle = strings.Call_IncomingGroupCallTitle_Single(fromTitle).string
             }
             
+            if self.luckgramIsHiddenAccount(accountId) {
+                self.luckgramReportHiddenCall(callKitIntegration: callKitIntegration, uuid: internalId)
+            } else {
             callKitIntegration.reportIncomingCall(
                 uuid: internalId,
                 stableId: groupCallId,
@@ -2441,6 +2447,7 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
                     }
                 }
             )
+            }
             
             let _ = (self.sharedContextPromise.get()
             |> take(1)
@@ -2540,6 +2547,9 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
                 return
             }
             
+            if self.luckgramIsHiddenAccount(accountId) {
+                self.luckgramReportHiddenCall(callKitIntegration: callKitIntegration, uuid: CallSessionManager.getStableIncomingUUID(stableId: callUpdate.callId))
+            } else {
             callKitIntegration.reportIncomingCall(
                 uuid: CallSessionManager.getStableIncomingUUID(stableId: callUpdate.callId),
                 stableId: callUpdate.callId,
@@ -2562,6 +2572,7 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
                     }
                 }
             )
+            }
             
             let _ = (self.sharedContextPromise.get()
             |> take(1)
@@ -2615,6 +2626,32 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
     
     public func pushRegistry(_ registry: PKPushRegistry, didInvalidatePushTokenFor type: PKPushType) {
         Logger.shared.log("App \(self.episodeId)", "invalidated token for \(type)")
+    }
+    
+    /// Luckgram 11: whether a VoIP push belongs to an account hidden in the second space. Read from the
+    /// app-group file, because a push can arrive before SharedAccountContext is set up.
+    private func luckgramIsHiddenAccount(_ accountId: AccountRecordId) -> Bool {
+        guard let rootPath = self.luckgramRootPath else {
+            return false
+        }
+        return LuckgramDoubleBottomState.snapshot(rootPath: rootPath).isHidden(accountId.int64)
+    }
+
+    /// Luckgram 11: iOS requires every VoIP push to be reported to CallKit, so a call to a hidden account
+    /// is reported without caller details and ended at once. The call itself is declined as busy by
+    /// PresentationCallManager when the update is processed.
+    private func luckgramReportHiddenCall(callKitIntegration: CallKitIntegration, uuid: UUID) {
+        callKitIntegration.reportIncomingCall(
+            uuid: uuid,
+            stableId: Int64.random(in: Int64.min ... Int64.max),
+            handle: "Unknown",
+            phoneNumber: nil,
+            isVideo: false,
+            displayTitle: "Unknown",
+            completion: { _ in
+                callKitIntegration.dropCall(uuid: uuid)
+            }
+        )
     }
     
     private func reportFailedIncomingCallKitCall() {
