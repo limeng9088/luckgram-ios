@@ -464,6 +464,10 @@ private class AdMessagesHistoryContextImpl {
                     return .single(State(interPostInterval: nil, messages: []))
                 }
             })
+        } else if LuckgramSponsoredGate.hidden {
+            // Luckgram 29: Pro has no sponsored messages, but the state still has to report "none".
+            // The chat history waits for its first value; with nothing set here no chat could open.
+            self.state.set(.single(State(interPostInterval: nil, messages: [])))
         }
 
         if !activateManually {
