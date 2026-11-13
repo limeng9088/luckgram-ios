@@ -868,6 +868,8 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
         )
         
         let applicationBindings = TelegramApplicationBindings(isMainApp: true, appBundleId: baseAppBundleId, appBuildType: buildConfig.isAppStoreBuild ? .public : .internal, containerPath: appGroupUrl.path, appSpecificScheme: buildConfig.appSpecificUrlScheme, openUrl: { url in
+            // Luckgram specs#160: luckgram.cc / wiki / dl on the backup host while the API uses its backup entry
+            let url = LuckgramAI.siteURL(url)
             var parsedUrl = URL(string: url)
             if let parsed = parsedUrl {
                 if parsed.scheme == nil || parsed.scheme!.isEmpty {
