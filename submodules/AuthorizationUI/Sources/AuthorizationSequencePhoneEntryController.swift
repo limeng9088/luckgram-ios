@@ -99,14 +99,17 @@ public final class AuthorizationSequencePhoneEntryController: ViewController, MF
             AuthorizationSequenceCountrySelectionController.setupCountryCodes(countries: countriesConfiguration.countries, codesByPrefix: countriesConfiguration.countriesByPrefix)
         }
         
-        // Luckgram 32: "Restore from cloud" (narrow screens use this slot for "Next"). No switch.
-        LuckgramStrings.appLanguageCode = presentationData.strings.primaryComponent.languageCode
-        self.luckgramSetRightItem(UIBarButtonItem(title: LuckgramCloudBackupStrings.restore, style: .plain, target: self, action: #selector(self.luckgramRestorePressed))) // Luckgram 91: keeps the proxy icon
+        // Luckgram account backup: "Restore from backup" from a file (narrow screens use this slot for "Next").
+        if LuckgramSettings.shared.isEnabled(LuckgramBackup.featureKey) {
+            LuckgramStrings.appLanguageCode = presentationData.strings.primaryComponent.languageCode
+            self.luckgramSetRightItem(UIBarButtonItem(title: LuckgramBackupStrings.restore, style: .plain, target: self, action: #selector(self.luckgramRestorePressed))) // Luckgram 91: keeps the proxy icon
+        }
     }
     
     @objc private func luckgramRestorePressed() {
-        // Luckgram 32: needs any account logged in on this device (linked to the same Telegram user, S6).
-        luckgramStartCloudRestore(sharedContext: self.sharedContext, context: nil, push: { [weak self] controller in
+        luckgramStartBackupRestore(sharedContext: self.sharedContext, present: { [weak self] controller in
+            self?.present(controller, in: .window(.root))
+        }, push: { [weak self] controller in
             (self?.navigationController as? NavigationController)?.pushViewController(controller)
         })
     }

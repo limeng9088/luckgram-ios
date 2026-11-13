@@ -460,7 +460,7 @@ public func luckgramProController(context: AccountContext) -> ViewController {
     }
 
     let entries = combineLatest(updated.get(), LuckgramPro.shared.stateSignal) |> map { _, pro -> [LuckgramAccountEntry] in
-        var e = billingEntries() + cloudBackupEntries(isPro: pro.isPro(now: Date()))
+        var e = billingEntries() + (LuckgramCloudBackup.enabled ? cloudBackupEntries(isPro: pro.isPro(now: Date())) : [])
         // specs#89 (31): Pro community, its own section below cloud backup; follows the Pro state (perks).
         if LuckgramProCommunity.showRow {
             e.append(.action(2, 4, LuckgramProCommunity.texts.join, .generic))

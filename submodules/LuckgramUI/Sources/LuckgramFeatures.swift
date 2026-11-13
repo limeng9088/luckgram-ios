@@ -59,6 +59,10 @@ public enum LuckgramFeatures {
             .confirmEnable { context, present, done in LuckgramDoubleBottom.confirmEnable(context: context, present: present, done: done) }
             .confirmDisable { context, present, done in LuckgramDoubleBottom.confirmDisable(context: context, present: present, done: done) }
             .hiddenWhen { LuckgramDoubleBottomState.shared.isActive })
+        add(.toggle(LuckgramBackup.featureKey, group: .accountPrivacy, default: true,
+            title: ("账号备份", "Account backup"),
+            description: ("把账号导出为加密文件，换手机后导入", "Export accounts to an encrypted file and import them on a new phone"))
+            .subpage { context in luckgramBackupController(context: context) })
         add(.toggle(LuckgramProCommunityLogic.featureKey, group: .accountPrivacy, default: true,
             title: ("Pro 社群", "Pro community"),
             description: ("Luckgram Pro 页显示「加入 Pro 社群」，一键进 Pro 用户私密群", "Show \"Join the Pro community\" on the Luckgram Pro page to join the private Pro group"))
