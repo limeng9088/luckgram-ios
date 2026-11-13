@@ -51,6 +51,11 @@ public enum LuckgramCloudBackupStrings {
 /// password (`LuckgramBackupFormat`) and only that ciphertext is uploaded to `/v1/backup` (S15). The password is never
 /// sent; it is kept in the Keychain only when the user turns on the weekly automatic backup.
 public enum LuckgramCloudBackup {
+    /// Cloud backup is on hold (user 2026-11-13: local file backup only for now). While false the
+    /// Pro page and the login screen show no cloud entry and the weekly upload never runs; the code
+    /// and S15 stay so it can be switched back on.
+    public static var enabled: Bool { return false }
+
     private static let autoKey = "cloud_backup.auto"
     private static let lastAutoKey = "cloud_backup.last_auto"
     private static let lastTryKey = "cloud_backup.last_try"
@@ -206,7 +211,7 @@ public enum LuckgramCloudBackup {
 
     /// Called when the app comes to the foreground; uploads at most once a week, Pro only.
     public static func runAutoIfDue(accountManager: AccountManager<TelegramAccountManagerTypes>) {
-        if autoRunning || !luckgramIsPro() || !LuckgramSettings.shared.bool(autoKey, default: false) {
+        if !enabled || autoRunning || !luckgramIsPro() || !LuckgramSettings.shared.bool(autoKey, default: false) {
             return
         }
         let password = LuckgramKeychain.get(account: passwordAccount)
