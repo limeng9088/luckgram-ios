@@ -14,8 +14,6 @@ import SwiftSignalKit
 public final class LuckgramRemoteConfigFetcher {
     public static let shared = LuckgramRemoteConfigFetcher()
 
-    private static let appVersionHeader = "X-Luckgram-App-Version"
-
     private let disposable = MetaDisposable()
     private var inFlight = false
     private var lastFailure: Double = 0.0
@@ -42,10 +40,8 @@ public final class LuckgramRemoteConfigFetcher {
             return
         }
         self.inFlight = true
+        // The version headers are added to every API request (LuckgramAppHeaders).
         var headers: [String: String] = [:]
-        if let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String, !version.isEmpty {
-            headers[LuckgramRemoteConfigFetcher.appVersionHeader] = version
-        }
         if let version = LuckgramSettings.shared.remoteConfigVersion, !version.isEmpty {
             headers["If-None-Match"] = "\"\(version)\""
         }

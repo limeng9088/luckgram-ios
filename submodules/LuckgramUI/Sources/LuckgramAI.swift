@@ -329,6 +329,7 @@ public final class LuckgramAI {
         request.httpMethod = method
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Accept")
+        LuckgramAppHeaders.apply(LuckgramAppHeaders.current, to: &request)
         let configuration = URLSessionConfiguration.ephemeral
         configuration.httpCookieStorage = nil
         configuration.urlCache = nil
@@ -716,12 +717,7 @@ public final class LuckgramAI {
     /// the device's own state is sent. Delivers on the main queue.
     public func requestJSON(method: String, path: String, body: [String: Any]? = nil) -> Signal<[String: Any], LuckgramAIError> {
         let data = body.flatMap { try? JSONSerialization.data(withJSONObject: $0) }
-        let info = Bundle.main.infoDictionary ?? [:]
-        var headers: [String: String] = [:]
-        if let version = info["CFBundleShortVersionString"] as? String, version.range(of: #"^\d+(\.\d+){0,3}$"#, options: .regularExpression) != nil {
-            headers["X-Luckgram-App-Version"] = version
-        }
-        return self.authorized(method: method, path: path, contentType: data != nil ? "application/json" : nil, body: data, accept: "application/json", extraHeaders: headers)
+        return self.authorized(method: method, path: path, contentType: data != nil ? "application/json" : nil, body: data, accept: "application/json")
         |> mapToSignal { event -> Signal<[String: Any], LuckgramAIError> in
             guard case let .body(data) = event else {
                 return .complete()
@@ -834,6 +830,10 @@ public final class LuckgramAI {
         if let body = signed.httpBody {
             // CloudFront OAC -> Lambda Function URL requires the payload hash (docs/api-server.md §3.1 item 1).
             signed.setValue(LuckgramAI.sha256Hex(body), forHTTPHeaderField: "x-amz-content-sha256")
+        }
+        if self.isAPIHost(signed.url?.absoluteString ?? "") {
+            // specs#164: every API request carries the app version and build number.
+            LuckgramAppHeaders.apply(LuckgramAppHeaders.current, to: &signed)
         }
         let finalRequest = signed
         // specs#81: an API request goes to the entry in use; if that one can't be reached the same
