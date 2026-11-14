@@ -161,8 +161,8 @@ public struct LuckgramProxyImportTexts {
             if let coreProblem {
                 s += "\n\n" + t("跳过 \(skipped) 个节点：\(coreProblem)。", "Skipped \(skipped) \(skipped == 1 ? "entry" : "entries"): \(coreProblem).")
             } else {
-                s += "\n\n" + t("跳过 \(skipped) 个不支持的节点（支持 SOCKS5、MTProto、VLESS、VMess、Trojan、Shadowsocks；Hysteria、TUIC 等用不了）。",
-                                "Skipped \(skipped) unsupported \(skipped == 1 ? "entry" : "entries") (supported: SOCKS5, MTProto, VLESS, VMess, Trojan, Shadowsocks; not Hysteria, TUIC and others).")
+                s += "\n\n" + t("跳过 \(skipped) 个不支持的节点（支持 SOCKS5、MTProto、VLESS、VMess、Trojan、Shadowsocks；Hysteria、TUIC 等用不了，未加密的 VLESS / Trojan 内核也不支持）。",
+                                "Skipped \(skipped) unsupported \(skipped == 1 ? "entry" : "entries") (supported: SOCKS5, MTProto, VLESS, VMess, Trojan, Shadowsocks; not Hysteria, TUIC and others, nor unencrypted VLESS / Trojan).")
             }
         }
         return s

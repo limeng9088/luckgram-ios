@@ -389,7 +389,7 @@ private func proxySettingsControllerEntries(theme: PresentationTheme, strings: P
         }
         // Luckgram 119: an Xray node shows its protocol and real server, and the core's state
         if let xray = luckgramXrayNode(server) {
-            if let problem = LuckgramXrayManager.shared.problem(zh: LuckgramStrings.isChinese) {
+            if let problem = LuckgramXrayManager.shared.problem(for: xray, zh: LuckgramStrings.isChinese) {
                 displayStatus = DisplayProxyServerStatus(exit: displayStatus.exit, activity: false, text: problem, textActive: false)
             }
             displayStatus.title = LuckgramXrayLogic.label(xray.proto) + " · " + xray.title
@@ -775,7 +775,7 @@ public func proxySettingsController(accountManager: AccountManager<TelegramAccou
                 return
             }
             guard let server = luckgramServer(e) else {
-                alert(importTexts.inputTitle, e.type == LuckgramProxyImportLogic.typeXray ? LuckgramXrayTexts(zh: LuckgramStrings.isChinese).unavailable : importTexts.unknown)
+                alert(importTexts.inputTitle, e.type == LuckgramProxyImportLogic.typeXray ? LuckgramXrayManager.shared.refusedText(for: LuckgramXrayLogic.parse(e.link), zh: LuckgramStrings.isChinese) : importTexts.unknown)
                 return
             }
             var existed = false

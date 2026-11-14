@@ -310,6 +310,57 @@ public enum LuckgramXrayLogic {
         return String(data: data, encoding: .utf8)
     }
 
+    /// Desktop #125 / #126: Xray 26 refuses VLESS / Trojan without TLS, Reality or VLESS encryption
+    /// unless the server is a private address ("... is prohibited unless the server address is a
+    /// private IP or domain"), and one such outbound makes the whole config fail: no node works.
+    /// True for such an outbound (as libXray built it; libXray already makes every Trojan TLS, so in
+    /// practice plain VLESS). Never given to the core; the list says why. Same as Android.
+    public static func refusedByCore(_ outboundJson: String) -> Bool {
+        guard let o = (try? JSONSerialization.jsonObject(with: Data(outboundJson.utf8))) as? [String: Any],
+              let proto = o["protocol"] as? String, proto == vless || proto == trojan,
+              let settings = o["settings"] as? [String: Any] else { return false }
+        let stream = o["streamSettings"] as? [String: Any]
+        let security = ((stream?["security"] as? String) ?? "").trimmingCharacters(in: .whitespaces).lowercased()
+        if !security.isEmpty && security != "none" { return false }
+        // Flat (libXray 26: address / port / id / encryption) or vnext / servers.
+        var server = settings
+        if settings["address"] == nil, let list = settings[proto == vless ? "vnext" : "servers"] as? [[String: Any]], let first = list.first {
+            server = first
+        }
+        if proto == vless {
+            var encryption = (server["encryption"] as? String) ?? (settings["encryption"] as? String) ?? ""
+            if let users = server["users"] as? [[String: Any]], let user = users.first, let e = user["encryption"] as? String {
+                encryption = e
+            }
+            encryption = encryption.trimmingCharacters(in: .whitespaces).lowercased()
+            if !encryption.isEmpty && encryption != "none" { return false }
+        }
+        return !isPrivateAddress((server["address"] as? String) ?? "")
+    }
+
+    /// Loopback, private (10/8, 172.16/12, 192.168/16), link-local, IPv6 ULA / link-local / ::1,
+    /// localhost (checked against xray 26.10.31 `run -test`). Other names count as public: xray
+    /// accepts .local / .lan too, missing one only leaves a node unused.
+    public static func isPrivateAddress(_ host: String) -> Bool {
+        var h = host.trimmingCharacters(in: .whitespaces).lowercased()
+        if h.hasPrefix("[") && h.hasSuffix("]") { h = String(h.dropFirst().dropLast()) }
+        if h == "localhost" { return true }
+        let parts = h.split(separator: ".", omittingEmptySubsequences: false)
+        if parts.count == 4, parts.allSatisfy({ !$0.isEmpty && $0.count <= 3 && $0.allSatisfy({ $0.isASCII && $0.isNumber }) }) {
+            let b = parts.map { Int($0) ?? 999 }
+            if b.contains(where: { $0 > 255 }) { return false }
+            return b[0] == 10 || b[0] == 127
+                || (b[0] == 172 && b[1] >= 16 && b[1] <= 31)
+                || (b[0] == 192 && b[1] == 168)
+                || (b[0] == 169 && b[1] == 254)
+        }
+        guard h.contains(":") else { return false }
+        if h == "::1" { return true }
+        let first = h.prefix(while: { $0 != ":" })
+        guard first.count == 4, let v = Int(first, radix: 16) else { return false }
+        return (v & 0xFE00) == 0xFC00 || (v & 0xFFC0) == 0xFE80
+    }
+
     /// `n` free ports counting up from `base` (wrapping inside 20000–59999), skipping `used`.
     public static func pickPorts(base: Int, used: Set<Int>, count n: Int) -> [Int] {
         var out: [Int] = []
