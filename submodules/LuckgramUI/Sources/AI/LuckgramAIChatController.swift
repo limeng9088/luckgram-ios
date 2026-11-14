@@ -625,6 +625,22 @@ public final class LuckgramAIChatController: UIViewController, LuckgramAIChatHos
         self.talkBar.accessibilityLabel = text
     }
 
+    public func scrollViewDidScroll(_ scrollView: UIScrollView) {
+        // `.interactive` only puts the keyboard down once the finger reaches it. While the messages
+        // do not fill the list a downward swipe never gets there, so that swipe dismisses it directly.
+        // A full list keeps the system behaviour, so scrolling back through history leaves the keyboard up.
+        guard scrollView === self.tableView, scrollView.isDragging else {
+            return
+        }
+        let visibleHeight = scrollView.bounds.height - scrollView.adjustedContentInset.top - scrollView.adjustedContentInset.bottom
+        guard scrollView.contentSize.height <= visibleHeight else {
+            return
+        }
+        if scrollView.panGestureRecognizer.translation(in: scrollView).y > 24.0 {
+            self.view.endEditing(true)
+        }
+    }
+
     @objc private func messageAreaTapped() {
         self.view.endEditing(true)
     }
