@@ -661,6 +661,8 @@ public final class LuckgramAIChatController: UIViewController, LuckgramAIChatHos
     }
 
     private func setTalkMode(_ talk: Bool, focus: Bool) {
+        // somebody reading older messages is left where they are
+        let wasAtBottom = self.isAtBottom
         self.talkMode = talk
         if talk {
             self.view.endEditing(true)
@@ -675,9 +677,11 @@ public final class LuckgramAIChatController: UIViewController, LuckgramAIChatHos
         }
         // the keyboard (or a permission alert before it) moved the list: the last message stays in view
         self.view.layoutIfNeeded()
-        self.scrollToBottom(animated: false)
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self] in
-            self?.scrollToBottom(animated: true)
+        if wasAtBottom {
+            self.scrollToBottom(animated: false)
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self] in
+                self?.scrollToBottom(animated: true)
+            }
         }
     }
 
