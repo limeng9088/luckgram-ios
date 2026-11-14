@@ -184,6 +184,12 @@ public final class LuckgramAIChatController: UIViewController, LuckgramAIChatHos
         self.tableView.separatorStyle = .none
         self.tableView.backgroundColor = .clear
         self.tableView.keyboardDismissMode = .interactive
+        // with only a few messages the list cannot be dragged, so the keyboard would never go away:
+        // let it bounce, and a tap on the message area puts the keyboard down as well
+        self.tableView.alwaysBounceVertical = true
+        let dismissTap = UITapGestureRecognizer(target: self, action: #selector(self.messageAreaTapped))
+        dismissTap.cancelsTouchesInView = false
+        self.tableView.addGestureRecognizer(dismissTap)
         self.tableView.allowsSelection = false
         self.tableView.contentInset = UIEdgeInsets(top: 6.0, left: 0.0, bottom: 6.0, right: 0.0)
         self.tableView.register(BubbleCell.self, forCellReuseIdentifier: "bubble")
@@ -619,6 +625,10 @@ public final class LuckgramAIChatController: UIViewController, LuckgramAIChatHos
         self.talkBar.accessibilityLabel = text
     }
 
+    @objc private func messageAreaTapped() {
+        self.view.endEditing(true)
+    }
+
     @objc private func voiceTogglePressed() {
         if self.talkHolding || self.talkConverting {
             return
@@ -662,6 +672,12 @@ public final class LuckgramAIChatController: UIViewController, LuckgramAIChatHos
         self.updateSendButton()
         if !talk && focus {
             self.inputView_.becomeFirstResponder()
+        }
+        // the keyboard (or a permission alert before it) moved the list: the last message stays in view
+        self.view.layoutIfNeeded()
+        self.scrollToBottom(animated: false)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) { [weak self] in
+            self?.scrollToBottom(animated: true)
         }
     }
 
@@ -1210,7 +1226,13 @@ private final class BubbleCell: UITableViewCell, UIContextMenuInteractionDelegat
     func configure(message: LuckgramAIConversation.Message, theme: PresentationTheme, width: CGFloat) {
         let isOut = message.isUser
         let colors = isOut ? theme.chat.message.outgoing : theme.chat.message.incoming
-        self.bubble.backgroundColor = colors.bubble.withoutWallpaper.fill.first ?? (isOut ? .systemBlue : .secondarySystemBackground)
+        if isOut {
+            self.bubble.backgroundColor = colors.bubble.withoutWallpaper.fill.first ?? .systemBlue
+        } else {
+            // the page is plain: a reply sits on a light tint of the text color, the same way in light and dark
+            // (the theme's own incoming bubble is white on white in light themes)
+            self.bubble.backgroundColor = theme.list.itemPrimaryTextColor.withAlphaComponent(0.07)
+        }
         self.leading?.isActive = !isOut
         self.trailing?.isActive = isOut
 
