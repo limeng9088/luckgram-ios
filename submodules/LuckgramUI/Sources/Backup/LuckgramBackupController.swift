@@ -82,18 +82,81 @@ private func presentNewPasswordAlert(sharedContext: SharedAccountContext, cloud:
         field.placeholder = LuckgramBackupStrings.passwordRepeatHint
     }
     alert.addAction(UIAlertAction(title: LuckgramStrings.cancel, style: .cancel))
-    alert.addAction(UIAlertAction(title: cloud ? LuckgramCloudBackupStrings.upload : LuckgramBackupStrings.export, style: .default, handler: { [weak alert] _ in
+    // specs#172: an alert action always closes the alert, so a wrong password must not reach it.
+    // The reason is shown in the alert's message while typing and the button stays disabled until
+    // the password is valid; the typed text is never thrown away.
+    let validator = LuckgramNewPasswordValidator(baseMessage: message)
+    let confirm = UIAlertAction(title: cloud ? LuckgramCloudBackupStrings.upload : LuckgramBackupStrings.export, style: .default, handler: { [weak alert] _ in
         let first = alert?.textFields?.first?.text ?? ""
         let second = alert?.textFields?.last?.text ?? ""
-        if first.count < LuckgramBackupFormat.minPasswordLength {
-            presentMessage(sharedContext: sharedContext, LuckgramBackupStrings.passwordTooShort)
-        } else if first != second {
-            presentMessage(sharedContext: sharedContext, LuckgramBackupStrings.passwordMismatch)
-        } else {
+        if LuckgramNewPasswordValidator.problem(first: first, second: second) == nil {
             completion(first)
         }
-    }))
+        validator.finish()
+    })
+    confirm.isEnabled = false
+    alert.addAction(confirm)
+    validator.attach(alert: alert, action: confirm)
     sharedContext.applicationBindings.presentNativeController(alert)
+}
+
+private final class LuckgramNewPasswordValidator: NSObject {
+    private let baseMessage: String
+    private weak var alert: UIAlertController?
+    private weak var action: UIAlertAction?
+
+    init(baseMessage: String) {
+        self.baseMessage = baseMessage
+    }
+
+    /// Why the two passwords can't be used yet, nil when they are fine.
+    static func problem(first: String, second: String) -> String? {
+        if first.count < LuckgramBackupFormat.minPasswordLength {
+            return LuckgramBackupStrings.passwordTooShort
+        }
+        if first != second {
+            return LuckgramBackupStrings.passwordMismatch
+        }
+        return nil
+    }
+
+    func attach(alert: UIAlertController, action: UIAlertAction) {
+        self.alert = alert
+        self.action = action
+        for field in alert.textFields ?? [] {
+            field.addTarget(self, action: #selector(self.changed), for: .editingChanged)
+        }
+    }
+
+    func finish() {
+        for field in self.alert?.textFields ?? [] {
+            field.removeTarget(self, action: #selector(self.changed), for: .editingChanged)
+        }
+    }
+
+    @objc private func changed() {
+        guard let alert = self.alert else {
+            return
+        }
+        let first = alert.textFields?.first?.text ?? ""
+        let second = alert.textFields?.last?.text ?? ""
+        let problem = LuckgramNewPasswordValidator.problem(first: first, second: second)
+        self.action?.isEnabled = problem == nil
+        // Only complain about what was typed: "too short" once the first field has text, "don't
+        // match" once the second one has.
+        var shown: String?
+        if let problem {
+            if first.count < LuckgramBackupFormat.minPasswordLength {
+                shown = first.isEmpty ? nil : problem
+            } else {
+                shown = second.isEmpty ? nil : problem
+            }
+        }
+        let text = shown.map { self.baseMessage + "\n\n" + $0 } ?? self.baseMessage
+        if alert.message != text {
+            alert.message = text
+        }
+    }
 }
 
 private func presentPasswordAlert(sharedContext: SharedAccountContext, completion: @escaping (String) -> Void) {
