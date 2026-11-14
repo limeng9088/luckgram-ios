@@ -587,7 +587,7 @@ public final class LuckgramAIChatController: UIViewController, LuckgramAIChatHos
                 }
                 entry.action(self)
             })
-            if let hint = entry.subtitle?() {
+            if #available(iOS 16.0, *), let hint = entry.subtitle?() {
                 action.subtitle = LuckgramStrings.pick(hint.0, hint.1)
             }
             elements.append(action)
