@@ -148,4 +148,43 @@ final class LuckgramXrayLogicTests: XCTestCase {
         XCTAssertFalse(X.looksLikeLink("socks5://h:1"))
         XCTAssertTrue(X.looksLikeLink(" VLESS://x"))
     }
+
+    // Desktop #125 / #126: what libXray builds for a plain VLESS link (flat settings, libXray 26).
+    private func vlessOutbound(_ address: String, security: String?, encryption: String) -> String {
+        var o: [String: Any] = ["protocol": "vless", "settings": ["address": address, "port": 443, "id": Self.uuid, "encryption": encryption]]
+        if let security { o["streamSettings"] = ["network": "tcp", "security": security] }
+        return String(data: try! JSONSerialization.data(withJSONObject: o), encoding: .utf8)!
+    }
+
+    private func json(_ o: [String: Any]) -> String {
+        return String(data: try! JSONSerialization.data(withJSONObject: o), encoding: .utf8)!
+    }
+
+    func testCoreRefusesPlainVlessToPublicAddress() {
+        XCTAssertTrue(X.refusedByCore(vlessOutbound("5.6.7.8", security: "none", encryption: "none")))
+        XCTAssertTrue(X.refusedByCore(vlessOutbound("example.com", security: nil, encryption: "none")))
+        XCTAssertTrue(X.refusedByCore(vlessOutbound("5.6.7.8", security: "", encryption: "")))
+        XCTAssertTrue(X.refusedByCore(json(["protocol": "vless", "settings": ["vnext": [["address": "5.6.7.8", "port": 443, "users": [["id": Self.uuid, "encryption": "none"]]]]]])))
+        XCTAssertTrue(X.refusedByCore(json(["protocol": "trojan", "settings": ["servers": [["address": "5.6.7.8", "port": 443, "password": "p"]]], "streamSettings": ["security": "none"]])))
+    }
+
+    func testCoreRunsEncryptedOrPrivateNodes() {
+        XCTAssertFalse(X.refusedByCore(vlessOutbound("5.6.7.8", security: "tls", encryption: "none")))
+        XCTAssertFalse(X.refusedByCore(vlessOutbound("5.6.7.8", security: "reality", encryption: "none")))
+        XCTAssertFalse(X.refusedByCore(vlessOutbound("5.6.7.8", security: "none", encryption: "mlkem768x25519plus.native.0rtt.x")))
+        XCTAssertFalse(X.refusedByCore(vlessOutbound("192.168.1.5", security: "none", encryption: "none")))
+        XCTAssertFalse(X.refusedByCore(json(["protocol": "vmess", "settings": ["address": "5.6.7.8"], "streamSettings": ["security": "none"]])))
+        XCTAssertFalse(X.refusedByCore(json(["protocol": "trojan", "settings": ["address": "5.6.7.8"], "streamSettings": ["security": "tls"]])))
+        XCTAssertFalse(X.refusedByCore("not json"))
+    }
+
+    func testPrivateAddresses() {
+        for h in ["10.1.1.1", "172.16.0.1", "172.31.255.1", "192.168.0.1", "127.0.0.1", "169.254.1.1",
+                  "fd00::1", "fe80::1", "[fe80::1]", "::1", "localhost", "LocalHost"] {
+            XCTAssertTrue(X.isPrivateAddress(h), h)
+        }
+        for h in ["5.6.7.8", "172.32.0.1", "100.64.0.1", "300.1.1.1", "2001:db8::1", "::", "example.com", "a.lan", ""] {
+            XCTAssertFalse(X.isPrivateAddress(h), h)
+        }
+    }
 }

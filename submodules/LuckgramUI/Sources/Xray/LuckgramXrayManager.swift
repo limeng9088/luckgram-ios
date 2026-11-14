@@ -139,6 +139,21 @@ public final class LuckgramXrayManager {
         return lastError.map { t.notRunning($0) } ?? t.starting
     }
 
+    /// `problem(zh:)` for one node; first that the core refuses it.
+    public func problem(for rec: Rec, zh: Bool) -> String? {
+        if LuckgramXrayLogic.refusedByCore(rec.outbound) { return LuckgramXrayTexts(zh: zh).unencrypted }
+        return problem(zh: zh)
+    }
+
+    /// Why `register` gave nothing for this node.
+    public func refusedText(for node: LuckgramXrayLogic.Node?, zh: Bool) -> String {
+        let t = LuckgramXrayTexts(zh: zh)
+        if let node, let outbound = LuckgramXrayManager.outbound(for: node.link), LuckgramXrayLogic.refusedByCore(outbound) {
+            return t.unencrypted
+        }
+        return t.unavailable
+    }
+
     public var nodes: [Rec] {
         lock.lock(); defer { lock.unlock() }
         return load().nodes
@@ -174,7 +189,8 @@ public final class LuckgramXrayManager {
             return port
         }
         lock.unlock()
-        guard let outbound = LuckgramXrayManager.outbound(for: node.link) else { return nil }
+        // refusedText(for:) says why.
+        guard let outbound = LuckgramXrayManager.outbound(for: node.link), !LuckgramXrayLogic.refusedByCore(outbound) else { return nil }
         lock.lock(); defer { lock.unlock() }
         s = load()
         guard let port = LuckgramXrayLogic.pickPorts(base: s.base, used: Set(s.nodes.map { $0.localPort }), count: 1).first else { return nil }
@@ -216,7 +232,9 @@ public final class LuckgramXrayManager {
         var error: String?
         var ok = false
         if isEnabled && !s.nodes.isEmpty {
-            let runs = s.nodes.map { LuckgramXrayLogic.Run(localPort: $0.localPort, outboundJson: $0.outbound) }
+            // A node the core refuses (added before #125) stays in the list, marked, but isn't run:
+            // one such outbound would stop every node.
+            let runs = s.nodes.filter { !LuckgramXrayLogic.refusedByCore($0.outbound) }.map { LuckgramXrayLogic.Run(localPort: $0.localPort, outboundJson: $0.outbound) }
             // debugging only: `defaults write com.luckgram.messenger LuckgramXrayLogLevel info`
             let level = UserDefaults.standard.string(forKey: "LuckgramXrayLogLevel") ?? "warning"
             if let config = LuckgramXrayLogic.buildConfig(runs, user: LuckgramXrayManager.user, password: s.pass, logLevel: level) {
@@ -295,4 +313,5 @@ public struct LuckgramXrayTexts {
     public var linkCopied: String { t("链接已复制", "Link copied") }
     public var delete: String { t("删除代理", "Delete Proxy") }
     public var unavailable: String { t("这个节点现在用不了", "This node can't be used now") }
+    public var unencrypted: String { t("未加密的 VLESS / Trojan 节点内核不支持，需要 TLS 或 Reality", "The core doesn't run unencrypted VLESS / Trojan nodes: TLS or Reality is needed") }
 }
