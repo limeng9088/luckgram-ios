@@ -100,6 +100,8 @@ public final class LuckgramAIChatController: UIViewController, LuckgramAIChatHos
     private var talkMeterTimer: Foundation.Timer?
     private var talkOverlay: LuckgramTalkOverlayView?
     private var talkDisposable: Disposable?
+    /// The audio session as it was before a recording, put back when the recording ends.
+    private var talkPreviousSession: (category: AVAudioSession.Category, mode: AVAudioSession.Mode, options: AVAudioSession.CategoryOptions)?
     private let talkFileURL = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("lg_ai_talk_\(UInt64.random(in: 0 ... UInt64.max)).wav")
 
     private var streaming: LuckgramAIConversation.Message?
@@ -512,6 +514,8 @@ public final class LuckgramAIChatController: UIViewController, LuckgramAIChatHos
         self.sendButton.tintColor = enabled ? self.theme.chat.inputPanel.actionControlFillColor : self.theme.chat.inputPanel.inputPlaceholderColor
         self.sendButton.accessibilityLabel = isStop ? LuckgramStrings.pick("停止", "Stop") : LuckgramStrings.pick("发送", "Send")
         self.placeholderLabel.isHidden = self.talkMode || !self.inputView_.text.isEmpty
+        // while 「按住 说话」 is shown the field is hidden: nothing to send by button, only a reply to stop
+        self.sendButton.isHidden = self.talkMode && !isStop
         self.updateTalkBar()
     }
 
@@ -700,6 +704,7 @@ public final class LuckgramAIChatController: UIViewController, LuckgramAIChatHos
         ]
         do {
             let session = AVAudioSession.sharedInstance()
+            self.talkPreviousSession = (session.category, session.mode, session.categoryOptions)
             try session.setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker])
             try session.setActive(true)
             let recorder = try AVAudioRecorder(url: self.talkFileURL, settings: settings)
@@ -754,7 +759,12 @@ public final class LuckgramAIChatController: UIViewController, LuckgramAIChatHos
         self.talkMeterTimer = nil
         self.talkRecorder?.stop()
         self.talkRecorder = nil
-        try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
+        let session = AVAudioSession.sharedInstance()
+        try? session.setActive(false, options: .notifyOthersOnDeactivation)
+        if let previous = self.talkPreviousSession {
+            self.talkPreviousSession = nil
+            try? session.setCategory(previous.category, mode: previous.mode, options: previous.options)
+        }
     }
 
     private func removeTalkOverlay() {
@@ -904,6 +914,9 @@ public final class LuckgramAIChatController: UIViewController, LuckgramAIChatHos
     @objc private func sendPressed() {
         if self.streaming != nil {
             self.stopStreaming()
+            return
+        }
+        if self.talkMode {
             return
         }
         let text = self.inputView_.text.trimmingCharacters(in: .whitespacesAndNewlines)
