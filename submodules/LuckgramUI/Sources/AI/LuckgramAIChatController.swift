@@ -7,6 +7,7 @@ import AccountContext
 import AsyncDisplayKit
 import WallpaperBackgroundNode
 import TelegramCore
+import AVFoundation
 
 /// spec 18: the Luckgram AI assistant, a local chat page that looks like a Telegram chat. It is not
 /// a Telegram bot or chat: nothing is sent to Telegram, requests go only to the AI gateway through
@@ -73,7 +74,6 @@ public final class LuckgramAIChatController: UIViewController, LuckgramAIChatHos
     private let theme: PresentationTheme
 
     private let wallpaper: TelegramWallpaper
-    private var backgroundNode: WallpaperBackgroundNode?
     private let tableView = UITableView(frame: .zero, style: .plain)
     /// specs#101: welcome card with example questions while the conversation is empty.
     private let welcomeCard = UIView()
@@ -86,6 +86,23 @@ public final class LuckgramAIChatController: UIViewController, LuckgramAIChatHos
     private let placeholderLabel = UILabel()
     private let sendButton = UIButton(type: .system)
     private var inputHeight: NSLayoutConstraint?
+
+    // specs#171: 「按住 说话」 in the AI chat
+    private let voiceToggle = UIButton(type: .system)
+    private let talkBar = UILabel()
+    private var talkMode = false
+    private var talkHolding = false
+    private var talkConverting = false
+    private var talkZone: LuckgramVoiceBarLogic.Zone = .send
+    private var talkStart: CFTimeInterval = 0.0
+    private var talkLoudSeconds: Double = 0.0
+    private var talkRecorder: AVAudioRecorder?
+    private var talkMeterTimer: Foundation.Timer?
+    private var talkOverlay: LuckgramTalkOverlayView?
+    private var talkDisposable: Disposable?
+    /// The audio session as it was before a recording, put back when the recording ends.
+    private var talkPreviousSession: (category: AVAudioSession.Category, mode: AVAudioSession.Mode, options: AVAudioSession.CategoryOptions)?
+    private let talkFileURL = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("lg_ai_talk_\(UInt64.random(in: 0 ... UInt64.max)).wav")
 
     private var streaming: LuckgramAIConversation.Message?
     private var requestDisposable: Disposable?
@@ -112,6 +129,10 @@ public final class LuckgramAIChatController: UIViewController, LuckgramAIChatHos
     deinit {
         self.requestDisposable?.dispose()
         self.storeDisposable?.dispose()
+        self.talkDisposable?.dispose()
+        self.talkMeterTimer?.invalidate()
+        self.talkRecorder?.stop()
+        try? FileManager.default.removeItem(at: self.talkFileURL)
     }
 
     private var store: LuckgramAIStore {
@@ -125,12 +146,8 @@ public final class LuckgramAIChatController: UIViewController, LuckgramAIChatHos
         let theme = self.theme
         let service = serviceMessageColorComponents(theme: theme, wallpaper: self.wallpaper)
 
-        // specs#101: the chat wallpaper behind everything, like a Telegram chat
-        self.view.backgroundColor = theme.chatList.backgroundColor
-        let backgroundNode = createWallpaperBackgroundNode(context: self.context, forChatDisplay: true)
-        backgroundNode.update(wallpaper: self.wallpaper, animated: false)
-        self.backgroundNode = backgroundNode
-        self.view.addSubview(backgroundNode.view)
+        // specs#171: a plain page (no chat wallpaper), like other assistants
+        self.view.backgroundColor = theme.list.plainBackgroundColor
 
         // specs#101: Telegram navigation bar — back arrow, avatar + title, two plain icons
         self.navigationItem.titleView = self.makeTitleView()
@@ -144,9 +161,15 @@ public final class LuckgramAIChatController: UIViewController, LuckgramAIChatHos
         newItem.accessibilityLabel = LuckgramStrings.pick("新对话", "New chat")
         let historyItem = UIBarButtonItem(image: UIImage(systemName: "clock.arrow.circlepath"), style: .plain, target: self, action: #selector(self.historyPressed))
         historyItem.accessibilityLabel = LuckgramStrings.pick("历史对话", "Chat history")
-        self.navigationItem.rightBarButtonItems = [historyItem, newItem]
+        // specs#171: the header entries (agents, …) live in a menu next to "new chat", not in bars under the title
+        let moreItem = UIBarButtonItem(image: UIImage(systemName: "ellipsis.circle"), menu: UIMenu(children: [UIDeferredMenuElement.uncached { [weak self] completion in
+            completion(self?.moreMenuElements() ?? [])
+        }]))
+        moreItem.accessibilityLabel = LuckgramStrings.pick("更多", "More")
+        let hasEntries = !LuckgramAIRegistry.headerEntries.isEmpty
+        self.navigationItem.rightBarButtonItems = hasEntries ? [moreItem, newItem] : [historyItem, newItem]
         if #available(iOS 26.0, *) {
-            for item in [self.navigationItem.leftBarButtonItem, newItem, historyItem].compactMap({ $0 }) {
+            for item in [self.navigationItem.leftBarButtonItem, newItem, historyItem, moreItem].compactMap({ $0 }) {
                 item.hidesSharedBackground = true
             }
         }
@@ -154,10 +177,7 @@ public final class LuckgramAIChatController: UIViewController, LuckgramAIChatHos
 
         // extension point 3: entries at the top of the page, as pinned bars
         self.pinnedStack.axis = .vertical
-        for entry in LuckgramAIRegistry.headerEntries {
-            self.pinnedStack.addArrangedSubview(self.makePinnedBar(entry))
-        }
-        self.pinnedStack.isHidden = self.pinnedStack.arrangedSubviews.isEmpty
+        self.pinnedStack.isHidden = true
 
         self.tableView.dataSource = self
         self.tableView.delegate = self
@@ -187,15 +207,15 @@ public final class LuckgramAIChatController: UIViewController, LuckgramAIChatHos
         let hasQuick = !self.quickStack.arrangedSubviews.isEmpty
 
         // specs#101: Telegram message panel — panel color, hairline on top, rounded field with stroke
-        self.inputPanel.backgroundColor = theme.chat.inputPanel.panelBackgroundColor
+        self.inputPanel.backgroundColor = theme.list.plainBackgroundColor
         // The panel ends at the keyboard guide (the safe area while the keyboard is down); without this the
         // wallpaper shows in the strip under it, next to the home indicator.
         let panelBottomFill = UIView()
-        panelBottomFill.backgroundColor = theme.chat.inputPanel.panelBackgroundColor
+        panelBottomFill.backgroundColor = theme.list.plainBackgroundColor
         panelBottomFill.isUserInteractionEnabled = false
         panelBottomFill.translatesAutoresizingMaskIntoConstraints = false
         let panelSeparator = UIView()
-        panelSeparator.backgroundColor = theme.chat.inputPanel.panelSeparatorColor
+        panelSeparator.backgroundColor = .clear
         panelSeparator.translatesAutoresizingMaskIntoConstraints = false
         self.inputPanel.addSubview(panelSeparator)
         self.inputView_.font = UIFont.systemFont(ofSize: 17.0)
@@ -213,7 +233,27 @@ public final class LuckgramAIChatController: UIViewController, LuckgramAIChatHos
         self.placeholderLabel.textColor = theme.chat.inputPanel.inputPlaceholderColor
         self.sendButton.addTarget(self, action: #selector(self.sendPressed), for: .touchUpInside)
 
-        for v in [self.pinnedStack, self.tableView, self.welcomeCard, self.quickScroll, self.inputPanel, self.quickStack, self.inputView_, self.placeholderLabel, self.sendButton] as [UIView] {
+        // specs#171: the toggle left of the field switches between the keyboard and 「按住 说话」
+        self.voiceToggle.tintColor = theme.chat.inputPanel.panelControlColor
+        self.voiceToggle.addTarget(self, action: #selector(self.voiceTogglePressed), for: .touchUpInside)
+        self.talkBar.textAlignment = .center
+        self.talkBar.font = UIFont.systemFont(ofSize: 16.0, weight: .semibold)
+        self.talkBar.textColor = theme.chat.inputPanel.primaryTextColor
+        self.talkBar.backgroundColor = theme.chat.inputPanel.inputBackgroundColor
+        self.talkBar.layer.cornerRadius = 18.0
+        self.talkBar.layer.borderWidth = 1.0 / UIScreen.main.scale
+        self.talkBar.layer.borderColor = theme.chat.inputPanel.inputStrokeColor.cgColor
+        self.talkBar.clipsToBounds = true
+        self.talkBar.isUserInteractionEnabled = true
+        self.talkBar.isAccessibilityElement = true
+        self.talkBar.accessibilityTraits = .button
+        self.talkBar.isHidden = true
+        let talkGesture = UILongPressGestureRecognizer(target: self, action: #selector(self.talkGesture(_:)))
+        talkGesture.minimumPressDuration = 0.0
+        talkGesture.allowableMovement = .greatestFiniteMagnitude
+        self.talkBar.addGestureRecognizer(talkGesture)
+
+        for v in [self.pinnedStack, self.tableView, self.welcomeCard, self.quickScroll, self.inputPanel, self.quickStack, self.inputView_, self.placeholderLabel, self.sendButton, self.voiceToggle, self.talkBar] as [UIView] {
             v.translatesAutoresizingMaskIntoConstraints = false
         }
         self.view.addSubview(self.tableView)
@@ -225,6 +265,8 @@ public final class LuckgramAIChatController: UIViewController, LuckgramAIChatHos
         self.inputPanel.addSubview(self.inputView_)
         self.inputPanel.addSubview(self.placeholderLabel)
         self.inputPanel.addSubview(self.sendButton)
+        self.inputPanel.addSubview(self.voiceToggle)
+        self.inputPanel.addSubview(self.talkBar)
 
         let inputHeight = self.inputView_.heightAnchor.constraint(equalToConstant: 36.0)
         self.inputHeight = inputHeight
@@ -269,7 +311,15 @@ public final class LuckgramAIChatController: UIViewController, LuckgramAIChatHos
             self.inputPanel.bottomAnchor.constraint(equalTo: self.view.keyboardLayoutGuide.topAnchor),
             self.inputView_.topAnchor.constraint(equalTo: self.quickScroll.bottomAnchor, constant: 7.0),
             self.inputView_.bottomAnchor.constraint(equalTo: self.inputPanel.bottomAnchor, constant: -7.0),
-            self.inputView_.leadingAnchor.constraint(equalTo: self.inputPanel.leadingAnchor, constant: 10.0),
+            self.voiceToggle.leadingAnchor.constraint(equalTo: self.inputPanel.leadingAnchor, constant: 6.0),
+            self.voiceToggle.bottomAnchor.constraint(equalTo: self.inputView_.bottomAnchor),
+            self.voiceToggle.widthAnchor.constraint(equalToConstant: 36.0),
+            self.voiceToggle.heightAnchor.constraint(equalToConstant: 36.0),
+            self.inputView_.leadingAnchor.constraint(equalTo: self.voiceToggle.trailingAnchor, constant: 4.0),
+            self.talkBar.leadingAnchor.constraint(equalTo: self.inputView_.leadingAnchor),
+            self.talkBar.trailingAnchor.constraint(equalTo: self.inputView_.trailingAnchor),
+            self.talkBar.bottomAnchor.constraint(equalTo: self.inputView_.bottomAnchor),
+            self.talkBar.heightAnchor.constraint(equalToConstant: 36.0),
             self.inputView_.trailingAnchor.constraint(equalTo: self.sendButton.leadingAnchor, constant: -6.0),
             inputHeight,
             self.placeholderLabel.leadingAnchor.constraint(equalTo: self.inputView_.leadingAnchor, constant: 13.0),
@@ -311,46 +361,20 @@ public final class LuckgramAIChatController: UIViewController, LuckgramAIChatHos
         if self.isMovingFromParent || self.isBeingDismissed || self.navigationController?.isBeingDismissed == true {
             self.stopStreaming()
         }
+        self.cancelTalk()
     }
 
     private func makeTitleView() -> UIView {
-        let avatar = UILabel()
-        avatar.text = "AI"
-        avatar.textAlignment = .center
-        avatar.font = UIFont.systemFont(ofSize: 14.0, weight: .semibold)
-        avatar.textColor = .white
-        avatar.backgroundColor = UIColor(red: 0.62, green: 0.40, blue: 0.95, alpha: 1.0)
-        avatar.layer.cornerRadius = 17.0
-        avatar.clipsToBounds = true
-        avatar.translatesAutoresizingMaskIntoConstraints = false
-        NSLayoutConstraint.activate([avatar.widthAnchor.constraint(equalToConstant: 34.0), avatar.heightAnchor.constraint(equalToConstant: 34.0)])
-
-        // A conversation opened by a feature with its own key (e.g. an agent, spec 22) shows its title.
-        let keyedTitle = self.conversation.key != nil ? self.conversation.title : nil
+        // specs#171: just the name. A conversation opened by a feature with its own key (e.g. an agent, spec 22) shows its title.
         let title = UILabel()
-        title.text = keyedTitle ?? "Luckgram AI"
-        title.font = UIFont.systemFont(ofSize: 16.0, weight: .semibold)
+        title.text = (self.conversation.key != nil ? self.conversation.title : nil) ?? "Luckgram AI"
+        title.font = UIFont.systemFont(ofSize: 17.0, weight: .semibold)
         title.textColor = self.theme.rootController.navigationBar.primaryTextColor
-        let subtitle = UILabel()
-        subtitle.text = keyedTitle != nil ? "Luckgram AI" : LuckgramStrings.pick("助手", "Assistant")
-        subtitle.font = UIFont.systemFont(ofSize: 13.0)
-        subtitle.textColor = self.theme.rootController.navigationBar.secondaryTextColor
-        let texts = UIStackView(arrangedSubviews: [title, subtitle])
-        texts.axis = .vertical
-        texts.spacing = 0.0
-        let stack = UIStackView(arrangedSubviews: [avatar, texts])
-        stack.axis = .horizontal
-        stack.spacing = 8.0
-        stack.alignment = .center
-        return stack
+        return title
     }
 
     public override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
-        if let backgroundNode = self.backgroundNode {
-            backgroundNode.frame = self.view.bounds
-            backgroundNode.updateLayout(size: self.view.bounds.size, displayMode: .aspectFill, transition: .immediate)
-        }
     }
 
     public override func viewWillAppear(_ animated: Bool) {
@@ -431,114 +455,33 @@ public final class LuckgramAIChatController: UIViewController, LuckgramAIChatHos
         return control
     }
 
-    /// specs#101: example questions on the welcome card (same on Android); a tap fills the input field.
-    static let welcomeExamples: [(String, String)] = [
-        ("把这段话改得更正式一点", "Make this paragraph more formal"),
-        ("用三句话解释什么是区块链", "Explain blockchain in three sentences"),
-        ("周末两天怎么安排一次短途旅行？", "Plan a two-day weekend trip for me"),
-        ("帮我写一条给同事的生日祝福", "Write a birthday message for a coworker")
-    ]
-
     private func buildWelcomeCard(service: PresentationThemeServiceMessageColorComponents) {
-        let theme = self.theme
-        let incoming = theme.chat.message.incoming
-        let accent = theme.rootController.navigationBar.accentTextColor
-        self.welcomeCard.backgroundColor = incoming.bubble.withWallpaper.fill.first ?? theme.list.plainBackgroundColor
-        self.welcomeCard.layer.cornerRadius = 18.0
-        self.welcomeCard.layer.shadowColor = UIColor.black.cgColor
-        self.welcomeCard.layer.shadowOpacity = theme.overallDarkAppearance ? 0.0 : 0.08
-        self.welcomeCard.layer.shadowRadius = 8.0
-        self.welcomeCard.layer.shadowOffset = CGSize(width: 0.0, height: 2.0)
-
-        let badge = UIImageView(image: UIImage(systemName: "sparkles", withConfiguration: UIImage.SymbolConfiguration(pointSize: 22.0, weight: .semibold)))
-        badge.tintColor = .white
+        // specs#171: the empty page says one thing. What the assistant can do is the row of quick buttons above the field.
+        let accent = self.theme.rootController.navigationBar.accentTextColor
+        let badge = UIImageView(image: UIImage(systemName: "sparkles", withConfiguration: UIImage.SymbolConfiguration(pointSize: 30.0, weight: .semibold)))
+        badge.tintColor = accent
         badge.contentMode = .center
-        badge.backgroundColor = accent
-        badge.layer.cornerRadius = 24.0
-        badge.translatesAutoresizingMaskIntoConstraints = false
-        NSLayoutConstraint.activate([badge.widthAnchor.constraint(equalToConstant: 48.0), badge.heightAnchor.constraint(equalToConstant: 48.0)])
-
         let title = UILabel()
         title.text = LuckgramStrings.pick("有什么可以帮你？", "How can I help?")
-        title.font = UIFont.systemFont(ofSize: 18.0, weight: .semibold)
-        title.textColor = incoming.primaryTextColor
+        title.font = UIFont.systemFont(ofSize: 24.0, weight: .semibold)
+        title.textColor = self.theme.list.itemPrimaryTextColor
         title.textAlignment = .center
-        let subtitle = UILabel()
-        subtitle.text = LuckgramStrings.pick("可以提问、总结或改写长文、讲解、解题。", "Ask anything, summarize or rewrite text, explain, solve problems.")
-        subtitle.font = UIFont.systemFont(ofSize: 14.0)
-        subtitle.textColor = incoming.secondaryTextColor
-        subtitle.textAlignment = .center
-        subtitle.numberOfLines = 0
-
-        let examples = UIStackView()
-        examples.axis = .vertical
-        examples.spacing = 8.0
-        for example in LuckgramAIChatController.welcomeExamples {
-            let text = LuckgramStrings.pick(example.0, example.1)
-            var config = UIButton.Configuration.plain()
-            config.title = text
-            config.baseForegroundColor = accent
-            config.titleAlignment = .leading
-            config.contentInsets = NSDirectionalEdgeInsets(top: 9.0, leading: 12.0, bottom: 9.0, trailing: 12.0)
-            config.background.backgroundColor = accent.withAlphaComponent(0.1)
-            config.background.cornerRadius = 12.0
-            config.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer { attributes in
-                var attributes = attributes
-                attributes.font = UIFont.systemFont(ofSize: 15.0)
-                return attributes
-            }
-            let button = UIButton(configuration: config, primaryAction: UIAction { [weak self] _ in
-                guard let self else {
-                    return
-                }
-                self.inputText = text
-                self.inputView_.becomeFirstResponder()
-            })
-            button.contentHorizontalAlignment = .leading
-            button.titleLabel?.numberOfLines = 0
-            examples.addArrangedSubview(button)
-        }
-
-        let stack = UIStackView(arrangedSubviews: [badge, title, subtitle, examples])
+        title.numberOfLines = 0
+        let stack = UIStackView(arrangedSubviews: [badge, title])
         stack.axis = .vertical
         stack.alignment = .center
-        stack.spacing = 8.0
-        stack.setCustomSpacing(12.0, after: badge)
-        stack.setCustomSpacing(16.0, after: subtitle)
+        stack.spacing = 14.0
         stack.translatesAutoresizingMaskIntoConstraints = false
-        examples.translatesAutoresizingMaskIntoConstraints = false
-        // The card is as tall as its content while there is room. With the keyboard up or in landscape there
-        // is not: the card then stops at the available height and its content scrolls, instead of the
-        // example buttons being squeezed on top of each other.
-        let scroll = UIScrollView()
-        scroll.translatesAutoresizingMaskIntoConstraints = false
-        scroll.alwaysBounceVertical = false
-        scroll.showsHorizontalScrollIndicator = false
-        scroll.delaysContentTouches = false
-        scroll.contentInsetAdjustmentBehavior = .never
-        scroll.layer.cornerRadius = 18.0
-        self.welcomeCard.addSubview(scroll)
-        scroll.addSubview(stack)
-        let fitsContent = self.welcomeCard.heightAnchor.constraint(equalTo: scroll.contentLayoutGuide.heightAnchor)
-        // weaker than the content's own size, so a short card scrolls instead of squeezing what is in it
-        fitsContent.priority = UILayoutPriority(500.0)
-        for view in ([badge, title, subtitle] as [UIView]) + examples.arrangedSubviews {
-            view.setContentCompressionResistancePriority(.required, for: .vertical)
-        }
+        self.welcomeCard.isUserInteractionEnabled = false
+        self.welcomeCard.addSubview(stack)
         NSLayoutConstraint.activate([
-            scroll.topAnchor.constraint(equalTo: self.welcomeCard.topAnchor),
-            scroll.bottomAnchor.constraint(equalTo: self.welcomeCard.bottomAnchor),
-            scroll.leadingAnchor.constraint(equalTo: self.welcomeCard.leadingAnchor),
-            scroll.trailingAnchor.constraint(equalTo: self.welcomeCard.trailingAnchor),
-            scroll.contentLayoutGuide.widthAnchor.constraint(equalTo: scroll.frameLayoutGuide.widthAnchor),
-            stack.topAnchor.constraint(equalTo: scroll.contentLayoutGuide.topAnchor, constant: 20.0),
-            stack.bottomAnchor.constraint(equalTo: scroll.contentLayoutGuide.bottomAnchor, constant: -16.0),
-            stack.leadingAnchor.constraint(equalTo: scroll.contentLayoutGuide.leadingAnchor, constant: 16.0),
-            stack.trailingAnchor.constraint(equalTo: scroll.contentLayoutGuide.trailingAnchor, constant: -16.0),
-            examples.widthAnchor.constraint(equalTo: stack.widthAnchor),
-            fitsContent
+            stack.topAnchor.constraint(equalTo: self.welcomeCard.topAnchor),
+            stack.bottomAnchor.constraint(equalTo: self.welcomeCard.bottomAnchor),
+            stack.leadingAnchor.constraint(equalTo: self.welcomeCard.leadingAnchor),
+            stack.trailingAnchor.constraint(equalTo: self.welcomeCard.trailingAnchor)
         ])
     }
+
 
     /// specs#101: quick buttons — accent text on a light accent tint with an accent outline, never truncated.
     private func makeChip(title: String, icon: String?, action: @escaping () -> Void) -> UIView {
@@ -551,13 +494,11 @@ public final class LuckgramAIChatController: UIViewController, LuckgramAIChatHos
         }
         config.baseForegroundColor = accent
         config.background.backgroundColor = accent.withAlphaComponent(0.1)
-        config.background.strokeColor = accent.withAlphaComponent(0.5)
-        config.background.strokeWidth = 1.0
         config.cornerStyle = .capsule
-        config.contentInsets = NSDirectionalEdgeInsets(top: 4.0, leading: 12.0, bottom: 4.0, trailing: 12.0)
+        config.contentInsets = NSDirectionalEdgeInsets(top: 5.0, leading: 13.0, bottom: 5.0, trailing: 13.0)
         config.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer { attributes in
             var attributes = attributes
-            attributes.font = UIFont.systemFont(ofSize: 14.0, weight: .semibold)
+            attributes.font = UIFont.systemFont(ofSize: 14.0, weight: .medium)
             return attributes
         }
         let button = UIButton(configuration: config, primaryAction: UIAction { _ in action() })
@@ -572,7 +513,10 @@ public final class LuckgramAIChatController: UIViewController, LuckgramAIChatHos
         let enabled = isStop || !self.inputView_.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         self.sendButton.tintColor = enabled ? self.theme.chat.inputPanel.actionControlFillColor : self.theme.chat.inputPanel.inputPlaceholderColor
         self.sendButton.accessibilityLabel = isStop ? LuckgramStrings.pick("停止", "Stop") : LuckgramStrings.pick("发送", "Send")
-        self.placeholderLabel.isHidden = !self.inputView_.text.isEmpty
+        self.placeholderLabel.isHidden = self.talkMode || !self.inputView_.text.isEmpty
+        // while 「按住 说话」 is shown the field is hidden: nothing to send by button, only a reply to stop
+        self.sendButton.isHidden = self.talkMode && !isStop
+        self.updateTalkBar()
     }
 
     private func updateInputHeight() {
@@ -634,11 +578,345 @@ public final class LuckgramAIChatController: UIViewController, LuckgramAIChatHos
         self.scrollToBottom(animated: false)
     }
 
+    // MARK: - More menu (specs#171)
+
+    private func moreMenuElements() -> [UIMenuElement] {
+        var elements: [UIMenuElement] = [UIAction(title: LuckgramStrings.pick("历史对话", "Chat history"), image: UIImage(systemName: "clock.arrow.circlepath"), handler: { [weak self] _ in
+            self?.historyPressed()
+        })]
+        for entry in LuckgramAIRegistry.headerEntries {
+            let action = UIAction(title: LuckgramStrings.pick(entry.title.0, entry.title.1), image: UIImage(systemName: entry.icon ?? "sparkles"), handler: { [weak self] _ in
+                guard let self else {
+                    return
+                }
+                entry.action(self)
+            })
+            if #available(iOS 16.0, *), let hint = entry.subtitle?() {
+                action.subtitle = LuckgramStrings.pick(hint.0, hint.1)
+            }
+            elements.append(action)
+        }
+        return elements
+    }
+
+    // MARK: - 「按住 说话」 (specs#171)
+
+    private func updateTalkBar() {
+        self.voiceToggle.setImage(LuckgramVoiceBar.toggleIcon(talkMode: self.talkMode), for: .normal)
+        self.voiceToggle.accessibilityLabel = self.talkMode ? LuckgramVoiceBar.switchToKeyboard : LuckgramVoiceBar.switchToTalk
+        self.talkBar.isHidden = !self.talkMode
+        self.inputView_.isHidden = self.talkMode
+        let text: String
+        if self.talkConverting {
+            text = LuckgramVoiceBar.converting
+        } else if self.talkHolding {
+            text = LuckgramVoiceBar.releaseToSend
+        } else {
+            text = LuckgramVoiceBar.holdToTalk
+        }
+        self.talkBar.text = text
+        self.talkBar.alpha = self.talkConverting ? 0.5 : (self.talkHolding ? 0.6 : 1.0)
+        self.talkBar.accessibilityLabel = text
+    }
+
+    @objc private func voiceTogglePressed() {
+        if self.talkHolding || self.talkConverting {
+            return
+        }
+        if self.talkMode {
+            self.setTalkMode(false, focus: true)
+            return
+        }
+        // the first switch asks for what a recording needs: AI consent (speech goes to the AI gateway) and the microphone
+        let _ = (LuckgramAI.shared.requestConsent(context: self.context, present: { [weak self] c in
+            self?.presentAlert(c)
+        })
+        |> deliverOnMainQueue).startStandalone(next: { [weak self] granted in
+            guard granted else {
+                return
+            }
+            AVAudioSession.sharedInstance().requestRecordPermission { allowed in
+                DispatchQueue.main.async {
+                    guard let self else {
+                        return
+                    }
+                    if allowed {
+                        self.setTalkMode(true, focus: false)
+                    } else {
+                        self.talkHint(LuckgramStrings.pick("请在系统设置中允许 Luckgram 使用麦克风。", "Please allow Luckgram to use the microphone in Settings."))
+                    }
+                }
+            }
+        })
+    }
+
+    private func setTalkMode(_ talk: Bool, focus: Bool) {
+        self.talkMode = talk
+        if talk {
+            self.view.endEditing(true)
+            // one line high again
+            self.inputHeight?.constant = 36.0
+        } else {
+            self.updateInputHeight()
+        }
+        self.updateSendButton()
+        if !talk && focus {
+            self.inputView_.becomeFirstResponder()
+        }
+    }
+
+    @objc private func talkGesture(_ recognizer: UILongPressGestureRecognizer) {
+        switch recognizer.state {
+        case .began:
+            self.beginTalk()
+        case .changed:
+            guard self.talkHolding, let overlay = self.talkOverlay else {
+                return
+            }
+            let point = recognizer.location(in: overlay)
+            let zone = LuckgramVoiceBarLogic.zone(x: Double(point.x), y: Double(point.y), width: Double(overlay.bounds.width), actionLineY: Double(overlay.actionLineY))
+            if zone != self.talkZone {
+                self.talkZone = zone
+                overlay.zone = zone
+                UISelectionFeedbackGenerator().selectionChanged()
+            }
+        case .ended:
+            self.finishTalk(self.talkZone)
+        case .cancelled, .failed:
+            self.finishTalk(.cancel)
+        default:
+            break
+        }
+    }
+
+    private func beginTalk() {
+        if self.talkHolding || self.talkConverting || self.streaming != nil {
+            return
+        }
+        let host: UIView = self.navigationController?.view ?? self.view
+        let settings: [String: Any] = [
+            AVFormatIDKey: Int(kAudioFormatLinearPCM),
+            AVSampleRateKey: 16000.0,
+            AVNumberOfChannelsKey: 1,
+            AVLinearPCMBitDepthKey: 16,
+            AVLinearPCMIsFloatKey: false,
+            AVLinearPCMIsBigEndianKey: false
+        ]
+        do {
+            let session = AVAudioSession.sharedInstance()
+            self.talkPreviousSession = (session.category, session.mode, session.categoryOptions)
+            try session.setCategory(.playAndRecord, mode: .default, options: [.defaultToSpeaker])
+            try session.setActive(true)
+            let recorder = try AVAudioRecorder(url: self.talkFileURL, settings: settings)
+            recorder.isMeteringEnabled = true
+            guard recorder.record(forDuration: 120.0) else {
+                throw NSError(domain: "LuckgramAITalk", code: 1)
+            }
+            self.talkRecorder = recorder
+        } catch {
+            self.stopTalkRecorder()
+            self.talkHint(LuckgramStrings.pick("无法使用麦克风", "Can't use the microphone"))
+            return
+        }
+        self.talkHolding = true
+        self.talkZone = .send
+        self.talkStart = CACurrentMediaTime()
+        self.talkLoudSeconds = 0.0
+        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+
+        let overlay = LuckgramTalkOverlayView(frame: host.bounds)
+        overlay.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        host.addSubview(overlay)
+        overlay.zone = .send
+        overlay.animateIn()
+        overlay.start()
+        self.talkOverlay = overlay
+        self.updateTalkBar()
+
+        self.talkMeterTimer?.invalidate()
+        self.talkMeterTimer = Foundation.Timer.scheduledTimer(withTimeInterval: 0.05, repeats: true, block: { [weak self] _ in
+            guard let self, let recorder = self.talkRecorder else {
+                return
+            }
+            if !recorder.isRecording {
+                // reached the longest recording
+                if self.talkHolding {
+                    self.finishTalk(self.talkZone)
+                }
+                return
+            }
+            recorder.updateMeters()
+            let db = recorder.peakPower(forChannel: 0) // -160 ... 0
+            let level = max(0.0, min(1.0, (Double(db) + 50.0) / 50.0))
+            // above roughly -37 dB somebody is talking
+            self.talkLoudSeconds = LuckgramVoiceBarLogic.loudSeconds(self.talkLoudSeconds, level: level >= 0.25 ? 1.0 : 0.0, sincePrevious: 0.05)
+            self.talkOverlay?.push(level: CGFloat(level))
+        })
+    }
+
+    private func stopTalkRecorder() {
+        self.talkMeterTimer?.invalidate()
+        self.talkMeterTimer = nil
+        self.talkRecorder?.stop()
+        self.talkRecorder = nil
+        let session = AVAudioSession.sharedInstance()
+        try? session.setActive(false, options: .notifyOthersOnDeactivation)
+        if let previous = self.talkPreviousSession {
+            self.talkPreviousSession = nil
+            try? session.setCategory(previous.category, mode: previous.mode, options: previous.options)
+        }
+    }
+
+    private func removeTalkOverlay() {
+        if let overlay = self.talkOverlay {
+            self.talkOverlay = nil
+            overlay.animateOut()
+        }
+    }
+
+    private func finishTalk(_ zone: LuckgramVoiceBarLogic.Zone) {
+        guard self.talkHolding else {
+            return
+        }
+        self.talkHolding = false
+        let duration = CACurrentMediaTime() - self.talkStart
+        self.stopTalkRecorder()
+        let audio = (try? Data(contentsOf: self.talkFileURL)) ?? Data()
+        try? FileManager.default.removeItem(at: self.talkFileURL)
+
+        if zone == .cancel {
+            self.removeTalkOverlay()
+            self.updateTalkBar()
+            return
+        }
+        if duration < LuckgramVoiceBarLogic.minimumDuration {
+            self.removeTalkOverlay()
+            self.updateTalkBar()
+            self.talkHint(LuckgramVoiceBar.tooShort)
+            return
+        }
+        if audio.isEmpty || self.talkLoudSeconds < LuckgramVoiceBarLogic.minimumLoudSeconds {
+            // nothing to convert; a model would make something up
+            self.removeTalkOverlay()
+            self.updateTalkBar()
+            self.talkHint(LuckgramVoiceBar.nothingHeard)
+            return
+        }
+
+        self.talkConverting = true
+        self.talkOverlay?.zone = .text
+        self.talkOverlay?.isConverting = true
+        self.talkOverlay?.tapped = { [weak self] in
+            self?.cancelTalk()
+        }
+        self.updateTalkBar()
+        let faint = self.talkLoudSeconds < 1.0
+        self.talkDisposable?.dispose()
+        self.talkDisposable = (LuckgramAI.shared.transcribe(context: self.context, present: { [weak self] c in
+            // the consent alert must not end up under the overlay
+            self?.removeTalkOverlay()
+            self?.presentAlert(c)
+        }, audio: audio, mimeType: "audio/wav")
+        |> take(1)
+        |> deliverOnMainQueue).startStrict(next: { [weak self] result in
+            guard let self else {
+                return
+            }
+            self.talkConverting = false
+            self.removeTalkOverlay()
+            self.updateTalkBar()
+            let text = result.text.trimmingCharacters(in: .whitespacesAndNewlines)
+            if text.isEmpty || LuckgramVoiceBarLogic.isSilenceHallucination(text, weakSignal: faint) {
+                self.talkHint(LuckgramVoiceBar.nothingHeard)
+                return
+            }
+            if zone == .text {
+                // 「转文字」: into the field, to be edited before sending
+                self.setTalkMode(false, focus: false)
+                self.inputText = text
+            } else {
+                // 「松开 发送」: what was said goes to the assistant right away
+                if LuckgramAIRegistry.intercept(host: self, text: text) {
+                    return
+                }
+                self.addMessage(LuckgramAIConversation.Message(role: LuckgramAIConversation.Message.roleUser, text: text))
+                self.requestReply()
+            }
+        }, error: { [weak self] error in
+            guard let self else {
+                return
+            }
+            self.talkConverting = false
+            self.removeTalkOverlay()
+            self.updateTalkBar()
+            if error.code == LuckgramAIError.consentDenied || error.code == LuckgramAIError.cancelled {
+                return
+            }
+            self.talkHint(LuckgramVoiceBar.convertFailed + "：" + error.localizedMessage)
+        })
+    }
+
+    /// Leaving the page, or a tap on the overlay while converting: drop whatever is going on.
+    private func cancelTalk() {
+        if self.talkHolding {
+            self.talkHolding = false
+            self.stopTalkRecorder()
+            try? FileManager.default.removeItem(at: self.talkFileURL)
+        }
+        self.talkDisposable?.dispose()
+        self.talkDisposable = nil
+        self.talkConverting = false
+        self.removeTalkOverlay()
+        if self.isViewLoaded {
+            self.updateTalkBar()
+        }
+    }
+
+    private func talkHint(_ text: String) {
+        let label = UILabel()
+        label.text = text
+        label.font = UIFont.systemFont(ofSize: 14.0, weight: .medium)
+        label.textColor = .white
+        label.textAlignment = .center
+        label.numberOfLines = 0
+        let bubble = UIView()
+        bubble.backgroundColor = UIColor(white: 0.0, alpha: 0.78)
+        bubble.layer.cornerRadius = 12.0
+        bubble.isUserInteractionEnabled = false
+        bubble.translatesAutoresizingMaskIntoConstraints = false
+        label.translatesAutoresizingMaskIntoConstraints = false
+        bubble.addSubview(label)
+        self.view.addSubview(bubble)
+        NSLayoutConstraint.activate([
+            label.topAnchor.constraint(equalTo: bubble.topAnchor, constant: 9.0),
+            label.bottomAnchor.constraint(equalTo: bubble.bottomAnchor, constant: -9.0),
+            label.leadingAnchor.constraint(equalTo: bubble.leadingAnchor, constant: 14.0),
+            label.trailingAnchor.constraint(equalTo: bubble.trailingAnchor, constant: -14.0),
+            bubble.centerXAnchor.constraint(equalTo: self.view.centerXAnchor),
+            bubble.widthAnchor.constraint(lessThanOrEqualTo: self.view.widthAnchor, constant: -48.0),
+            bubble.bottomAnchor.constraint(equalTo: self.inputPanel.topAnchor, constant: -12.0)
+        ])
+        UIAccessibility.post(notification: .announcement, argument: text)
+        bubble.alpha = 0.0
+        UIView.animate(withDuration: 0.2, animations: {
+            bubble.alpha = 1.0
+        }, completion: { _ in
+            UIView.animate(withDuration: 0.25, delay: 2.0, options: [], animations: {
+                bubble.alpha = 0.0
+            }, completion: { _ in
+                bubble.removeFromSuperview()
+            })
+        })
+    }
+
     // MARK: - Sending
 
     @objc private func sendPressed() {
         if self.streaming != nil {
             self.stopStreaming()
+            return
+        }
+        if self.talkMode {
             return
         }
         let text = self.inputView_.text.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -932,7 +1210,7 @@ private final class BubbleCell: UITableViewCell, UIContextMenuInteractionDelegat
     func configure(message: LuckgramAIConversation.Message, theme: PresentationTheme, width: CGFloat) {
         let isOut = message.isUser
         let colors = isOut ? theme.chat.message.outgoing : theme.chat.message.incoming
-        self.bubble.backgroundColor = colors.bubble.withWallpaper.fill.first ?? (isOut ? .systemBlue : .secondarySystemBackground)
+        self.bubble.backgroundColor = colors.bubble.withoutWallpaper.fill.first ?? (isOut ? .systemBlue : .secondarySystemBackground)
         self.leading?.isActive = !isOut
         self.trailing?.isActive = isOut
 
