@@ -114,6 +114,7 @@ jobs:
       - name: Build
         working-directory: ${{ env.SOURCE_DIR }}
         run: |
+          touch "$RUNNER_TEMP/bazel-build-start"   # for "Prune bazel cache"
           set -x
           APP_VERSION=$(python3 -c 'import json;print(json.load(open("versions.json"))["app"])')
           BUILD_NUMBER=$(( $(cat build_number_offset) + $(git rev-list --count HEAD) + GITHUB_RUN_NUMBER ))
@@ -157,6 +158,27 @@ jobs:
       # 任何 Mach-O（主程序、framework、扩展）都不能链接它，弱链接也不行。失败时不发 release。
       - name: Check linked dylibs (no libswiftWebKit)
         run: bash "$SOURCE_DIR/ci/check_ios_links.sh" out/*.ipa
+
+      # Keep only what this build used, so the cache stops growing (it went 3.9 -> 8.0 GB in two
+      # days). Master prunes after a successful build; branches only report the numbers (dry run).
+      - name: Prune bazel cache to this build's entries
+        if: success()
+        continue-on-error: true
+        run: bash "$SOURCE_DIR/ci/bazel_cache_prune.sh" "$CACHE_DIR" "$RUNNER_TEMP/bazel-build-start" ${{ github.ref != 'refs/heads/master' && '--dry-run' || '' }}
+
+      # The 10 GB limit also counts the old cache while the new one is being saved: 7.4 + 7.6 GB
+      # of bazel-master-* plus 2.5 GB of bazel-sim-x86-master-* made GitHub evict the simulator
+      # cache, so every simulator build after it (branches too) started cold (60-76 min, not 12-25).
+      # After a successful build the old bazel-master-* go first; after a failed one they only go
+      # once the new cache is really there ("Delete older master caches").
+      - name: Delete older master caches before saving (successful build)
+        if: success() && github.ref == 'refs/heads/master'
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh cache list --repo "$GITHUB_REPOSITORY" --key bazel-master- --limit 100 --json key --jq '.[].key' \
+            | while read -r k; do if [ -n "$k" ]; then gh cache delete "$k" --repo "$GITHUB_REPOSITORY" || true; fi; done
 
       # Not on cancel: a cancelled run's cache upload is aborted and nothing is saved.
       - name: Save bazel cache
