@@ -381,6 +381,10 @@ public final class LuckgramAIChatController: UIViewController, LuckgramAIChatHos
 
     public override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
+        // the system microphone alert takes the keyboard away and the list is laid out again under it
+        if self.holdBottomForPermission {
+            self.scrollToBottom(animated: false)
+        }
     }
 
     public override func viewWillAppear(_ animated: Bool) {
@@ -550,6 +554,9 @@ public final class LuckgramAIChatController: UIViewController, LuckgramAIChatHos
         }
     }
 
+    /// Set while the first-use consent / microphone alerts are up, if the list was at its end when they were asked for.
+    private var holdBottomForPermission = false
+
     private var isAtBottom: Bool {
         let offset = self.tableView.contentOffset.y + self.tableView.bounds.height - self.tableView.adjustedContentInset.bottom
         return offset >= self.tableView.contentSize.height - 40.0
@@ -625,6 +632,13 @@ public final class LuckgramAIChatController: UIViewController, LuckgramAIChatHos
         self.talkBar.accessibilityLabel = text
     }
 
+    public func scrollViewWillBeginDragging(_ scrollView: UIScrollView) {
+        // a reader who starts scrolling is never pulled back to the end
+        if scrollView === self.tableView {
+            self.holdBottomForPermission = false
+        }
+    }
+
     public func scrollViewDidScroll(_ scrollView: UIScrollView) {
         // `.interactive` only puts the keyboard down once the finger reaches it. While the messages
         // do not fill the list a downward swipe never gets there, so that swipe dismisses it directly.
@@ -633,10 +647,12 @@ public final class LuckgramAIChatController: UIViewController, LuckgramAIChatHos
             return
         }
         let visibleHeight = scrollView.bounds.height - scrollView.adjustedContentInset.top - scrollView.adjustedContentInset.bottom
-        guard scrollView.contentSize.height <= visibleHeight else {
-            return
-        }
-        if scrollView.panGestureRecognizer.translation(in: scrollView).y > 24.0 {
+        if scrollView.contentSize.height <= visibleHeight {
+            if scrollView.panGestureRecognizer.translation(in: scrollView).y > 24.0 {
+                self.view.endEditing(true)
+            }
+        } else if scrollView.contentOffset.y < -scrollView.adjustedContentInset.top - 30.0 {
+            // a longer list scrolls first; pulling on past its top puts the keyboard down as well
             self.view.endEditing(true)
         }
     }
@@ -653,12 +669,16 @@ public final class LuckgramAIChatController: UIViewController, LuckgramAIChatHos
             self.setTalkMode(false, focus: true)
             return
         }
-        // the first switch asks for what a recording needs: AI consent (speech goes to the AI gateway) and the microphone
+        // the first switch asks for what a recording needs: AI consent (speech goes to the AI gateway) and the microphone.
+        // The alerts move the list, so where the reader was is noted before they show.
+        let wasAtBottom = self.isAtBottom
+        self.holdBottomForPermission = wasAtBottom
         let _ = (LuckgramAI.shared.requestConsent(context: self.context, present: { [weak self] c in
             self?.presentAlert(c)
         })
         |> deliverOnMainQueue).startStandalone(next: { [weak self] granted in
             guard granted else {
+                self?.holdBottomForPermission = false
                 return
             }
             AVAudioSession.sharedInstance().requestRecordPermission { allowed in
@@ -666,8 +686,9 @@ public final class LuckgramAIChatController: UIViewController, LuckgramAIChatHos
                     guard let self else {
                         return
                     }
+                    self.holdBottomForPermission = false
                     if allowed {
-                        self.setTalkMode(true, focus: false)
+                        self.setTalkMode(true, focus: false, wasAtBottom: wasAtBottom)
                     } else {
                         self.talkHint(LuckgramStrings.pick("请在系统设置中允许 Luckgram 使用麦克风。", "Please allow Luckgram to use the microphone in Settings."))
                     }
@@ -676,9 +697,9 @@ public final class LuckgramAIChatController: UIViewController, LuckgramAIChatHos
         })
     }
 
-    private func setTalkMode(_ talk: Bool, focus: Bool) {
+    private func setTalkMode(_ talk: Bool, focus: Bool, wasAtBottom: Bool? = nil) {
         // somebody reading older messages is left where they are
-        let wasAtBottom = self.isAtBottom
+        let wasAtBottom = wasAtBottom ?? self.isAtBottom
         self.talkMode = talk
         if talk {
             self.view.endEditing(true)
