@@ -96,6 +96,7 @@ jobs:
       - name: Build debug_sim_x86_64
         working-directory: ${{ env.SOURCE_DIR }}
         run: |
+          touch "$RUNNER_TEMP/bazel-build-start"   # for "Prune bazel cache"
           # Real build number (same formula as build.yml, own run number), not the default 10000
           BUILD_NUMBER=$(( $(cat build_number_offset) + $(git rev-list --count HEAD) + GITHUB_RUN_NUMBER ))
           echo "BUILD_NUMBER=$BUILD_NUMBER" >> "$GITHUB_ENV"
@@ -121,6 +122,25 @@ jobs:
       - name: Check linked dylibs (no libswiftWebKit)
         working-directory: ${{ env.SOURCE_DIR }}
         run: bash ci/check_ios_links.sh "$(ls "$GITHUB_WORKSPACE"/app/*.ipa | head -1)"
+
+      # Keep only what this build used, so the cache stops growing. Master prunes after a
+      # successful build; branches only report the numbers (dry run).
+      - name: Prune bazel cache to this build's entries
+        if: success()
+        continue-on-error: true
+        run: bash "$SOURCE_DIR/ci/bazel_cache_prune.sh" "$CACHE_DIR" "$RUNNER_TEMP/bazel-build-start" ${{ github.ref != 'refs/heads/master' && '--dry-run' || '' }}
+
+      # The 10 GB limit also counts the old cache while the new one is being saved (see build.yml).
+      # After a successful build the old bazel-sim-x86-master-* go first; after a failed one they
+      # only go once the new cache is really there ("Delete older simulator caches").
+      - name: Delete older simulator caches before saving (successful build)
+        if: success() && github.ref == 'refs/heads/master'
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh cache list -R "$GITHUB_REPOSITORY" --key bazel-sim-x86-master- --limit 100 --json key -q '.[].key' \
+            | while read -r k; do if [ -n "$k" ]; then gh cache delete "$k" -R "$GITHUB_REPOSITORY" || true; fi; done
 
       # Actions cache limit is 10 GB: only master saves, one simulator cache kept; branches read only.
       - name: Save bazel cache (simulator, master only)
