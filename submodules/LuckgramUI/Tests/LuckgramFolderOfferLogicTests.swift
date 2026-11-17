@@ -14,7 +14,7 @@ final class LuckgramFolderOfferLogicTests: XCTestCase {
         XCTAssertNil(L.slug("https://t.me/luckgram"))
         XCTAssertNil(L.slug("https://t.me/addlist/ab"))
         XCTAssertNil(L.slug("https://t.me/addlist/abcd?x=1"))
-        XCTAssertNil(L.slug("https://evil.com/addlist/abcd"))
+        XCTAssertNil(L.slug("https://telegram.me/addlist/abcd"))
     }
 
     func testCheckedOnlyWhenOnWithLinkAndNotSeen() {
