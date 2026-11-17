@@ -97,7 +97,7 @@ private func presentNewPasswordAlert(sharedContext: SharedAccountContext, cloud:
     confirm.isEnabled = false
     alert.addAction(confirm)
     validator.attach(alert: alert, action: confirm)
-    sharedContext.applicationBindings.presentNativeController(alert)
+    presentNative(sharedContext: sharedContext, alert)
 }
 
 private final class LuckgramNewPasswordValidator: NSObject {
@@ -172,13 +172,27 @@ private func presentPasswordAlert(sharedContext: SharedAccountContext, completio
             completion(password)
         }
     }))
-    sharedContext.applicationBindings.presentNativeController(alert)
+    presentNative(sharedContext: sharedContext, alert)
+}
+
+/// Presents on the root controller. An alert action runs while its alert is still going away, and
+/// UIKit drops a presentation made at that moment: the share sheet after "Export to file" never
+/// showed (specs#150). So this waits until the root has nothing presented, for 2 seconds at most.
+private func presentNative(sharedContext: SharedAccountContext, _ controller: UIViewController, attempt: Int = 0) {
+    let root = sharedContext.mainWindow?.viewController?.view.window?.rootViewController
+    if let root, root.presentedViewController != nil, attempt < 20 {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+            presentNative(sharedContext: sharedContext, controller, attempt: attempt + 1)
+        }
+        return
+    }
+    sharedContext.applicationBindings.presentNativeController(controller)
 }
 
 private func presentMessage(sharedContext: SharedAccountContext, _ text: String) {
     let alert = UIAlertController(title: nil, message: text, preferredStyle: .alert)
     alert.addAction(UIAlertAction(title: LuckgramStrings.ok, style: .default))
-    sharedContext.applicationBindings.presentNativeController(alert)
+    presentNative(sharedContext: sharedContext, alert)
 }
 
 // MARK: - Restore flow (backup page and login screen)
@@ -564,7 +578,7 @@ public func luckgramBackupController(context: AccountContext) -> ViewController 
                     activityController.popoverPresentationController?.sourceView = window
                     activityController.popoverPresentationController?.sourceRect = CGRect(origin: CGPoint(x: window.bounds.width / 2.0, y: window.bounds.size.height - 1.0), size: CGSize(width: 1.0, height: 1.0))
                 }
-                sharedContext.applicationBindings.presentNativeController(activityController)
+                presentNative(sharedContext: sharedContext, activityController)
             })
         })
     }, restore: {
@@ -636,7 +650,7 @@ private func presentRememberChoice(sharedContext: SharedAccountContext, completi
     alert.addAction(UIAlertAction(title: LuckgramCloudBackupStrings.rememberYes, style: .default, handler: { _ in
         completion(true)
     }))
-    sharedContext.applicationBindings.presentNativeController(alert)
+    presentNative(sharedContext: sharedContext, alert)
 }
 
 private enum LuckgramCloudAction {
@@ -829,7 +843,7 @@ public func luckgramCloudBackupController(context: AccountContext) -> ViewContro
                     presentMessage(sharedContext: sharedContext, LuckgramCloudBackupStrings.error(error))
                 })
             }))
-            sharedContext.applicationBindings.presentNativeController(alert)
+            presentNative(sharedContext: sharedContext, alert)
         case let .auto(value):
             if value {
                 // Turning it on needs the password remembered; back up every account right away with it.
