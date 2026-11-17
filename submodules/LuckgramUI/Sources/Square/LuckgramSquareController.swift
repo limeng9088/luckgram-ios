@@ -65,11 +65,14 @@ enum LuckgramSquarePostEntry: ItemListNodeEntry {
         case let .author(_, i, _, _, _): kind = 0; index = i
         case let .hidden(_, i, _): kind = 1; index = i
         case let .text(_, i, _, _): kind = 2; index = i
+        // Every kind of row has its own id. Images and video once shared one: when the posts moved by
+        // a place (a new post on top) an image row was "updated" into a video row or back, the row could
+        // not take the other kind's item, the list's update never finished and it stopped redrawing.
         case let .images(_, i, _): kind = 3; index = i
-        case let .video(_, i, _): kind = 3; index = i
-        case let .stats(_, i, _, _): kind = 4; index = i
-        case let .footer(_, i, _, _): kind = 5; index = i
-        case let .action(_, i, _, _): kind = 6; index = i
+        case let .video(_, i, _): kind = 4; index = i
+        case let .stats(_, i, _, _): kind = 5; index = i
+        case let .footer(_, i, _, _): kind = 6; index = i
+        case let .action(_, i, _, _): kind = 7; index = i
         }
         return Int64(index) * 10 + kind
     }
