@@ -1148,21 +1148,41 @@ public final class LuckgramAIChatController: UIViewController, LuckgramAIChatHos
         return self.conversation.messages.count
     }
 
-    /// Heights the rows were really laid out with. Without them the list works from a guess per row, and
-    /// whenever it sizes itself again (a system alert does that) it lands somewhere else in a long conversation.
+    /// Real row heights. With a guess per row the list changes its content size as soon as rows off screen are
+    /// built (accessibility clients such as VoiceOver or UI automation do that) and a long conversation jumps.
     private var measuredHeights: [ObjectIdentifier: CGFloat] = [:]
+    private var measuredWidth: CGFloat = 0.0
+    private lazy var sizingCell = BubbleCell(style: .default, reuseIdentifier: nil)
 
     public func tableView(_ tableView: UITableView, willDisplay cell: UITableViewCell, forRowAt indexPath: IndexPath) {
-        if indexPath.row < self.conversation.messages.count {
+        if indexPath.row < self.conversation.messages.count, tableView.bounds.width == self.measuredWidth {
             self.measuredHeights[ObjectIdentifier(self.conversation.messages[indexPath.row])] = cell.bounds.height
         }
     }
 
     public func tableView(_ tableView: UITableView, estimatedHeightForRowAt indexPath: IndexPath) -> CGFloat {
-        if indexPath.row < self.conversation.messages.count, let height = self.measuredHeights[ObjectIdentifier(self.conversation.messages[indexPath.row])] {
+        let width = tableView.bounds.width
+        guard indexPath.row < self.conversation.messages.count, width > 0.0 else {
+            return 80.0
+        }
+        if width != self.measuredWidth {
+            self.measuredWidth = width
+            self.measuredHeights.removeAll()
+        }
+        let message = self.conversation.messages[indexPath.row]
+        if let height = self.measuredHeights[ObjectIdentifier(message)] {
             return height
         }
-        return 80.0
+        // not shown yet: measure it once with a cell kept for that, so the estimate is the real height
+        self.sizingCell.configure(message: message, theme: self.theme, width: width)
+        let height = ceil(self.sizingCell.systemLayoutSizeFitting(CGSize(width: width, height: UIView.layoutFittingCompressedSize.height), withHorizontalFittingPriority: .required, verticalFittingPriority: .fittingSizeLevel).height)
+        guard height > 0.0 else {
+            return 80.0
+        }
+        if !message.isPending {
+            self.measuredHeights[ObjectIdentifier(message)] = height
+        }
+        return height
     }
 
     /// Where the reader is: the first visible row and how far into it the list has scrolled.
