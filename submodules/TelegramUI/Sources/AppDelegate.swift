@@ -1460,6 +1460,7 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
                     // Luckgram specs#76: "Subscribe" on the onboarding Pro step -> the Pro page once logged in.
                     if LuckgramSettings.shared.bool(LuckgramWelcomeLogic.openProAfterLoginKey, default: false) {
                         LuckgramSettings.shared.setBool(LuckgramWelcomeLogic.openProAfterLoginKey, false)
+                        LuckgramFolderOffer.skipNext = true
                         Queue.mainQueue().after(1.5) {
                             context.rootController.pushViewController(luckgramProController(context: context.context))
                         }
@@ -1520,10 +1521,19 @@ private func extractAccountManagerState(records: AccountRecordsView<TelegramAcco
                     }
                     |> take(1)
                     |> timeout(4.0, queue: .mainQueue(), alternate: .complete())
-                    |> deliverOnMainQueue).start(completed: {
+                    |> deliverOnMainQueue).start(completed: { [weak self] in
                         Queue.mainQueue().after(0.75) {
                             authContextValue.rootController.view.endEditing(true)
                             authContextValue.rootController.dismiss()
+                        }
+                        // Luckgram specs#98: offer the "Luckgram picks" chat folder once per account.
+                        Queue.mainQueue().after(1.75) {
+                            guard let self, let contextValue = self.contextValue, contextValue.context.account.id == accountId else {
+                                return
+                            }
+                            LuckgramFolderOffer.afterLogin(context: contextValue.context, navigationController: { [weak contextValue] in
+                                return contextValue?.rootController
+                            })
                         }
                     })
                 } else {

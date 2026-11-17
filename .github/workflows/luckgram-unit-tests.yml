@@ -50,6 +50,7 @@ jobs:
           TelegramCore|submodules/TelegramCore/Sources/Luckgram/LuckgramTranslateInLogic.swift|submodules/TelegramCore/Tests/Luckgram/LuckgramTranslateInLogicTests.swift
           LuckgramUI|submodules/LuckgramUI/Sources/Writing/LuckgramAIWritingEntities.swift|submodules/LuckgramUI/Tests/LuckgramAIWritingEntitiesTests.swift
           LuckgramUI|submodules/LuckgramUI/Sources/Onboarding/LuckgramWelcomeLogic.swift|submodules/LuckgramUI/Tests/LuckgramWelcomeLogicTests.swift
+          LuckgramUI|submodules/LuckgramUI/Sources/Onboarding/LuckgramFolderOfferLogic.swift|submodules/LuckgramUI/Tests/LuckgramFolderOfferLogicTests.swift
           LuckgramUI|submodules/LuckgramUI/Sources/Diag/LuckgramDiagLogic.swift|submodules/LuckgramUI/Tests/LuckgramDiagLogicTests.swift
           LuckgramUI|submodules/LuckgramUI/Sources/LuckgramAccountLimit.swift|submodules/LuckgramUI/Tests/LuckgramAccountLimitTests.swift
           LuckgramUI|submodules/LuckgramUI/Sources/Backup/LuckgramCloudBackupLogic.swift|submodules/LuckgramUI/Tests/LuckgramCloudBackupLogicTests.swift
