@@ -181,6 +181,7 @@ public final class LuckgramAIChatController: UIViewController, LuckgramAIChatHos
 
         self.tableView.dataSource = self
         self.tableView.delegate = self
+        self.observeContentSize()
         self.tableView.separatorStyle = .none
         self.tableView.backgroundColor = .clear
         self.tableView.keyboardDismissMode = .interactive
@@ -549,6 +550,8 @@ public final class LuckgramAIChatController: UIViewController, LuckgramAIChatHos
 
     private func scrollToBottom(animated: Bool) {
         let count = self.conversation.messages.count
+        self.anchor = .end
+        self.anchorRowCount = count
         if count > 0 {
             self.tableView.scrollToRow(at: IndexPath(row: count - 1, section: 0), at: .bottom, animated: animated)
         }
@@ -643,7 +646,15 @@ public final class LuckgramAIChatController: UIViewController, LuckgramAIChatHos
         // `.interactive` only puts the keyboard down once the finger reaches it. While the messages
         // do not fill the list a downward swipe never gets there, so that swipe dismisses it directly.
         // A full list keeps the system behaviour, so scrolling back through history leaves the keyboard up.
-        guard scrollView === self.tableView, scrollView.isDragging else {
+        guard scrollView === self.tableView else {
+            return
+        }
+        if scrollView.isTracking || scrollView.isDragging || scrollView.isDecelerating {
+            // a finger on the list ends a scroll to the top, also if its callback never comes
+            self.scrollingToTop = false
+            self.captureAnchor()
+        }
+        guard scrollView.isDragging else {
             return
         }
         let visibleHeight = scrollView.bounds.height - scrollView.adjustedContentInset.top - scrollView.adjustedContentInset.bottom
@@ -1148,11 +1159,12 @@ public final class LuckgramAIChatController: UIViewController, LuckgramAIChatHos
         return self.conversation.messages.count
     }
 
-    /// Real row heights. With a guess per row the list changes its content size as soon as rows off screen are
-    /// built (accessibility clients such as VoiceOver or UI automation do that) and a long conversation jumps.
+    /// Heights of the rows that have been shown, so the list does not go back to a guess for them.
+    /// Rows not shown yet are not measured ahead: that is a text layout per message on the main thread and
+    /// froze the opening of a conversation with hundreds of long replies. What keeps the reader in place
+    /// when those rows get their real height is the reading anchor below.
     private var measuredHeights: [ObjectIdentifier: CGFloat] = [:]
     private var measuredWidth: CGFloat = 0.0
-    private lazy var sizingCell = BubbleCell(style: .default, reuseIdentifier: nil)
 
     public func tableView(_ tableView: UITableView, willDisplay cell: UITableViewCell, forRowAt indexPath: IndexPath) {
         if indexPath.row < self.conversation.messages.count, tableView.bounds.width == self.measuredWidth {
@@ -1163,26 +1175,105 @@ public final class LuckgramAIChatController: UIViewController, LuckgramAIChatHos
     public func tableView(_ tableView: UITableView, estimatedHeightForRowAt indexPath: IndexPath) -> CGFloat {
         let width = tableView.bounds.width
         guard indexPath.row < self.conversation.messages.count, width > 0.0 else {
-            return 80.0
+            return LuckgramAIChatController.unknownRowHeight
         }
         if width != self.measuredWidth {
             self.measuredWidth = width
             self.measuredHeights.removeAll()
         }
-        let message = self.conversation.messages[indexPath.row]
-        if let height = self.measuredHeights[ObjectIdentifier(message)] {
-            return height
+        return self.measuredHeights[ObjectIdentifier(self.conversation.messages[indexPath.row])] ?? LuckgramAIChatController.unknownRowHeight
+    }
+
+    private static let unknownRowHeight: CGFloat = 80.0
+
+    // MARK: - Reading anchor
+
+    /// Where the reader last put the list. Rows that were never shown only have a guessed height; when
+    /// something builds them (accessibility clients such as VoiceOver or UI automation build rows off
+    /// screen) the content above the reader changes size and the list would show another place. The anchor
+    /// is taken from what the reader did, and put back when the content size changes without them.
+    private enum ReadingAnchor {
+        case end
+        case row(Int, CGFloat)
+    }
+    private var anchor: ReadingAnchor = .end
+    private var anchorRowCount = 0
+    private var anchorRestoreScheduled = false
+    private var scrollingToTop = false
+    private var contentSizeObservation: NSKeyValueObservation?
+
+    private var readerIsScrolling: Bool {
+        return self.tableView.isTracking || self.tableView.isDragging || self.tableView.isDecelerating || self.scrollingToTop
+    }
+
+    private func captureAnchor() {
+        self.anchorRowCount = self.conversation.messages.count
+        if self.isAtBottom {
+            self.anchor = .end
+        } else if let position = self.readingPosition() {
+            self.anchor = .row(position.row, position.delta)
         }
-        // not shown yet: measure it once with a cell kept for that, so the estimate is the real height
-        self.sizingCell.configure(message: message, theme: self.theme, width: width)
-        let height = ceil(self.sizingCell.systemLayoutSizeFitting(CGSize(width: width, height: UIView.layoutFittingCompressedSize.height), withHorizontalFittingPriority: .required, verticalFittingPriority: .fittingSizeLevel).height)
-        guard height > 0.0 else {
-            return 80.0
+    }
+
+    private func observeContentSize() {
+        self.contentSizeObservation = self.tableView.observe(\.contentSize, options: [.old, .new]) { [weak self] _, change in
+            guard let self, change.oldValue?.height != change.newValue?.height else {
+                return
+            }
+            self.contentSizeChanged()
         }
-        if !message.isPending {
-            self.measuredHeights[ObjectIdentifier(message)] = height
+    }
+
+    private func contentSizeChanged() {
+        if self.anchorRestoreScheduled || self.readerIsScrolling {
+            return
         }
-        return height
+        self.anchorRestoreScheduled = true
+        // after whatever is changing the list has finished with it
+        DispatchQueue.main.async { [weak self] in
+            guard let self else {
+                return
+            }
+            self.anchorRestoreScheduled = false
+            if self.readerIsScrolling {
+                return
+            }
+            // a reply being written and messages added or removed are placed by the code that does it
+            if self.streaming != nil || self.conversation.messages.count != self.anchorRowCount {
+                self.captureAnchor()
+                return
+            }
+            switch self.anchor {
+            case .end:
+                if !self.isAtBottom {
+                    self.scrollToBottom(animated: false)
+                }
+            case let .row(row, delta):
+                self.restoreReadingPosition((row, delta))
+            }
+        }
+    }
+
+    // the text field is a scroll view with this delegate too: only the message list counts
+    public func scrollViewShouldScrollToTop(_ scrollView: UIScrollView) -> Bool {
+        if scrollView === self.tableView {
+            self.scrollingToTop = true
+        }
+        return true
+    }
+
+    public func scrollViewDidScrollToTop(_ scrollView: UIScrollView) {
+        if scrollView === self.tableView {
+            self.scrollingToTop = false
+            self.captureAnchor()
+        }
+    }
+
+    public func scrollViewDidEndScrollingAnimation(_ scrollView: UIScrollView) {
+        if scrollView === self.tableView {
+            self.scrollingToTop = false
+            self.captureAnchor()
+        }
     }
 
     /// Where the reader is: the first visible row and how far into it the list has scrolled.
@@ -1201,7 +1292,12 @@ public final class LuckgramAIChatController: UIViewController, LuckgramAIChatHos
         let top = -self.tableView.adjustedContentInset.top
         let bottom = max(top, self.tableView.contentSize.height - self.tableView.bounds.height + self.tableView.adjustedContentInset.bottom)
         let wanted = self.tableView.rectForRow(at: IndexPath(row: position.row, section: 0)).minY + position.delta
-        self.tableView.setContentOffset(CGPoint(x: 0.0, y: min(max(wanted, top), bottom)), animated: false)
+        let target = min(max(wanted, top), bottom)
+        if abs(self.tableView.contentOffset.y - target) > 0.5 {
+            self.tableView.setContentOffset(CGPoint(x: 0.0, y: target), animated: false)
+        }
+        self.anchor = .row(position.row, position.delta)
+        self.anchorRowCount = self.conversation.messages.count
     }
 
     public func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
