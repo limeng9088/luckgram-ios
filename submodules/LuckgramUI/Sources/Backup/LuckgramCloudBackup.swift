@@ -129,7 +129,9 @@ public enum LuckgramCloudBackup {
             collected = LuckgramBackup.collectAll(accountManager: accountManager)
         }
         return collected
-        |> deliverOn(Queue.concurrentDefaultQueue())
+        // A serial queue: on a concurrent one "completed" overtakes the slow encryption below and its
+        // result is dropped, so nothing happened after the file was written (specs#202).
+        |> deliverOn(Queue(name: "luckgram-backup-encrypt"))
         |> map { items -> (String, Int)? in
             var items = items
             defer {
