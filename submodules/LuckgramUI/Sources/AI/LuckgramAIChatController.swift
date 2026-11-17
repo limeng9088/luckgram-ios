@@ -1153,6 +1153,11 @@ public final class LuckgramAIChatController: UIViewController, LuckgramAIChatHos
     private var measuredHeights: [ObjectIdentifier: CGFloat] = [:]
     private var measuredWidth: CGFloat = 0.0
     private lazy var sizingCell = BubbleCell(style: .default, reuseIdentifier: nil)
+    /// Only this many rows at the end of the conversation are measured ahead of being shown. Measuring is
+    /// a full text layout per message on the main thread: done for every row it froze the opening of a
+    /// conversation with hundreds of long replies for seconds. The end is where a conversation opens and
+    /// where the rows just above the screen matter; older rows get the average until they are shown.
+    private static let measuredAheadRows = 8
 
     public func tableView(_ tableView: UITableView, willDisplay cell: UITableViewCell, forRowAt indexPath: IndexPath) {
         if indexPath.row < self.conversation.messages.count, tableView.bounds.width == self.measuredWidth {
@@ -1173,7 +1178,15 @@ public final class LuckgramAIChatController: UIViewController, LuckgramAIChatHos
         if let height = self.measuredHeights[ObjectIdentifier(message)] {
             return height
         }
+        guard indexPath.row >= self.conversation.messages.count - LuckgramAIChatController.measuredAheadRows else {
+            // far from the end: no layout, the average of what is known is close enough until it is shown
+            if self.measuredHeights.isEmpty {
+                return 80.0
+            }
+            return (self.measuredHeights.values.reduce(0.0, +) / CGFloat(self.measuredHeights.count)).rounded()
+        }
         // not shown yet: measure it once with a cell kept for that, so the estimate is the real height
+        self.sizingCell.bounds.size.width = width
         self.sizingCell.configure(message: message, theme: self.theme, width: width)
         let height = ceil(self.sizingCell.systemLayoutSizeFitting(CGSize(width: width, height: UIView.layoutFittingCompressedSize.height), withHorizontalFittingPriority: .required, verticalFittingPriority: .fittingSizeLevel).height)
         guard height > 0.0 else {
