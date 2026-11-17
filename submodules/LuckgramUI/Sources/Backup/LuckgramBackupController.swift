@@ -529,7 +529,9 @@ public func luckgramBackupController(context: AccountContext) -> ViewController 
         }
         presentNewPasswordAlert(sharedContext: sharedContext, cloud: false, completion: { password in
             let _ = (LuckgramBackup.collect(accountManager: sharedContext.accountManager, recordIds: recordIds)
-            |> deliverOn(Queue.concurrentDefaultQueue())
+            // A serial queue: on a concurrent one "completed" overtakes the slow encryption below and its
+            // result is dropped, so nothing happened after the file was written (specs#202).
+            |> deliverOn(Queue(name: "luckgram-backup-encrypt"))
             |> map { items -> URL? in
                 var items = items
                 defer {
