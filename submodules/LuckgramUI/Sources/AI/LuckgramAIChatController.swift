@@ -672,6 +672,7 @@ public final class LuckgramAIChatController: UIViewController, LuckgramAIChatHos
         // the first switch asks for what a recording needs: AI consent (speech goes to the AI gateway) and the microphone.
         // The alerts move the list, so where the reader was is noted before they show.
         let wasAtBottom = self.isAtBottom
+        let position = self.readingPosition()
         self.holdBottomForPermission = wasAtBottom
         let _ = (LuckgramAI.shared.requestConsent(context: self.context, present: { [weak self] c in
             self?.presentAlert(c)
@@ -687,9 +688,15 @@ public final class LuckgramAIChatController: UIViewController, LuckgramAIChatHos
                         return
                     }
                     self.holdBottomForPermission = false
+                    if !wasAtBottom {
+                        self.restoreReadingPosition(position)
+                    }
                     if allowed {
                         self.setTalkMode(true, focus: false, wasAtBottom: wasAtBottom)
                     } else {
+                        if wasAtBottom {
+                            self.scrollToBottom(animated: false)
+                        }
                         self.talkHint(LuckgramStrings.pick("请在系统设置中允许 Luckgram 使用麦克风。", "Please allow Luckgram to use the microphone in Settings."))
                     }
                 }
@@ -1139,6 +1146,62 @@ public final class LuckgramAIChatController: UIViewController, LuckgramAIChatHos
 
     public func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
         return self.conversation.messages.count
+    }
+
+    /// Real row heights. With a guess per row the list changes its content size as soon as rows off screen are
+    /// built (accessibility clients such as VoiceOver or UI automation do that) and a long conversation jumps.
+    private var measuredHeights: [ObjectIdentifier: CGFloat] = [:]
+    private var measuredWidth: CGFloat = 0.0
+    private lazy var sizingCell = BubbleCell(style: .default, reuseIdentifier: nil)
+
+    public func tableView(_ tableView: UITableView, willDisplay cell: UITableViewCell, forRowAt indexPath: IndexPath) {
+        if indexPath.row < self.conversation.messages.count, tableView.bounds.width == self.measuredWidth {
+            self.measuredHeights[ObjectIdentifier(self.conversation.messages[indexPath.row])] = cell.bounds.height
+        }
+    }
+
+    public func tableView(_ tableView: UITableView, estimatedHeightForRowAt indexPath: IndexPath) -> CGFloat {
+        let width = tableView.bounds.width
+        guard indexPath.row < self.conversation.messages.count, width > 0.0 else {
+            return 80.0
+        }
+        if width != self.measuredWidth {
+            self.measuredWidth = width
+            self.measuredHeights.removeAll()
+        }
+        let message = self.conversation.messages[indexPath.row]
+        if let height = self.measuredHeights[ObjectIdentifier(message)] {
+            return height
+        }
+        // not shown yet: measure it once with a cell kept for that, so the estimate is the real height
+        self.sizingCell.configure(message: message, theme: self.theme, width: width)
+        let height = ceil(self.sizingCell.systemLayoutSizeFitting(CGSize(width: width, height: UIView.layoutFittingCompressedSize.height), withHorizontalFittingPriority: .required, verticalFittingPriority: .fittingSizeLevel).height)
+        guard height > 0.0 else {
+            return 80.0
+        }
+        if !message.isPending {
+            self.measuredHeights[ObjectIdentifier(message)] = height
+        }
+        return height
+    }
+
+    /// Where the reader is: the first visible row and how far into it the list has scrolled.
+    private func readingPosition() -> (row: Int, delta: CGFloat)? {
+        guard let first = self.tableView.indexPathsForVisibleRows?.first else {
+            return nil
+        }
+        return (first.row, self.tableView.contentOffset.y - self.tableView.rectForRow(at: first).minY)
+    }
+
+    private func restoreReadingPosition(_ position: (row: Int, delta: CGFloat)?) {
+        guard let position, position.row < self.conversation.messages.count else {
+            return
+        }
+        self.tableView.layoutIfNeeded()
+        let top = -self.tableView.adjustedContentInset.top
+        let bottom = max(top, self.tableView.contentSize.height - self.tableView.bounds.height + self.tableView.adjustedContentInset.bottom)
+        let wanted = self.tableView.rectForRow(at: IndexPath(row: position.row, section: 0)).minY + position.delta
+        self.tableView.setContentOffset(CGPoint(x: 0.0, y: min(max(wanted, top), bottom)), animated: false)
     }
 
     public func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
