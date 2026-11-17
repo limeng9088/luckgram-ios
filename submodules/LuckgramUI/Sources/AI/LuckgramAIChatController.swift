@@ -650,6 +650,8 @@ public final class LuckgramAIChatController: UIViewController, LuckgramAIChatHos
             return
         }
         if scrollView.isTracking || scrollView.isDragging || scrollView.isDecelerating {
+            // a finger on the list ends a scroll to the top, also if its callback never comes
+            self.scrollingToTop = false
             self.captureAnchor()
         }
         guard scrollView.isDragging else {
@@ -1252,18 +1254,24 @@ public final class LuckgramAIChatController: UIViewController, LuckgramAIChatHos
         }
     }
 
+    // the text field is a scroll view with this delegate too: only the message list counts
     public func scrollViewShouldScrollToTop(_ scrollView: UIScrollView) -> Bool {
-        self.scrollingToTop = true
+        if scrollView === self.tableView {
+            self.scrollingToTop = true
+        }
         return true
     }
 
     public func scrollViewDidScrollToTop(_ scrollView: UIScrollView) {
-        self.scrollingToTop = false
-        self.captureAnchor()
+        if scrollView === self.tableView {
+            self.scrollingToTop = false
+            self.captureAnchor()
+        }
     }
 
     public func scrollViewDidEndScrollingAnimation(_ scrollView: UIScrollView) {
         if scrollView === self.tableView {
+            self.scrollingToTop = false
             self.captureAnchor()
         }
     }
