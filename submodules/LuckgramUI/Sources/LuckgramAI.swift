@@ -149,8 +149,50 @@ public final class LuckgramAI {
     public let mock = LuckgramAIMock()
 
     private let queue = Queue(name: "LuckgramAI")
-    private var token: String?
-    private var tokenIsMock = false
+    /// specs#209: device token per Telegram user (`EnginePeer.Id.toInt64()`, 0 = no account).
+    private var tokens: [Int64: String] = [:]
+    private var tokensAreMock = false
+
+    /// specs#209: the logged-in accounts as the app last reported them (any thread).
+    private let accountsLock = NSLock()
+    private var primaryUser: Int64?
+    private var allUsers: [Int64] = []
+    /// Account record id → Telegram user; kept after a logout so its cleanup can still use the
+    /// account's token.
+    private var userByRecord: [Int64: Int64] = [:]
+
+    /// specs#209: called by the app whenever the logged-in accounts or the selected one change.
+    /// Users are `EnginePeer.Id.toInt64()`.
+    public func updateAccounts(primary: Int64?, accounts: [(record: Int64, user: Int64)]) {
+        self.accountsLock.lock()
+        self.primaryUser = primary
+        self.allUsers = accounts.map { $0.user }
+        for account in accounts {
+            self.userByRecord[account.record] = account.user
+        }
+        self.accountsLock.unlock()
+    }
+
+    /// The selected account's Telegram user, nil when none is logged in.
+    public func currentUser() -> Int64? {
+        self.accountsLock.lock()
+        defer { self.accountsLock.unlock() }
+        return self.primaryUser
+    }
+
+    /// Every logged-in account's Telegram user.
+    public func loggedInUsers() -> [Int64] {
+        self.accountsLock.lock()
+        defer { self.accountsLock.unlock() }
+        return self.allUsers
+    }
+
+    /// The Telegram user of an account record (also one just logged out), if known.
+    public func user(forRecord record: Int64) -> Int64? {
+        self.accountsLock.lock()
+        defer { self.accountsLock.unlock() }
+        return self.userByRecord[record]
+    }
 
     private init() {
     }
@@ -238,7 +280,7 @@ public final class LuckgramAI {
     public func setUseMock(_ value: Bool) {
         LuckgramSettings.shared.setBool(LuckgramAI.useMockKey, value)
         self.queue.async {
-            self.token = nil
+            self.tokens = [:]
         }
     }
 
@@ -290,20 +332,53 @@ public final class LuckgramAI {
 
     // MARK: - Local state
 
-    /// Forget the device token (used on logout of the last account and by the debug page).
+    /// Forget every device token (used on logout of the last account and by the debug page).
     public func resetLocalState() {
         self.queue.async {
-            self.token = nil
+            self.tokens = [:]
         }
-        LuckgramKeychain.delete(account: LuckgramKeychain.deviceTokenAccount)
+        LuckgramAI.deleteAllTokens()
+        LuckgramSettings.shared.setBool(LuckgramAccountTokens.migratedKey, false)
     }
 
+    /// Removes every stored device token from the Keychain (also on a fresh install).
+    static func deleteAllTokens() {
+        for user in LuckgramAccountTokens.decodeUsers(LuckgramKeychain.get(account: LuckgramAccountTokens.usersAccount)) {
+            LuckgramKeychain.delete(account: LuckgramAccountTokens.account(user: user))
+        }
+        LuckgramKeychain.delete(account: LuckgramAccountTokens.usersAccount)
+        LuckgramKeychain.delete(account: LuckgramAccountTokens.legacyAccount)
+    }
+
+    private static func storeToken(_ token: String?, user: Int64) {
+        let account = LuckgramAccountTokens.account(user: user)
+        if let token {
+            LuckgramKeychain.set(account: account, value: token)
+            if user != 0 {
+                var users = LuckgramAccountTokens.decodeUsers(LuckgramKeychain.get(account: LuckgramAccountTokens.usersAccount))
+                if !users.contains(user) {
+                    users.append(user)
+                    LuckgramKeychain.set(account: LuckgramAccountTokens.usersAccount, value: LuckgramAccountTokens.encodeUsers(users))
+                }
+            }
+        } else {
+            LuckgramKeychain.delete(account: account)
+        }
+    }
+
+    /// The Telegram user a request without an explicit account runs as.
+    private func resolvedUser(_ user: Int64?) -> Int64 {
+        return user ?? self.currentUser() ?? 0
+    }
+
+    /// Whether the selected account already has a device token.
     public var hasDeviceToken: Bool {
+        let user = self.resolvedUser(nil)
         var result = false
         self.queue.sync {
-            result = self.token != nil
+            result = self.tokens[user] != nil
         }
-        return result || (!self.isUsingMock && LuckgramKeychain.get(account: LuckgramKeychain.deviceTokenAccount) != nil)
+        return result || (!self.isUsingMock && LuckgramKeychain.get(account: LuckgramAccountTokens.account(user: user)) != nil)
     }
 
     // MARK: - Public API
@@ -311,16 +386,17 @@ public final class LuckgramAI {
     /// Fire-and-forget request with the device token held right now (25 nearby: delete my card on
     /// logout). Token, URL and transport are captured before returning, so a `resetLocalState()`
     /// right after (logout of the last account) can't make it register a new device instead.
-    public func sendWithCurrentToken(method: String, path: String) {
+    public func sendWithCurrentToken(method: String, path: String, user: Int64? = nil) {
         let useMock = self.isUsingMock
+        let user = self.resolvedUser(user)
         var current: String?
         self.queue.sync {
-            if let token = self.token, self.tokenIsMock == useMock {
+            if let token = self.tokens[user], self.tokensAreMock == useMock {
                 current = token
             }
         }
         if current == nil && !useMock {
-            current = LuckgramKeychain.get(account: LuckgramKeychain.deviceTokenAccount)
+            current = LuckgramKeychain.get(account: LuckgramAccountTokens.account(user: user))
         }
         guard let token = current, let url = self.url(path) else {
             return
@@ -715,9 +791,10 @@ public final class LuckgramAI {
     /// Authenticated JSON request for the account endpoints (S6 link, S7 billing, S8
     /// announcements). Registers the device if needed but never asks for AI consent: nothing but
     /// the device's own state is sent. Delivers on the main queue.
-    public func requestJSON(method: String, path: String, body: [String: Any]? = nil) -> Signal<[String: Any], LuckgramAIError> {
+    /// `user`: whose device token to use (specs#209), nil = the selected account.
+    public func requestJSON(method: String, path: String, body: [String: Any]? = nil, user: Int64? = nil) -> Signal<[String: Any], LuckgramAIError> {
         let data = body.flatMap { try? JSONSerialization.data(withJSONObject: $0) }
-        return self.authorized(method: method, path: path, contentType: data != nil ? "application/json" : nil, body: data, accept: "application/json")
+        return self.authorized(method: method, path: path, contentType: data != nil ? "application/json" : nil, body: data, accept: "application/json", user: user)
         |> mapToSignal { event -> Signal<[String: Any], LuckgramAIError> in
             guard case let .body(data) = event else {
                 return .complete()
@@ -733,9 +810,11 @@ public final class LuckgramAI {
         |> deliverOnMainQueue
     }
 
-    private func authorized(method: String, path: String, contentType: String?, body: Data?, accept: String, extraHeaders: [String: String] = [:], feature: String? = nil) -> Signal<HTTPEvent, LuckgramAIError> {
+    private func authorized(method: String, path: String, contentType: String?, body: Data?, accept: String, extraHeaders: [String: String] = [:], feature: String? = nil, user: Int64? = nil) -> Signal<HTTPEvent, LuckgramAIError> {
+        // specs#209: the account is fixed when the request is made, not when it is sent.
+        let user = self.resolvedUser(user)
         func attempt(_ retry: Bool) -> Signal<HTTPEvent, LuckgramAIError> {
-            return self.ensureToken()
+            return self.ensureToken(user: user)
             |> mapToSignal { token -> Signal<HTTPEvent, LuckgramAIError> in
                 guard let url = self.url(path) else {
                     return .fail(LuckgramAIError(code: LuckgramAIError.upstreamUnavailable))
@@ -755,10 +834,10 @@ public final class LuckgramAI {
                 |> `catch` { error -> Signal<HTTPEvent, LuckgramAIError> in
                     if retry && error.httpStatus == 401 {
                         self.queue.async {
-                            self.token = nil
+                            self.tokens[user] = nil
                         }
                         if !self.isUsingMock {
-                            LuckgramKeychain.delete(account: LuckgramKeychain.deviceTokenAccount)
+                            LuckgramAI.storeToken(nil, user: user)
                         }
                         return attempt(false)
                     }
@@ -769,19 +848,44 @@ public final class LuckgramAI {
         return attempt(true)
     }
 
-    private func ensureToken() -> Signal<String, LuckgramAIError> {
+    /// specs#209 upgrade, decided once: the old single token goes to `user` when it is the only
+    /// account logged in; otherwise it stays the no-account token and every account registers
+    /// its own. On `queue`.
+    private func adoptLegacy(user: Int64, loggedIn: [Int64]) -> String? {
+        if user == 0 || LuckgramSettings.shared.bool(LuckgramAccountTokens.migratedKey, default: false) {
+            return nil
+        }
+        // Review P2: the app has not reported its accounts yet (or not this one): decide later,
+        // never on an empty list, or a single-account user would lose the old link.
+        if !loggedIn.contains(user) {
+            return nil
+        }
+        LuckgramSettings.shared.setBool(LuckgramAccountTokens.migratedKey, true)
+        guard let legacy = LuckgramKeychain.get(account: LuckgramAccountTokens.legacyAccount), LuckgramAccountTokens.adoptsLegacy(user: user, loggedIn: loggedIn) else {
+            return nil
+        }
+        LuckgramAI.storeToken(legacy, user: user)
+        LuckgramKeychain.delete(account: LuckgramAccountTokens.legacyAccount)
+        return legacy
+    }
+
+    private func ensureToken(user: Int64) -> Signal<String, LuckgramAIError> {
+        let loggedIn = self.loggedInUsers()
         return Signal { subscriber in
             let disposable = MetaDisposable()
             self.queue.async {
                 let useMock = self.isUsingMock
-                if let token = self.token, self.tokenIsMock == useMock {
+                if self.tokensAreMock != useMock {
+                    self.tokens = [:]
+                    self.tokensAreMock = useMock
+                }
+                if let token = self.tokens[user] {
                     subscriber.putNext(token)
                     subscriber.putCompletion()
                     return
                 }
-                if !useMock, let stored = LuckgramKeychain.get(account: LuckgramKeychain.deviceTokenAccount) {
-                    self.token = stored
-                    self.tokenIsMock = false
+                if !useMock, let stored = LuckgramKeychain.get(account: LuckgramAccountTokens.account(user: user)) ?? self.adoptLegacy(user: user, loggedIn: loggedIn) {
+                    self.tokens[user] = stored
                     subscriber.putNext(stored)
                     subscriber.putCompletion()
                     return
@@ -809,10 +913,11 @@ public final class LuckgramAI {
                     return .single(token)
                 }).start(next: { token in
                     self.queue.async {
-                        self.token = token
-                        self.tokenIsMock = useMock
+                        if self.tokensAreMock == useMock {
+                            self.tokens[user] = token
+                        }
                         if !useMock {
-                            LuckgramKeychain.set(account: LuckgramKeychain.deviceTokenAccount, value: token)
+                            LuckgramAI.storeToken(token, user: user)
                         }
                         subscriber.putNext(token)
                         subscriber.putCompletion()

@@ -312,7 +312,7 @@ public func luckgramNearbyController(context: AccountContext) -> ViewController 
         state.connecting = true
         state.linked = nil
         refresh()
-        requests.add(LuckgramSilentLink.refresh().start(next: { linked in
+        requests.add(LuckgramSilentLink.refresh(context: context).start(next: { linked in
             // The server says the link is gone (unlinked elsewhere): the card is gone, forget it
             // here too. nil (offline, server error) changes nothing (review P2).
             if linked == false {
@@ -322,6 +322,10 @@ public func luckgramNearbyController(context: AccountContext) -> ViewController 
                 state.connecting = false
                 state.linked = ok
                 refresh()
+                // specs#209: e.g. the Telegram account already has the most devices.
+                if !ok, let why = LuckgramSilentLink.failureMessage(context: context) {
+                    toast(why)
+                }
                 if ok {
                     syncMe()
                     reload()
@@ -332,7 +336,7 @@ public func luckgramNearbyController(context: AccountContext) -> ViewController 
 
     /// The server said not_linked: re-link once, then give up with a neutral message.
     func onNotLinked() {
-        LuckgramSilentLink.clearCache()
+        LuckgramSilentLink.clearCache(context: context)
         state.linked = nil
         if !state.relinkTried {
             state.relinkTried = true

@@ -140,7 +140,7 @@ public func luckgramAccountController(context: AccountContext) -> ViewController
     var presentImpl: ((ViewController) -> Void)?
 
     func load() {
-        requests.add((LuckgramAI.shared.requestJSON(method: "GET", path: "/v1/link")).start(next: { j in
+        requests.add((LuckgramAI.shared.requestJSON(method: "GET", path: "/v1/link", user: context.account.peerId.toInt64())).start(next: { j in
             state.status = LuckgramAccountLogic.parseLink(j)
             state.loading = false
             refresh()
@@ -154,6 +154,9 @@ public func luckgramAccountController(context: AccountContext) -> ViewController
     }
 
     func finish(_ request: String?) {
+        if request == "linked" {
+            LuckgramSilentLink.clearCache(context: context) // specs#209: linked here, not by LuckgramSilentLink
+        }
         state.pendingNonce = nil
         pollTimer.set(nil)
         luckgramToast(context, request == "linked" ? tx.linkedNow : tx.linkResult(request, max: state.status?.maxDevices ?? 0), present: presentImpl)
@@ -170,7 +173,7 @@ public func luckgramAccountController(context: AccountContext) -> ViewController
                 finish("expired")
                 return
             }
-            requests.add(LuckgramAI.shared.requestJSON(method: "GET", path: "/v1/link?nonce=\(nonce)").start(next: { j in
+            requests.add(LuckgramAI.shared.requestJSON(method: "GET", path: "/v1/link?nonce=\(nonce)", user: context.account.peerId.toInt64()).start(next: { j in
                 let s = LuckgramAccountLogic.parseLink(j)
                 state.status = s
                 if LuckgramAccountLogic.shouldPoll(request: s.request, now: Date(), expiresAt: state.expiresAt) {
@@ -191,7 +194,7 @@ public func luckgramAccountController(context: AccountContext) -> ViewController
         switch id {
         case 2 where state.pendingNonce == nil:
             state.busy = true
-            requests.add(LuckgramAI.shared.requestJSON(method: "POST", path: "/v1/link/start").start(next: { j in
+            requests.add(LuckgramAI.shared.requestJSON(method: "POST", path: "/v1/link/start", user: context.account.peerId.toInt64()).start(next: { j in
                 state.busy = false
                 let st = LuckgramAccountLogic.parseStart(j)
                 guard LuckgramAccountLogic.isTelegramLink(st.url), !st.nonce.isEmpty else {
@@ -215,10 +218,11 @@ public func luckgramAccountController(context: AccountContext) -> ViewController
                 TextAlertAction(type: .genericAction, title: LuckgramStrings.cancel, action: {}),
                 TextAlertAction(type: .destructiveAction, title: tx.unlink, action: {
                     state.busy = true
-                    requests.add(LuckgramAI.shared.requestJSON(method: "DELETE", path: "/v1/link").start(next: { _ in
+                    requests.add(LuckgramAI.shared.requestJSON(method: "DELETE", path: "/v1/link", user: context.account.peerId.toInt64()).start(next: { _ in
                         state.busy = false
                         LuckgramNearby.onUnlinked() // 25: the server deleted the nearby card
                         LuckgramSquare.clearCache() // 26: link state / profile belong to the linked user
+                        LuckgramSilentLink.clearCache(context: context) // specs#209: link again on the next write
                         luckgramToast(context, tx.unlinkedNow, present: presentImpl)
                         load()
                     }, error: { error in
@@ -235,7 +239,7 @@ public func luckgramAccountController(context: AccountContext) -> ViewController
                 TextAlertAction(type: .destructiveAction, title: sq.delete, action: {
                     state.busy = true
                     refresh()
-                    requests.add(LuckgramAI.shared.requestJSON(method: "DELETE", path: "/v1/square/me").start(next: { _ in
+                    requests.add(LuckgramAI.shared.requestJSON(method: "DELETE", path: "/v1/square/me", user: context.account.peerId.toInt64()).start(next: { _ in
                         state.busy = false
                         LuckgramSquare.clearCache()
                         LuckgramSquare.noteNeedsRefresh()
@@ -324,7 +328,7 @@ public func luckgramProController(context: AccountContext) -> ViewController {
     var pushImpl: ((ViewController) -> Void)?
 
     func load(_ then: (() -> Void)? = nil) {
-        requests.add(LuckgramAI.shared.requestJSON(method: "GET", path: "/v1/billing/plans").start(next: { j in
+        requests.add(LuckgramAI.shared.requestJSON(method: "GET", path: "/v1/billing/plans", user: context.account.peerId.toInt64()).start(next: { j in
             state.billing = LuckgramAccountLogic.parseBilling(j)
             state.loading = false
             refresh()
@@ -392,7 +396,7 @@ public func luckgramProController(context: AccountContext) -> ViewController {
             return
         }
         state.busy = true
-        requests.add(LuckgramAI.shared.requestJSON(method: "POST", path: "/v1/billing/checkout", body: ["plan": billing.plans[index].id]).start(next: { j in
+        requests.add(LuckgramAI.shared.requestJSON(method: "POST", path: "/v1/billing/checkout", body: ["plan": billing.plans[index].id], user: context.account.peerId.toInt64()).start(next: { j in
             state.busy = false
             let url = j["url"] as? String ?? ""
             guard LuckgramAccountLogic.isTelegramLink(url) else {

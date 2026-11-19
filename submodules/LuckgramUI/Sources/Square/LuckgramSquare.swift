@@ -37,9 +37,48 @@ public enum LuckgramSquare {
 
     // MARK: - link (S6, silent)
 
-    static var profile: [String: Any]?
-    /// Author id of this device's user in Square (from the profile response), if known.
-    public static var myAuthorId: String?
+    private static var storedProfile: [String: Any]?
+    private static var storedAuthorId: String?
+    /// specs#209: the Telegram user `profile` and `myAuthorId` belong to.
+    private static var cacheUser: Int64 = 0
+
+    /// specs#209: after switching accounts the profile, "my" author id and the feeds (likes,
+    /// delete entries) of the previous account are dropped, never shown as the new one's.
+    private static func syncAccount() {
+        let user = LuckgramAI.shared.currentUser() ?? 0
+        if user == cacheUser {
+            return
+        }
+        cacheUser = user
+        storedProfile = nil
+        storedAuthorId = nil
+        imageCache.removeAll()
+        clearFeeds()
+    }
+
+    /// The current account's Square profile, if loaded.
+    static var profile: [String: Any]? {
+        get {
+            syncAccount()
+            return storedProfile
+        }
+        set {
+            syncAccount()
+            storedProfile = newValue
+        }
+    }
+
+    /// Author id of the current account's user in Square (from the profile response), if known.
+    public static var myAuthorId: String? {
+        get {
+            syncAccount()
+            return storedAuthorId
+        }
+        set {
+            syncAccount()
+            storedAuthorId = newValue
+        }
+    }
     /// What other Square pages did while the feed was covered. The feed applies it in place when
     /// it is shown again: counts are updated, deleted posts and blocked authors taken out, and
     /// only a new post makes it go back to the top and refresh. Nothing empties the list.
@@ -174,6 +213,7 @@ public enum LuckgramSquare {
     /// current account → poll until the server has it → the bot dialog is deleted locally. The
     /// user only sees a short "connecting" notice.
     static func requireLink(context: AccountContext, present: @escaping (ViewController) -> Void, push: @escaping (ViewController) -> Void, then: @escaping () -> Void) -> Disposable {
+        syncAccount()
         if LuckgramSilentLink.cached == true {
             then()
             return EmptyDisposable
@@ -198,7 +238,8 @@ public enum LuckgramSquare {
             if ok {
                 then()
             } else {
-                toast(context: context, tx.connectFailed, present: present)
+                // specs#209: say why when the user can act on it (too many linked devices).
+                toast(context: context, LuckgramSilentLink.failureMessage(context: context) ?? tx.connectFailed, present: present)
             }
         })
     }
