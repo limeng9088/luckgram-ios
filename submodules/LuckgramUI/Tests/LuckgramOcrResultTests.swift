@@ -86,4 +86,33 @@ final class LuckgramOcrResultTests: XCTestCase {
         XCTAssertEqual(r.text, "สวัสดี\nครับ\nx")
         XCTAssertTrue(LuckgramOcrResult.parseAI(nil, imageWidth: 1, imageHeight: 1).blocks.isEmpty)
     }
+
+    // specs#206: the Japanese line the Chinese pass missed is added from the Japanese pass.
+    func testMergeAddsMissingJapaneseLine() {
+        let primary = [line("今日的菜单", 0.1, 0.1, 0.4, 0.05), line("Today's menu", 0.1, 0.2, 0.4, 0.05)]
+        let ja = [
+            line("今日的菜单", 0.1, 0.1, 0.4, 0.05), // Han only: not taken from the Japanese pass
+            line("メニュー ラーメン 900円", 0.1, 0.5, 0.6, 0.05),
+        ]
+        let merged = LuckgramOcrResult.mergeLines(primary: primary, extra: ja, script: "ja")
+        XCTAssertEqual(merged.map { $0.text }, ["今日的菜单", "Today's menu", "メニュー ラーメン 900円"])
+    }
+
+    func testMergeReplacesPartialReadButKeepsFullChineseLine() {
+        let partial = [line("900円", 0.5, 0.5, 0.2, 0.05)]
+        let ja = [line("メニュー ラーメン 900円", 0.1, 0.5, 0.6, 0.05)]
+        XCTAssertEqual(LuckgramOcrResult.mergeLines(primary: partial, extra: ja, script: "ja").map { $0.text }, ["メニュー ラーメン 900円"])
+
+        // A Chinese line misread with one katakana by the Japanese pass stays Chinese.
+        let zh = [line("口味很好", 0.1, 0.1, 0.4, 0.05)]
+        let misread = [line("ロ味很好", 0.1, 0.1, 0.4, 0.05)]
+        XCTAssertEqual(LuckgramOcrResult.mergeLines(primary: zh, extra: misread, script: "ja").map { $0.text }, ["口味很好"])
+    }
+
+    func testMergeKoreanOnlyTakesHangul() {
+        let primary = [line("Hello", 0.1, 0.1, 0.3, 0.05)]
+        let ko = [line("Hello", 0.1, 0.1, 0.3, 0.05), line("안녕하세요", 0.1, 0.3, 0.3, 0.05), line("メニュー", 0.1, 0.4, 0.3, 0.05)]
+        XCTAssertEqual(LuckgramOcrResult.mergeLines(primary: primary, extra: ko, script: "ko").map { $0.text }, ["Hello", "안녕하세요"])
+        XCTAssertEqual(LuckgramOcrResult.mergeLines(primary: [], extra: [], script: "ko"), [])
+    }
 }

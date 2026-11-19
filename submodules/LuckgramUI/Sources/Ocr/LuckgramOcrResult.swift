@@ -213,6 +213,47 @@ public struct LuckgramOcrResult: Equatable {
         return out
     }
 
+    /// specs#206: Vision reads with one recognizer per request, so with Chinese first a line in kana
+    /// (「メニュー ラーメン 900円」) comes back missing or as a few characters. The device pass is
+    /// therefore Chinese + English, and Japanese / Korean passes add their lines here:
+    /// - only lines whose script is `script` ("ja" / "ko") are taken from `extra`;
+    /// - one that overlaps no primary line is added (the line the primary pass missed);
+    /// - one that overlaps primary lines replaces them only when those hold clearly fewer
+    ///   characters (a partial read); a Chinese line read the same length stays as it is.
+    public static func mergeLines(primary: [Line], extra: [Line], script: String) -> [Line] {
+        var out = primary
+        for line in extra where scriptLanguage(line.text) == script {
+            let overlapping = out.indices.filter { overlaps(out[$0].box, line.box) }
+            if overlapping.isEmpty {
+                out.append(line)
+                continue
+            }
+            let had = overlapping.reduce(0) { $0 + visibleCount(out[$1].text) }
+            if Double(had) < Double(visibleCount(line.text)) * 0.7 {
+                for i in overlapping.reversed() {
+                    out.remove(at: i)
+                }
+                out.append(line)
+            }
+        }
+        return out
+    }
+
+    /// Whether the intersection covers more than half of the smaller box.
+    static func overlaps(_ a: Box, _ b: Box) -> Bool {
+        let w = min(a.x + a.width, b.x + b.width) - max(a.x, b.x)
+        let h = min(a.y + a.height, b.y + b.height) - max(a.y, b.y)
+        guard w > 0, h > 0 else {
+            return false
+        }
+        let smaller = min(a.width * a.height, b.width * b.height)
+        return smaller > 0 && w * h > smaller * 0.5
+    }
+
+    static func visibleCount(_ s: String) -> Int {
+        return s.unicodeScalars.filter { !CharacterSet.whitespacesAndNewlines.contains($0) }.count
+    }
+
     /// Language from the script (same rules as Android `OcrLogic`): kana → "ja", hangul → "ko",
     /// Han → "zh", else nil.
     public static func scriptLanguage(_ text: String) -> String? {
