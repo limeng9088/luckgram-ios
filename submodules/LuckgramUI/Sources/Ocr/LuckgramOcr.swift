@@ -66,31 +66,33 @@ public enum LuckgramOcr {
         let width = upright ? cgImage.height : cgImage.width
         let height = upright ? cgImage.width : cgImage.height
         let signal = Signal<LuckgramOcrResult, LuckgramOcrError> { subscriber in
-            let request = VNRecognizeTextRequest { request, error in
-                guard error == nil, let observations = request.results as? [VNRecognizedTextObservation] else {
-                    subscriber.putError(LuckgramOcrError(code: LuckgramOcrError.failed))
-                    return
-                }
-                let result = makeResult(observations, width: width, height: height)
-                store(key: key, result: result)
-                subscriber.putNext(result)
-                subscriber.putCompletion()
-            }
-            request.recognitionLevel = .accurate
-            request.usesLanguageCorrection = true
+            // specs#206: one recognizer per request, so Chinese + English first, then Japanese and
+            // Korean passes whose kana / hangul lines are merged in (`mergeLines`).
+            let primary = textRequest(languages: ["zh-Hans", "zh-Hant", "en-US"])
+            var extra: [(request: VNRecognizeTextRequest, script: String)] = []
             if #available(iOS 16.0, *) {
-                request.revision = VNRecognizeTextRequestRevision3
-                request.recognitionLanguages = ["zh-Hans", "zh-Hant", "ja-JP", "ko-KR", "en-US"]
-            } else {
-                request.recognitionLanguages = ["zh-Hans", "zh-Hant", "en-US"]
+                extra = [(textRequest(languages: ["ja-JP", "en-US"]), "ja"), (textRequest(languages: ["ko-KR", "en-US"]), "ko")]
             }
             let queue = DispatchQueue.global(qos: .userInitiated)
             queue.async {
                 do {
-                    try VNImageRequestHandler(cgImage: cgImage, orientation: orientation, options: [:]).perform([request])
+                    try VNImageRequestHandler(cgImage: cgImage, orientation: orientation, options: [:]).perform([primary] + extra.map { $0.request })
                 } catch {
                     subscriber.putError(LuckgramOcrError(code: LuckgramOcrError.failed))
+                    return
                 }
+                guard let observations = primary.results else {
+                    subscriber.putError(LuckgramOcrError(code: LuckgramOcrError.failed))
+                    return
+                }
+                var lines = makeLines(observations)
+                for pass in extra {
+                    lines = LuckgramOcrResult.mergeLines(primary: lines, extra: makeLines(pass.request.results ?? []), script: pass.script)
+                }
+                let result = makeResult(lines, width: width, height: height)
+                store(key: key, result: result)
+                subscriber.putNext(result)
+                subscriber.putCompletion()
             }
             return EmptyDisposable
         }
@@ -141,7 +143,18 @@ public enum LuckgramOcr {
         return LuckgramSettings.shared.isEnabled(featureKey)
     }
 
-    static func makeResult(_ observations: [VNRecognizedTextObservation], width: Int, height: Int) -> LuckgramOcrResult {
+    private static func textRequest(languages: [String]) -> VNRecognizeTextRequest {
+        let request = VNRecognizeTextRequest()
+        request.recognitionLevel = .accurate
+        request.usesLanguageCorrection = true
+        if #available(iOS 16.0, *) {
+            request.revision = VNRecognizeTextRequestRevision3
+        }
+        request.recognitionLanguages = languages
+        return request
+    }
+
+    static func makeLines(_ observations: [VNRecognizedTextObservation]) -> [LuckgramOcrResult.Line] {
         var lines: [LuckgramOcrResult.Line] = []
         for o in observations {
             guard let candidate = o.topCandidates(1).first, !candidate.string.trimmingCharacters(in: .whitespaces).isEmpty else {
@@ -152,6 +165,10 @@ public enum LuckgramOcr {
             let quad = LuckgramOcrResult.Quad(points: [o.topLeft, o.topRight, o.bottomRight, o.bottomLeft].map { (x: Double($0.x), y: 1.0 - Double($0.y)) })
             lines.append(LuckgramOcrResult.Line(text: candidate.string, box: box, quad: quad))
         }
+        return lines
+    }
+
+    static func makeResult(_ lines: [LuckgramOcrResult.Line], width: Int, height: Int) -> LuckgramOcrResult {
         let blocks = LuckgramOcrResult.paragraphs(lines).map { group -> LuckgramOcrResult.Block in
             let text = group.map { $0.text }.joined(separator: "\n")
             return LuckgramOcrResult.Block.of(lines: group, language: language(of: text))
