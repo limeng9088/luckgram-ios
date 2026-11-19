@@ -64,6 +64,7 @@ jobs:
           LuckgramUI|submodules/LuckgramUI/Sources/Agents/LuckgramAgentMarketLogic.swift|submodules/LuckgramUI/Tests/LuckgramAgentMarketLogicTests.swift
           LuckgramUI|submodules/LuckgramUI/Sources/ImageTranslate/LuckgramImageTranslateLogic.swift|submodules/LuckgramUI/Tests/LuckgramImageTranslateLogicTests.swift
           LuckgramUI|submodules/LuckgramUI/Sources/LuckgramAppHeaders.swift|submodules/LuckgramUI/Tests/LuckgramAppHeadersTests.swift
+          LuckgramUI|submodules/LuckgramUI/Sources/LuckgramChineseScript.swift|submodules/LuckgramUI/Tests/LuckgramChineseScriptTests.swift
           "
           ran=0
           for line in $SUITES; do

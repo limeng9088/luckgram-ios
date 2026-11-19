@@ -643,10 +643,18 @@ public final class LuckgramAI {
         guard let segments = LuckgramAudioSplitter.split(audio, mimeType: mimeType, maxBytes: maxBytes), !segments.isEmpty else {
             return .fail(LuckgramAIError(code: LuckgramAIError.inputTooLarge))
         }
-        var path = "/v1/ai/transcribe"
+        var query: [String] = []
         // The server accepts ISO-639-1 (2 letters) only; anything else -> let it auto-detect (#49).
         if let language, language.range(of: "^[a-z]{2}$", options: .regularExpression) != nil {
-            path += "?language=\(language)"
+            query.append("language=\(language)")
+        }
+        // ios#145: a Chinese transcript in the UI's script (simplified / traditional); none for other UIs.
+        if let script = LuckgramChineseScript.pick(appLanguageCode: LuckgramStrings.appLanguageCode, systemLanguage: Locale.preferredLanguages.first) {
+            query.append("script=\(script)")
+        }
+        var path = "/v1/ai/transcribe"
+        if !query.isEmpty {
+            path += "?" + query.joined(separator: "&")
         }
         let requestPath = path
 
