@@ -1200,6 +1200,9 @@ final class ChatListControllerNode: ASDisplayNode, ASGestureRecognizerDelegate {
     var tempAllowAvatarExpansion: Bool = false
     private var tempDisableStoriesAnimations: Bool = false
     private var tempNavigationScrollingTransition: ContainedViewLayoutTransition?
+    /// specs#207: the pinned "Luckgram AI" notice is a header panel, so the list scrolled under it.
+    /// It is hidden while the list is scrolled down and comes back at the top (`LuckgramAIRowScroll`).
+    private var luckgramAIRowHidden = false
     
     private var allowOverscrollStoryExpansion: Bool = false
     private var currentOverscrollStoryExpansionTimestamp: Double?
@@ -1451,7 +1454,7 @@ final class ChatListControllerNode: ASDisplayNode, ASGestureRecognizerDelegate {
         let headerContent = self.controller?.updateHeaderContent()
         
         var panels: [HeaderPanelContainerComponent.Panel] = []
-        if let chatListNotice = self.controller?.globalControlPanelsContextState?.chatListNotice {
+        if let chatListNotice = self.controller?.globalControlPanelsContextState?.chatListNotice, !(self.luckgramAIRowHidden && chatListNotice.isLuckgramAI) {
             panels.append(HeaderPanelContainerComponent.Panel(
                 key: "chatListNotice",
                 orderIndex: 0,
@@ -1846,6 +1849,19 @@ final class ChatListControllerNode: ASDisplayNode, ASGestureRecognizerDelegate {
         }
         
         self.mainContainerNode.updateScrollingOffset(navigationHeight: navigationHeight, offset: mainOffset, transition: transition)
+
+        // specs#207: hide the pinned "Luckgram AI" row once the list is scrolled, show it again at the top.
+        if self.isSearchDisplayControllerActive == nil, let notice = self.controller?.globalControlPanelsContextState?.chatListNotice, notice.isLuckgramAI {
+            let hidden = LuckgramAIRowScroll.hidden(wasHidden: self.luckgramAIRowHidden, offset: mainOffset)
+            if hidden != self.luckgramAIRowHidden {
+                self.luckgramAIRowHidden = hidden
+                DispatchQueue.main.async { [weak self] in
+                    self?.controller?.requestLayout(transition: .animated(duration: 0.25, curve: .easeInOut))
+                }
+            }
+        } else if self.luckgramAIRowHidden {
+            self.luckgramAIRowHidden = false
+        }
         
         mainOffset = min(mainOffset, ChatListNavigationBar.searchScrollHeight)
         if abs(mainOffset) < 0.1 {

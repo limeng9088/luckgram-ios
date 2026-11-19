@@ -86,6 +86,14 @@ public final class GlobalControlPanelsContext {
         case link(id: String, url: String, title: ServerSuggestionInfo.Item.Text, subtitle: ServerSuggestionInfo.Item.Text)
         /// Luckgram: pinned "Luckgram AI" row (feature 18), shown when no Telegram notice is.
         case luckgramAI(title: String, text: String)
+
+        /// Luckgram (specs#207): whether this is the pinned "Luckgram AI" row.
+        public var isLuckgramAI: Bool {
+            if case .luckgramAI = self {
+                return true
+            }
+            return false
+        }
     }
     
     public final class GroupCall: Equatable {
