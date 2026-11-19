@@ -58,8 +58,22 @@ final class LuckgramProfileInfoLogicTests: XCTestCase {
         XCTAssertEqual(LuckgramProfileInfoLogic.format(.before2014, chinese: false), "before 2014")
     }
 
-    func testIdsNewerThanTheTableAreNotGuessed() throws {
-        XCTAssertNil(LuckgramProfileInfoLogic.estimate(try bundledTable(), userId: 9_900_000_000))
+    func testIdsNewerThanTheTableAreAfterItsLastMonth() throws {
+        // ios#146: no month is extrapolated past the table's last row (8700161147 → 2026-01).
+        for id: Int64 in [8_700_161_147, 8_700_161_148, 9_900_000_000] {
+            let e = LuckgramProfileInfoLogic.estimate(try bundledTable(), userId: id)
+            XCTAssertEqual(e, .after(year: 2026, month: 1), "id \(id)")
+        }
+        XCTAssertEqual(LuckgramProfileInfoLogic.format(.after(year: 2026, month: 1), chinese: true), "约 2026 年 1 月之后")
+        XCTAssertEqual(LuckgramProfileInfoLogic.format(.after(year: 2026, month: 1), chinese: false), "After ~Jan 2026")
+        // Just below the last row is still a month.
+        if case .month = LuckgramProfileInfoLogic.estimate(try bundledTable(), userId: 8_700_161_146) {
+        } else {
+            XCTFail("expected a month")
+        }
+    }
+
+    func testNoTableOrNoIdIsNotGuessed() throws {
         XCTAssertNil(LuckgramProfileInfoLogic.estimate(try bundledTable(), userId: 0))
         XCTAssertNil(LuckgramProfileInfoLogic.estimate([], userId: 805158066))
     }
