@@ -855,6 +855,11 @@ public final class LuckgramAI {
         if user == 0 || LuckgramSettings.shared.bool(LuckgramAccountTokens.migratedKey, default: false) {
             return nil
         }
+        // Review P2: the app has not reported its accounts yet (or not this one): decide later,
+        // never on an empty list, or a single-account user would lose the old link.
+        if !loggedIn.contains(user) {
+            return nil
+        }
         LuckgramSettings.shared.setBool(LuckgramAccountTokens.migratedKey, true)
         guard let legacy = LuckgramKeychain.get(account: LuckgramAccountTokens.legacyAccount), LuckgramAccountTokens.adoptsLegacy(user: user, loggedIn: loggedIn) else {
             return nil
