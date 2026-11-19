@@ -1203,6 +1203,8 @@ final class ChatListControllerNode: ASDisplayNode, ASGestureRecognizerDelegate {
     /// specs#207: the pinned "Luckgram AI" notice is a header panel, so the list scrolled under it.
     /// It is hidden while the list is scrolled down and comes back at the top (`LuckgramAIRowScroll`).
     private var luckgramAIRowHidden = false
+    /// specs#207: where the list rests (search field and stories folded away), measured like `mainOffset`.
+    private var luckgramListRestOffset: CGFloat = ChatListNavigationBar.searchScrollHeight
     
     private var allowOverscrollStoryExpansion: Bool = false
     private var currentOverscrollStoryExpansionTimestamp: Double?
@@ -1852,7 +1854,9 @@ final class ChatListControllerNode: ASDisplayNode, ASGestureRecognizerDelegate {
 
         // specs#207: hide the pinned "Luckgram AI" row once the list is scrolled, show it again at the top.
         if self.isSearchDisplayControllerActive == nil, let notice = self.controller?.globalControlPanelsContextState?.chatListNotice, notice.isLuckgramAI {
-            let hidden = LuckgramAIRowScroll.hidden(wasHidden: self.luckgramAIRowHidden, offset: mainOffset)
+            // The list rests with the search field folded away (offset = searchScrollHeight + stories),
+            // so the offset is counted from there; pulling the search field down keeps the row.
+            let hidden = LuckgramAIRowScroll.hidden(wasHidden: self.luckgramAIRowHidden, offset: Double(mainOffset - self.luckgramListRestOffset))
             if hidden != self.luckgramAIRowHidden {
                 self.luckgramAIRowHidden = hidden
                 DispatchQueue.main.async { [weak self] in
@@ -1949,6 +1953,7 @@ final class ChatListControllerNode: ASDisplayNode, ASGestureRecognizerDelegate {
         
         let navigationBarLayout = self.updateNavigationBar(layout: layout, deferScrollApplication: true, transition: ComponentTransition(transition))
         self.mainContainerNode.initialScrollingOffset = ChatListNavigationBar.searchScrollHeight + navigationBarLayout.storiesInset
+        self.luckgramListRestOffset = ChatListNavigationBar.searchScrollHeight + navigationBarLayout.storiesInset
         
         navigationBarHeight = navigationBarLayout.navigationHeight
         visualNavigationHeight = navigationBarLayout.navigationHeight

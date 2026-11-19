@@ -12,7 +12,8 @@ public enum LuckgramAIRowScroll {
     /// Back within this of the top → shown.
     public static let showWithin: Double = 4.0
 
-    /// Whether the row is hidden at `offset` (0 = list at the top, positive = scrolled down).
+    /// Whether the row is hidden at `offset`, counted from where the list rests (0 = at rest,
+    /// negative = search field / stories pulled down, positive = scrolled down into the chats).
     public static func hidden(wasHidden: Bool, offset: Double) -> Bool {
         if wasHidden {
             return offset > showWithin
