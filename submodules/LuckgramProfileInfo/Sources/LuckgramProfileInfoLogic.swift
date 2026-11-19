@@ -42,6 +42,8 @@ public enum LuckgramProfileInfoLogic {
     public enum Estimate: Equatable {
         case month(year: Int, month: Int)
         case before2014
+        /// ios#146: newer than the table's last row (year / month of that row).
+        case after(year: Int, month: Int)
     }
 
     /// Parses the bundled table ("id,YYYY-MM" per line, '#' comments). Malformed or out-of-order lines are skipped.
@@ -73,7 +75,8 @@ public enum LuckgramProfileInfoLogic {
     }
 
     /// Approximate registration month by linear interpolation between table rows.
-    /// Below the first row: before 2014. Newer than the table or no table: nil (row not shown).
+    /// Below the first row: before 2014. From the last row on (newer than the table): after that
+    /// row's month, no month is extrapolated (ios#146, same as Web). No table: nil.
     public static func estimate(_ points: [Point], userId: Int64) -> Estimate? {
         guard points.count >= 2, userId > 0 else {
             return nil
@@ -93,18 +96,22 @@ public enum LuckgramProfileInfoLogic {
                 return .month(year: m / 12, month: m % 12 + 1)
             }
         }
-        return nil
+        let last = points[points.count - 1]
+        return .after(year: last.monthIndex / 12, month: last.monthIndex % 12 + 1)
     }
 
     private static let monthsEn = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
 
-    /// "约 2019 年 10 月" / "about Oct 2019"; "早于 2014 年" / "before 2014".
+    /// "约 2019 年 10 月" / "about Oct 2019"; "早于 2014 年" / "before 2014";
+    /// "约 2026 年 1 月之后" / "After ~Jan 2026" (ios#146, same wording as Web).
     public static func format(_ estimate: Estimate, chinese: Bool) -> String {
         switch estimate {
         case .before2014:
             return chinese ? "早于 2014 年" : "before 2014"
         case let .month(year, month):
             return chinese ? "约 \(year) 年 \(month) 月" : "about \(monthsEn[month - 1]) \(year)"
+        case let .after(year, month):
+            return chinese ? "约 \(year) 年 \(month) 月之后" : "After ~\(monthsEn[month - 1]) \(year)"
         }
     }
 }
