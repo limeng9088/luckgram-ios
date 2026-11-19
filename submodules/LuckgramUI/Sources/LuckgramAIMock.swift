@@ -160,14 +160,25 @@ public final class LuckgramAIMock {
             if let failCode {
                 return LuckgramAIMock.error(failCode == "quota_exceeded" ? 429 : 503, failCode)
             }
-            var language = "zh"
-            if let query, query.hasPrefix("language=") {
-                language = String(query.dropFirst("language=".count))
+            var params: [String: String] = [:]
+            for item in (query ?? "").split(separator: "&") {
+                let pair = item.split(separator: "=", maxSplits: 1).map(String.init)
+                params[pair[0]] = pair.count > 1 ? pair[1] : ""
             }
+            let language = params["language"] ?? "zh"
             if language.range(of: "^[a-z]{2}$", options: .regularExpression) == nil {
                 return LuckgramAIMock.error(400, "invalid_request")
             }
-            let text = LuckgramStrings.isChinese ? "第\(n)段（\(body.count) 字节）。" : "Segment \(n) (\(body.count) bytes)."
+            if let script = params["script"], script != "Hans" && script != "Hant" {
+                return LuckgramAIMock.error(400, "invalid_request")
+            }
+            // ios#145: the server converts a Chinese transcript to ?script=.
+            let text: String
+            if params["script"] == "Hant" {
+                text = "第\(n)段（\(body.count) 位元組）。"
+            } else {
+                text = LuckgramStrings.isChinese ? "第\(n)段（\(body.count) 字节）。" : "Segment \(n) (\(body.count) bytes)."
+            }
             return .json(200, ["text": text, "language": language, "duration_seconds": Double(body.count) / 32000.0, "model": "mock"])
         case "/v1/me":
             self.lock.lock()
