@@ -96,7 +96,7 @@ public enum LuckgramCloudBackup {
     public static func fetch(context: AccountContext?) -> Signal<LuckgramCloudBackupLogic.Meta?, LuckgramAIError> {
         return linked(context: context)
         |> mapToSignal { _ -> Signal<LuckgramCloudBackupLogic.Meta?, LuckgramAIError> in
-            return LuckgramAI.shared.requestJSON(method: "GET", path: LuckgramCloudBackupLogic.path)
+            return LuckgramAI.shared.requestJSON(method: "GET", path: LuckgramCloudBackupLogic.path, user: context?.account.peerId.toInt64())
             |> map { LuckgramCloudBackupLogic.parseMeta($0) }
             |> `catch` { error -> Signal<LuckgramCloudBackupLogic.Meta?, LuckgramAIError> in
                 if LuckgramCloudBackupLogic.isNotFound(code: error.code, httpStatus: error.httpStatus) {
@@ -155,7 +155,7 @@ public enum LuckgramCloudBackup {
             let body = LuckgramCloudBackupLogic.uploadBody(dataBase64: data, accounts: count, createdAt: now)
             return linked(context: context)
             |> mapToSignal { _ -> Signal<LuckgramCloudBackupLogic.Meta, LuckgramAIError> in
-                return LuckgramAI.shared.requestJSON(method: "PUT", path: LuckgramCloudBackupLogic.path, body: body)
+                return LuckgramAI.shared.requestJSON(method: "PUT", path: LuckgramCloudBackupLogic.path, body: body, user: context?.account.peerId.toInt64())
                 |> map { response -> LuckgramCloudBackupLogic.Meta in
                     return LuckgramCloudBackupLogic.parseMeta(response) ?? LuckgramCloudBackupLogic.Meta(accounts: count, createdAt: now, data: nil)
                 }
@@ -168,7 +168,7 @@ public enum LuckgramCloudBackup {
     public static func delete(context: AccountContext?) -> Signal<Void, LuckgramAIError> {
         return linked(context: context)
         |> mapToSignal { _ -> Signal<Void, LuckgramAIError> in
-            return LuckgramAI.shared.requestJSON(method: "DELETE", path: LuckgramCloudBackupLogic.path)
+            return LuckgramAI.shared.requestJSON(method: "DELETE", path: LuckgramCloudBackupLogic.path, user: context?.account.peerId.toInt64())
             |> map { _ in Void() }
             |> `catch` { error -> Signal<Void, LuckgramAIError> in
                 if LuckgramCloudBackupLogic.isNotFound(code: error.code, httpStatus: error.httpStatus) {

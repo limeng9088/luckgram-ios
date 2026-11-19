@@ -26,7 +26,7 @@ public final class LuckgramSettings {
         if !self.defaults.bool(forKey: LuckgramSettings.installMarkerKey) {
             // Fresh install: the Keychain survives app deletion on iOS, so drop anything an
             // earlier installation left behind.
-            LuckgramKeychain.delete(account: LuckgramKeychain.deviceTokenAccount)
+            LuckgramAI.deleteAllTokens() // specs#209: every account's token
             LuckgramKeychain.delete(account: LuckgramKeychain.xrayNodesAccount) // Luckgram 119
             self.defaults.set(true, forKey: LuckgramSettings.installMarkerKey)
         }

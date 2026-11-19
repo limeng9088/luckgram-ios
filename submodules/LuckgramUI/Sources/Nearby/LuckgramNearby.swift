@@ -81,6 +81,8 @@ public enum LuckgramNearby {
     public static func onLogout(accountId: Int64) {
         LuckgramBlocks.clearLocal()
         LuckgramSilentLink.clearCache()
+        // specs#209: the token of the account logging out, not the selected one.
+        let user = LuckgramAI.shared.user(forRecord: accountId)
         guard isVisible else {
             return
         }
@@ -88,7 +90,10 @@ public enum LuckgramNearby {
             return
         }
         clearLocal()
-        LuckgramAI.shared.sendWithCurrentToken(method: "DELETE", path: "/v1/nearby/me")
+        guard let user else {
+            return
+        }
+        LuckgramAI.shared.sendWithCurrentToken(method: "DELETE", path: "/v1/nearby/me", user: user)
     }
 
     /// S6 unlink: the server deletes the card itself; only forget it here.

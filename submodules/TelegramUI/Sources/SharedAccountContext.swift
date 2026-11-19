@@ -511,6 +511,12 @@ public final class SharedAccountContextImpl: SharedAccountContext {
             }
         })
         
+        // Luckgram specs#209: device token and S6 link per Telegram account, so Square, Nearby,
+        // Pro and AI always act as the selected account.
+        let _ = (self.activeAccountContexts
+        |> deliverOnMainQueue).startStandalone(next: { primary, accounts, _ in
+            LuckgramAI.shared.updateAccounts(primary: primary?.account.peerId.toInt64(), accounts: accounts.map { (record: $0.0.int64, user: $0.1.account.peerId.toInt64()) })
+        })
         // Luckgram spec 01 A/B: translations of received messages and voice transcriptions in the bubble.
         let luckgramTranslateIn = LuckgramTranslateInController.install(context: { [weak self] in
             return self?.activeAccountsValue?.primary

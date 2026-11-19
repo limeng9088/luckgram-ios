@@ -126,7 +126,7 @@ public func luckgramBlockedUsersController(context: AccountContext) -> ViewContr
                 state.loading = false
                 state.failed = true
                 refresh()
-                toast(tx.connectFailed)
+                toast(LuckgramSilentLink.failureMessage(context: context) ?? tx.connectFailed) // specs#209
             }
         })
     }

@@ -4,7 +4,6 @@ import Security
 /// Minimal generic-password Keychain storage for the Luckgram device token.
 enum LuckgramKeychain {
     static let service = "com.luckgram.messenger.luckgram"
-    static let deviceTokenAccount = "device_token"
     /// Luckgram 119: built-in Xray nodes (links with UUIDs / passwords) and the loopback password.
     static let xrayNodesAccount = "xray_nodes"
 
