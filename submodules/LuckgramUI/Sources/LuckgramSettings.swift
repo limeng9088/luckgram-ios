@@ -244,6 +244,12 @@ public final class LuckgramSettings {
             self.remoteConfigLock.unlock()
             LuckgramAI.shared.resetLocalState()
             LuckgramAnnouncements.shared.clear()
+            // specs#98: the wipe also dropped /v1/config, and it is only fetched again when the app
+            // comes to the foreground. Fetch it now (as on a fresh install), so logging straight back
+            // in sees the remote switches, e.g. the "Luckgram picks" folder offer.
+            Queue.mainQueue().after(1.0) {
+                LuckgramRemoteConfigFetcher.shared.refresh()
+            }
         } else {
             let prefix = "acc\(accountId)."
             for key in self.defaults.dictionaryRepresentation().keys where key.hasPrefix(prefix) {
